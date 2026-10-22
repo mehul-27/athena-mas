@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environment
+.venv/
+
+# Secrets
+.env
+
+# Local scratch
+.tmp/
+.uv-cache/
+.acl-recovery/
+install.log
+*.log
+
+# Data: keep the directory, ignore the corpus itself
+data/*
+!data/.gitkeep
