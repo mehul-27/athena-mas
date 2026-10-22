@@ -1,17 +1,15 @@
 """Stage 1: one CrewAI agent ("analyst") served over A2A on port 9001.
 
 CrewAI 1.15.28 has A2A *client* support and Agent Card generation, but no HTTP
-server, so the server half is the official ``a2a-sdk`` (AgentExecutor + the
-SDK's FastAPI route helpers). CrewAI runs the agent inside that executor.
+server, so the server half is the official ``a2a-sdk`` (AgentExecutor + its
+FastAPI route helpers). CrewAI runs the agent inside that executor.
 
 Run:  .venv\\Scripts\\python spike\\crew_a2a_server.py
-Card: http://127.0.0.1:9001/.well-known/agent-card.json
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -34,17 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from athena.config.llm import get_crewai_llm  # noqa: E402
 
-HOST = "127.0.0.1"
-PORT = 9001
+HOST, PORT = "127.0.0.1", 9001
 BASE_URL = f"http://{HOST}:{PORT}"
-CARD_URL = f"{BASE_URL}/.well-known/agent-card.json"
-
-AGENT_ROLE = "Analyst"
-AGENT_GOAL = "Give one sharp, useful sentence of analysis on whatever you are asked."
-AGENT_BACKSTORY = (
-    "You are a concise analyst. You read a request, decide what matters, and "
-    "answer in exactly one sentence. You never pad and never use bullet points."
-)
 
 
 def run_analyst(request_text: str) -> str:
@@ -52,17 +41,16 @@ def run_analyst(request_text: str) -> str:
     from crewai import Agent, Crew, Process, Task
 
     analyst = Agent(
-        role=AGENT_ROLE,
-        goal=AGENT_GOAL,
-        backstory=AGENT_BACKSTORY,
+        role="Analyst",
+        goal="Give one sharp, useful sentence of analysis on whatever you are asked.",
+        backstory="You are a concise analyst: you read, decide what matters, and "
+        "answer in exactly one sentence. You never pad or use bullet points.",
         llm=get_crewai_llm(),
         verbose=False,
     )
     task = Task(
-        description=(
-            "Analyse the following request and reply in one sentence.\n\n"
-            f"Request: {request_text}"
-        ),
+        description="Analyse the following request and reply in one sentence."
+        f"\n\nRequest: {request_text}",
         expected_output="One sentence of analysis, plain text, no preamble.",
         agent=analyst,
     )
@@ -74,14 +62,11 @@ class AnalystExecutor(AgentExecutor):
     """Bridges A2A requests to the CrewAI analyst."""
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        request_text = context.get_user_input()
         # CrewAI's kickoff() is blocking, so keep it off the event loop.
-        answer = await asyncio.to_thread(run_analyst, request_text)
+        answer = await asyncio.to_thread(run_analyst, context.get_user_input())
         await event_queue.enqueue_event(
             new_text_message(
-                answer,
-                context_id=context.context_id,
-                task_id=context.task_id,
+                answer, context_id=context.context_id, task_id=context.task_id
             )
         )
 
@@ -90,38 +75,30 @@ class AnalystExecutor(AgentExecutor):
 
 
 def build_agent_card() -> AgentCard:
-    """The published Agent Card (A2A 1.0 shape: URLs live in supported_interfaces)."""
+    """The published card. A2A 1.0 keeps URLs inside supported_interfaces."""
+    interfaces = [
+        AgentInterface(url=BASE_URL, protocol_binding=kind, protocol_version="1.0")
+        for kind in ("JSONRPC", "HTTP+JSON")
+    ]
     return AgentCard(
         name="analyst",
-        description=(
-            "A CrewAI analyst agent. Send it any text; it replies with a "
-            "one-sentence analysis."
-        ),
+        description="A CrewAI analyst agent. Send it any text; it replies with a "
+        "one-sentence analysis.",
         version="1.0.0",
-        supported_interfaces=[
-            AgentInterface(
-                url=BASE_URL, protocol_binding="JSONRPC", protocol_version="1.0"
-            ),
-            AgentInterface(
-                url=BASE_URL, protocol_binding="HTTP+JSON", protocol_version="1.0"
-            ),
-        ],
+        supported_interfaces=interfaces,
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
         skills=[
             AgentSkill(
-                id="analyse_text",
-                name="Analyse text",
+                id="analyse_text", name="Analyse text", tags=["analysis"],
                 description="Returns one sentence of analysis about the given text.",
-                tags=["analysis", "summarisation"],
             )
         ],
     )
 
 
 def create_app() -> FastAPI:
-    """Build the FastAPI app serving the Agent Card and the A2A endpoints."""
     card = build_agent_card()
     handler = DefaultRequestHandler(
         agent_executor=AnalystExecutor(),
@@ -139,5 +116,5 @@ def create_app() -> FastAPI:
 
 
 if __name__ == "__main__":
-    print(f"Agent Card: {CARD_URL}")
+    print(f"Agent Card: {BASE_URL}/.well-known/agent-card.json")
     uvicorn.run(create_app(), host=HOST, port=PORT, log_level="info")

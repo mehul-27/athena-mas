@@ -20,7 +20,7 @@ from google.genai import types  # noqa: E402
 
 from spike.adk_agent import build_supervisor  # noqa: E402
 
-DEFAULT_PROMPT = "Ask the analyst to comment on the number 42."
+DEFAULT_PROMPT = "What is 17.5 + 24.5? Then ask the analyst to comment on the result."
 APP_NAME = "athena"
 USER_ID = "student"
 
@@ -39,6 +39,23 @@ def _a2a_details(event: Any) -> tuple[Any, Any]:
     """Return the (request, response) pair ADK attached to an A2A event."""
     metadata = getattr(event, "custom_metadata", None) or {}
     return metadata.get("a2a:request"), metadata.get("a2a:response")
+
+
+def _tool_events(event: Any) -> list[str]:
+    """Render any function call / function response carried by an ADK event."""
+    content = getattr(event, "content", None)
+    if not content or not content.parts:
+        return []
+    lines = []
+    for part in content.parts:
+        if part.function_call:
+            lines.append(f"[tool call] {part.function_call.name} {_short(part.function_call.args)}")
+        if part.function_response:
+            lines.append(
+                f"[tool result] {part.function_response.name} "
+                f"{_short(part.function_response.response)}"
+            )
+    return lines
 
 
 def _short(value: Any, limit: int = 240) -> str:
@@ -61,6 +78,9 @@ async def run(prompt: str) -> str:
     ):
         author = event.author
         request, response = _a2a_details(event)
+
+        for line in _tool_events(event):
+            print(line)
 
         if request is not None or response is not None:
             print(f"[A2A] target={author}")

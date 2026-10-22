@@ -78,3 +78,15 @@ def test_agent_card_skills_present(card_url: str) -> None:
     """The card advertises at least one skill, as a client would expect."""
     card = httpx.get(card_url, timeout=10).json()
     assert card.get("skills")
+
+
+def test_mcp_add_numbers() -> None:
+    """The MCP tool's function is importable and does what it claims.
+
+    Importing the server module must not start a server: the stdio loop lives
+    behind ``if __name__ == "__main__"``.
+    """
+    from spike.mcp_server import add_numbers
+
+    assert add_numbers(2, 3) == 5
+    assert add_numbers(17.5, 24.5) == 42.0
