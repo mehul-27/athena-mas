@@ -1,0 +1,103 @@
+"""Athena's blackboard: shared, persistent, provenance-tracked agent state.
+
+Agents run in separate processes, so they exchange a ``run_id`` over A2A and
+read/write this store themselves. Typical use from an agent::
+
+    bb = Blackboard.open(run_id)
+    plan, version = bb.read("plan")
+    bb.write("draft", Draft(text="..."), author="writer",
+             expected_version=version)
+    bb.append("evidence", item, author="researcher")
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from athena.blackboard.schemas import (
+    Citation,
+    Critique,
+    Draft,
+    EvidenceItem,
+    FinalReport,
+    GuardrailFlag,
+    Plan,
+    PlanStep,
+    Task,
+)
+from athena.blackboard.sqlite_store import SQLiteStore
+from athena.blackboard.store import (
+    BlackboardError,
+    BlackboardStore,
+    RunNotFoundError,
+    SectionTypeError,
+    UnknownSectionError,
+    VersionConflictError,
+)
+
+__all__ = [
+    "Blackboard",
+    "BlackboardError",
+    "BlackboardStore",
+    "Citation",
+    "Critique",
+    "Draft",
+    "EvidenceItem",
+    "FinalReport",
+    "GuardrailFlag",
+    "Plan",
+    "PlanStep",
+    "RunNotFoundError",
+    "SQLiteStore",
+    "SectionTypeError",
+    "Task",
+    "UnknownSectionError",
+    "VersionConflictError",
+]
+
+
+class Blackboard:
+    """A run-scoped facade over a :class:`BlackboardStore`."""
+
+    def __init__(self, store: BlackboardStore, run_id: str) -> None:
+        self.store = store
+        self.run_id = run_id
+
+    @classmethod
+    def open(cls, run_id: str, store: BlackboardStore | None = None) -> "Blackboard":
+        """Bind to an existing run. Uses ``BLACKBOARD_DB`` when no store is given."""
+        return cls(store or SQLiteStore.from_env(), run_id)
+
+    @classmethod
+    def create(cls, task: Task, store: BlackboardStore | None = None) -> "Blackboard":
+        """Create a new run and return a blackboard bound to it."""
+        store = store or SQLiteStore.from_env()
+        return cls(store, store.create_run(task))
+
+    def read(self, section: str):
+        """Return ``(value, version)`` for a section, or None if unset."""
+        return self.store.read(self.run_id, section)
+
+    def write(
+        self,
+        section: str,
+        value: Any,
+        author: str,
+        expected_version: int | None = None,
+    ) -> int:
+        """Replace a section and return its new version."""
+        return self.store.write(
+            self.run_id, section, value, author, expected_version=expected_version
+        )
+
+    def append(self, section: str, item: Any, author: str) -> int:
+        """Append one item to a list section and return its new version."""
+        return self.store.append(self.run_id, section, item, author)
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return every section of this run as validated models, plus versions."""
+        return self.store.snapshot(self.run_id)
+
+    def history(self) -> list[dict[str, Any]]:
+        """Return this run's append-only provenance log in write order."""
+        return self.store.history(self.run_id)

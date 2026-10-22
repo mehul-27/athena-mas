@@ -9,15 +9,18 @@ other over **A2A**, and exposing tools over **MCP**.
 
 ## Status
 
-This repository is at the **skeleton + interop spike** stage. No product
-features exist yet; the goal right now is to prove that ADK and CrewAI can
-actually talk to each other, and that an MCP tool can be attached.
+This repository is at the **skeleton + interop spike** stage, with the shared
+blackboard and output schemas in place. No product features exist yet; the goal
+right now is to prove that ADK and CrewAI can actually talk to each other, that
+an MCP tool can be attached, and that separate agent processes can share state.
 
-- `athena/` — the real package (empty subpackages, reserved by design).
+- `athena/blackboard/` — shared state store and the Pydantic schemas.
+- `athena/` — the rest of the package (empty subpackages, reserved by design).
 - `spike/` — throwaway proof-of-concept code for the Stage 1–3 checkpoints.
 - `docs/GUIDELINES.md` — the 11 mandatory project rules and their status.
 
-See [docs/GUIDELINES.md](docs/GUIDELINES.md) for the rules checklist.
+See [docs/GUIDELINES.md](docs/GUIDELINES.md) for the rules checklist and
+[docs/BLACKBOARD.md](docs/BLACKBOARD.md) for the shared-state design.
 
 ## Layout
 
