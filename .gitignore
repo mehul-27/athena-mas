@@ -5,6 +5,7 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+pytest-cache-files-*/
 .mypy_cache/
 
 # Virtual environment
@@ -16,6 +17,7 @@ dist/
 # Local scratch
 .tmp/
 .uv-cache/
+.crewai/
 .acl-recovery/
 install.log
 *.log

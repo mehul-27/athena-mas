@@ -57,3 +57,21 @@ copy .env.example .env      # then fill in LLM_API_KEY
 | 1 | A CrewAI agent served over A2A | `spike/crew_a2a_server.py` |
 | 2 | An ADK agent delegating to it over A2A | `spike/run_spike.py` |
 | 3 | Adding an MCP tool to the ADK agent | `spike/run_spike.py` |
+
+### Running the spike
+
+Two terminals, both from the repo root:
+
+```powershell
+# Terminal 1 - the CrewAI analyst, served over A2A on port 9001
+.venv\Scripts\python spike\crew_a2a_server.py
+
+# Terminal 2 - the ADK supervisor delegating to it over A2A
+.venv\Scripts\python spike\run_spike.py
+```
+
+The Agent Card is served at
+`http://127.0.0.1:9001/.well-known/agent-card.json`. Card URLs use `127.0.0.1`
+rather than `localhost` on purpose: ADK requires the card's RPC URL to share an
+origin with the URL the card was fetched from.
+
