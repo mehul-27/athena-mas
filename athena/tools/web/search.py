@@ -47,6 +47,22 @@ def resolve_redirect(raw: str) -> str:
     return resolved
 
 
+_AD_URL_MARKERS = ("ad_domain=", "ad_provider=", "aclick", "/y.js")
+
+
+def is_ad_url(url: str) -> bool:
+    """True for advertising/tracking redirects that are not real results.
+
+    The DuckDuckGo scrape returns sponsored blocks among the organic ones; their
+    ``href`` is a click tracker (``duckduckgo.com/y.js?ad_domain=...``) that
+    eventually lands on a ``bing.com/aclick`` hop. None of that is evidence.
+    """
+    lowered = (url or "").lower()
+    if not lowered:
+        return False
+    return any(marker in lowered for marker in _AD_URL_MARKERS)
+
+
 def duckduckgo(query: str, count: int) -> list[WebHit]:
     """Scrape the HTML endpoint. No API key, no quota to configure."""
     response = httpx.get(
@@ -60,12 +76,14 @@ def duckduckgo(query: str, count: int) -> list[WebHit]:
 
     soup = BeautifulSoup(response.text, "html.parser")
     hits: list[WebHit] = []
-    for block in soup.select(".result")[:count]:
+    for block in soup.select(".result"):
+        if len(hits) >= count:
+            break
         link = block.select_one(".result__a")
         if not link:
             continue
         url = resolve_redirect(link.get("href", ""))
-        if not url:
+        if not url or is_ad_url(url):
             continue
         snippet = block.select_one(".result__snippet")
         hits.append(
@@ -91,12 +109,21 @@ def searxng(query: str, count: int) -> list[WebHit]:
         timeout=settings.search_timeout(),
     )
     response.raise_for_status()
-    results = response.json().get("results", [])
-    return [
-        WebHit(title=item.get("title", ""), url=item["url"], snippet=item.get("content", ""))
-        for item in results[:count]
-        if item.get("url")
-    ]
+    hits: list[WebHit] = []
+    for item in response.json().get("results", []):
+        if len(hits) >= count:
+            break
+        url = item.get("url", "")
+        if not url or is_ad_url(url):
+            continue
+        hits.append(
+            WebHit(
+                title=item.get("title", ""),
+                url=url,
+                snippet=item.get("content", ""),
+            )
+        )
+    return hits
 
 
 def web_search(query: str, max_results: int = 5) -> WebResult:

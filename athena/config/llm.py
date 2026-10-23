@@ -33,13 +33,32 @@ os.environ.setdefault("CREWAI_STORAGE_DIR", str(CREWAI_HOME))
 
 DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
 DEFAULT_MAX_TOKENS = 1024
+MAX_RETRIES = 3
+
+# Per-role output budgets. The writer needs room for a whole FinalReport JSON;
+# the others only produce a few lines. Override one role with
+# LLM_MAX_TOKENS_<ROLE> (e.g. LLM_MAX_TOKENS_WRITER=2000).
+ROLE_MAX_TOKENS = {
+    "planner": 400,
+    "researcher": 600,
+    "analyst": 500,
+    "writer": 1500,
+    "critic": 400,
+}
 
 
 def _model_string() -> str:
     return os.getenv("LLM_MODEL") or DEFAULT_MODEL
 
 
-def _max_tokens() -> int:
+def max_tokens_for(role: str | None = None) -> int:
+    """Output cap for a role, then the global LLM_MAX_TOKENS, then a default."""
+    if role:
+        override = os.getenv(f"LLM_MAX_TOKENS_{role.upper()}")
+        if override:
+            return int(override)
+        if role in ROLE_MAX_TOKENS:
+            return ROLE_MAX_TOKENS[role]
     return int(os.getenv("LLM_MAX_TOKENS") or DEFAULT_MAX_TOKENS)
 
 
@@ -49,25 +68,33 @@ def _require_api_key() -> str:
         raise RuntimeError(
             "LLM_API_KEY is not set. Copy .env.example to .env and fill it in."
         )
+    # CrewAI's structured-output path (instructor) builds its own client and
+    # reads the provider key from the environment, ignoring the client we
+    # configured. Export it under the conventional name so both paths work.
+    provider = _model_string().split("/", 1)[0].upper()
+    os.environ[f"{provider}_API_KEY"] = key
     return key
 
 
-def get_adk_model():
+def get_adk_model(role: str | None = None):
     """Return an ADK ``LiteLlm`` model instance for the configured model.
 
     The key is passed explicitly so ADK does not depend on which
     provider-specific environment variable LiteLLM would otherwise look for.
+    ``num_retries`` lets LiteLLM absorb rate-limit and transient failures with
+    exponential backoff; it stops after MAX_RETRIES rather than looping.
     """
     from google.adk.models.lite_llm import LiteLlm
 
     return LiteLlm(
         model=_model_string(),
         api_key=_require_api_key(),
-        max_tokens=_max_tokens(),
+        max_tokens=max_tokens_for(role),
+        num_retries=MAX_RETRIES,
     )
 
 
-def get_crewai_llm():
+def get_crewai_llm(role: str | None = None):
     """Return a CrewAI ``LLM`` instance for the configured model.
 
     CrewAI 1.15.28 stamps an internal prompt-cache marker
@@ -90,6 +117,7 @@ def get_crewai_llm():
     return _CleanMessagesLLM(
         model=_model_string(),
         api_key=_require_api_key(),
-        max_tokens=_max_tokens(),
+        max_tokens=max_tokens_for(role),
+        num_retries=MAX_RETRIES,
     )
 

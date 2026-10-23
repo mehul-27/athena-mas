@@ -7,12 +7,12 @@ implemented yet.
 
 | # | Rule | Status | Notes |
 |---|------|--------|-------|
-| 1 | Blackboard (shared state) for agent context sharing | in progress | Store and schemas done (see `docs/BLACKBOARD.md`); no agent writes to it yet. |
-| 2 | At least two tools exposed via MCP | todo | Stage 3 proves one MCP tool (`add_numbers`); a second is still needed. |
-| 3 | Pydantic structured final output | in progress | `FinalReport` + `to_markdown()` defined; not yet produced by a pipeline. |
+| 1 | Blackboard (shared state) for agent context sharing | done | All five agents read and write it (`docs/BLACKBOARD.md`, `docs/AGENTS.md`). |
+| 2 | At least two tools exposed via MCP | done | Four tools over three stdio servers: `rag_search`, `web_search`, `calculate`, `forecast`. |
+| 3 | Pydantic structured final output | done | The writer produces a validated `FinalReport`; the runner prints `to_markdown()`. |
 | 4 | Configurable agentic patterns (sequential / parallel / hierarchical) | todo | Package `athena/config/` reserved. |
 | 5 | Callback-based monitoring and logging | todo | Package `athena/observability/` reserved. |
-| 6 | A2A between agents, one in ADK and one in CrewAI | in progress | Proven in the Stage 1–3 spike (`spike/`). |
+| 6 | A2A between agents, one in ADK and one in CrewAI | done | Live in the pipeline: ADK supervisor ↔ CrewAI server on `:9001`, run_id-only payloads. |
 | 7 | Only Google ADK and CrewAI as agent frameworks | done | No LangChain/LangGraph/AutoGen installed or used. CrewAI does vendor LangChain internally; we add no agent framework of our own. |
 | 8 | Guardrails | todo | Package `athena/guardrails/` reserved. |
 | 9 | Observability / tracing | todo | — |

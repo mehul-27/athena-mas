@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from athena.blackboard.schemas import (
+    Analysis,
     Citation,
     Critique,
     Draft,
@@ -36,6 +37,7 @@ from athena.blackboard.store import (
 )
 
 __all__ = [
+    "Analysis",
     "Blackboard",
     "BlackboardError",
     "BlackboardStore",

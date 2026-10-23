@@ -5,7 +5,22 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from athena.tools.web.search import web_search
+from athena.tools.web.search import is_ad_url, web_search
+
+DDG_HTML_WITH_AD = """
+<html><body>
+  <div class="result">
+    <a class="result__a" href="//duckduckgo.com/y.js?ad_domain=abebooks.com&ad_provider=bingv7aa&u3=https%3A%2F%2Fwww.bing.com%2Faclick%3Fld%3Dx">
+      Sponsored: NASA Handbook
+    </a>
+    <a class="result__snippet">Buy it now.</a>
+  </div>
+  <div class="result">
+    <a class="result__a" href="https://www.nasa.gov/reference/systems-engineering-handbook/">Real NASA page</a>
+    <a class="result__snippet">The handbook.</a>
+  </div>
+</body></html>
+"""
 
 DDG_HTML = """
 <html><body>
@@ -91,3 +106,23 @@ def test_web_search_reports_unknown_provider(monkeypatch) -> None:
     result = web_search("nasa", max_results=3)
     assert not result.ok
     assert "unsupported" in (result.error or "").lower()
+
+def test_web_search_drops_ad_and_tracking_redirects(monkeypatch) -> None:
+    monkeypatch.setenv("SEARCH_PROVIDER", "duckduckgo")
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: _FakeResponse(DDG_HTML_WITH_AD))
+
+    result = web_search("nasa handbook", max_results=5)
+
+    assert result.ok, result.error
+    assert [hit.url for hit in result.results] == [
+        "https://www.nasa.gov/reference/systems-engineering-handbook/"
+    ]
+    assert all("ad_domain" not in hit.url for hit in result.results)
+
+
+def test_is_ad_url_recognises_trackers() -> None:
+    assert is_ad_url("https://duckduckgo.com/y.js?ad_domain=x")
+    assert is_ad_url("https://www.bing.com/aclick?ld=1")
+    assert is_ad_url("https://example.com/click?ad_provider=bing")
+    assert not is_ad_url("https://www.nasa.gov/reference/systems-engineering-handbook/")
+    assert not is_ad_url("")

@@ -108,6 +108,17 @@ class Critique(_Model):
     approved: bool = Field(description="Whether the draft may go to the user.")
 
 
+class Analysis(_Model):
+    """The analyst's synthesis of the evidence, before anything is written."""
+
+    key_findings: list[str] = Field(
+        default_factory=list, description="What the evidence establishes."
+    )
+    gaps: list[str] = Field(
+        default_factory=list, description="What is missing or unresolved."
+    )
+
+
 class GuardrailFlag(_Model):
     """A guardrail decision recorded for audit."""
 
@@ -131,18 +142,10 @@ class FinalReport(_Model):
     """The structured final answer: the course's required output shape."""
 
     answer: str = Field(description="The answer, in prose, addressed to the user.")
-    key_points: list[str] = Field(
-        default_factory=list, description="The main takeaways, one per item."
-    )
-    citations: list[Citation] = Field(
-        default_factory=list, description="Sources backing the answer."
-    )
-    confidence: float = Field(
-        ge=0.0, le=1.0, description="Self-reported confidence, 0 to 1."
-    )
-    tools_used: list[str] = Field(
-        default_factory=list, description="Names of tools invoked during the run."
-    )
+    key_points: list[str] = Field(default_factory=list, description="The main takeaways.")
+    citations: list[Citation] = Field(default_factory=list, description="Sources backing the answer.")
+    confidence: float = Field(ge=0.0, le=1.0, description="Self-reported confidence, 0 to 1.")
+    tools_used: list[str] = Field(default_factory=list, description="Tools invoked during the run.")
     guardrail_flags: list[GuardrailFlag] = Field(
         default_factory=list, description="Guardrail decisions taken during the run."
     )
@@ -196,6 +199,7 @@ def _cell(text: str) -> str:
 SECTION_MODELS: Final[dict[str, type[BaseModel]]] = {
     "task": Task,
     "plan": Plan,
+    "analysis": Analysis,
     "draft": Draft,
     "critique": Critique,
     "final_report": FinalReport,

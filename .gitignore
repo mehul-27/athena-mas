@@ -18,6 +18,7 @@ pytest-cache-files-*/
 
 # Local scratch
 .tmp/
+.run/
 .uv-cache/
 .crewai/
 .acl-recovery/

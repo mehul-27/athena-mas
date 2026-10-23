@@ -24,6 +24,13 @@ def _evidence_id(prefix: str, key: str) -> str:
     return f"{prefix}-{hashlib.sha256(key.encode('utf-8')).hexdigest()[:12]}"
 
 
+def rag_source_ref(hit) -> str:
+    """``document#p<page>-chunk-<n>`` — the citation handle for a RAG hit."""
+    if hit.page:
+        return f"{hit.document}#p{hit.page}-chunk-{hit.chunk_index}"
+    return f"{hit.document}#chunk-{hit.chunk_index}"
+
+
 def to_evidence_items(result: ToolResult, retrieved_by: str) -> list[EvidenceItem]:
     """Map one tool result onto evidence items attributed to ``retrieved_by``."""
     if not result.ok:
@@ -42,14 +49,11 @@ def to_evidence_items(result: ToolResult, retrieved_by: str) -> list[EvidenceIte
 def _from_rag(result: RagResult, retrieved_by: str) -> list[EvidenceItem]:
     items = []
     for hit in result.hits:
-        ref = f"{hit.document}#chunk-{hit.chunk_index}"
-        if hit.page:
-            ref = f"{hit.document}#p{hit.page}-chunk-{hit.chunk_index}"
         items.append(
             EvidenceItem(
                 id=hit.chunk_id,
                 source_type="rag",
-                source_ref=ref,
+                source_ref=rag_source_ref(hit),
                 content=hit.text,
                 score=hit.score,
                 retrieved_by=retrieved_by,
