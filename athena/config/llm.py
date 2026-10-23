@@ -84,9 +84,9 @@ def get_adk_model(role: str | None = None):
     ``num_retries`` lets LiteLLM absorb rate-limit and transient failures with
     exponential backoff; it stops after MAX_RETRIES rather than looping.
     """
-    from google.adk.models.lite_llm import LiteLlm
+    from athena.config.limited_models import RateLimitedLiteLlm
 
-    return LiteLlm(
+    return RateLimitedLiteLlm(
         model=_model_string(),
         api_key=_require_api_key(),
         max_tokens=max_tokens_for(role),
@@ -97,24 +97,13 @@ def get_adk_model(role: str | None = None):
 def get_crewai_llm(role: str | None = None):
     """Return a CrewAI ``LLM`` instance for the configured model.
 
-    CrewAI 1.15.28 stamps an internal prompt-cache marker
-    (``cache_breakpoint: True``) onto its messages but only strips it on the
-    Anthropic path. Strict providers — Groq among them — reject the unknown
-    message property, so the subclass below removes it before the request
-    leaves the process.
+    The class also strips CrewAI 1.15.28's internal prompt-cache marker, which
+    strict providers (Groq) reject, and puts every call behind the shared token
+    limiter — see ``athena/config/limited_models.py``.
     """
-    from crewai import LLM
-    from crewai.llms.cache import CACHE_BREAKPOINT_KEY
+    from athena.config.limited_models import make_crewai_llm_class
 
-    class _CleanMessagesLLM(LLM):
-        def _format_messages_for_provider(self, messages):
-            cleaned = [
-                {key: value for key, value in msg.items() if key != CACHE_BREAKPOINT_KEY}
-                for msg in messages
-            ]
-            return super()._format_messages_for_provider(cleaned)
-
-    return _CleanMessagesLLM(
+    return make_crewai_llm_class()(
         model=_model_string(),
         api_key=_require_api_key(),
         max_tokens=max_tokens_for(role),

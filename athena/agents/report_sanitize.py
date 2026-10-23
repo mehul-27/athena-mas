@@ -24,9 +24,24 @@ def _summary(item) -> str:
     return text[:180] + ("..." if len(text) > 180 else "")
 
 
-def sanitize_report(report: FinalReport, blackboard: Blackboard, run_id: str) -> FinalReport:
-    """Keep only citations backed by evidence, and derive ``tools_used``."""
-    items = bb_io.load_evidence(blackboard, limit=None)
+def evidence_ids_for(report: FinalReport, items) -> list[str]:
+    """Ids of the evidence items the report actually cites."""
+    cited = {citation.source_ref for citation in report.citations}
+    return [item.id for item in items if item.source_ref in cited]
+
+
+def sanitize_report(
+    report: FinalReport,
+    blackboard: Blackboard,
+    run_id: str,
+    items=None,
+) -> FinalReport:
+    """Keep only citations backed by evidence, and derive ``tools_used``.
+
+    ``items`` lets the p2p supervisor pass the evidence it is carrying, so the
+    sanitizer never has to read the blackboard for it.
+    """
+    items = bb_io.load_evidence(blackboard, limit=None) if items is None else list(items)
     by_ref = {item.source_ref: item for item in items}
 
     citations: list[Citation] = []

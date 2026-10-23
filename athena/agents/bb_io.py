@@ -15,8 +15,23 @@ MAX_EVIDENCE_CHARS = 600
 MAX_PLAN_STEPS = 8
 
 
+_READS_FORBIDDEN = False
+
+
+class BlackboardReadForbidden(RuntimeError):
+    """Raised when an agent that must stay off the blackboard reads it."""
+
+
+def forbid_reads(value: bool = True) -> None:
+    """Test hook: make every read helper raise (p2p agents must not read)."""
+    global _READS_FORBIDDEN
+    _READS_FORBIDDEN = value
+
+
 def section(blackboard: Blackboard, name: str):
     """The current value of a section, or None when it has never been written."""
+    if _READS_FORBIDDEN:
+        raise BlackboardReadForbidden(f"agent read blackboard section {name!r} in p2p mode")
     found = blackboard.read(name)
     return found[0] if found else None
 
@@ -83,6 +98,14 @@ def report_text(blackboard: Blackboard) -> str:
         return "(no final report yet)"
     citations = ", ".join(citation.source_ref for citation in report.citations) or "(none)"
     return f"Answer: {report.answer}\nConfidence: {report.confidence}\nCitations: {citations}"
+
+
+def critique_text(blackboard: Blackboard) -> str:
+    critique = section(blackboard, "critique")
+    if critique is None:
+        return ""
+    issues = "\n".join(f"- {item}" for item in critique.issues) or "- (none listed)"
+    return f"approved={str(critique.approved).lower()} severity={critique.severity}\n{issues}"
 
 
 def evidence_by_ref(blackboard: Blackboard) -> dict[str, EvidenceItem]:

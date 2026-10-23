@@ -16,6 +16,31 @@ from athena.blackboard import Blackboard, BlackboardStore, Draft, FinalReport
 
 Generate = Callable[[str], object]
 
+MAX_ANSWER_WORDS = 150
+TERMINAL = (".", "!", "?", '"', "'", "”", "’", ")")
+SHORTER = (
+    "\n\nYour previous answer was cut off mid-sentence. Rewrite the whole "
+    f"report with an answer of at most 120 words that ends with a full stop."
+)
+
+
+def looks_truncated(answer: str) -> bool:
+    """True when the answer did not finish on a sentence boundary."""
+    text = (answer or "").strip()
+    if not text:
+        return True
+    return not text.endswith(TERMINAL)
+
+
+def _truncate(report: FinalReport) -> FinalReport:
+    """Mark it, and stop claiming confidence we cannot justify."""
+    return report.model_copy(
+        update={
+            "answer": report.answer.rstrip() + " [truncated]",
+            "confidence": min(report.confidence, 0.5),
+        }
+    )
+
 
 def _generate_report(prompt: str) -> FinalReport:
     return _crew_call("writer", "Write a cited research report.", prompt, FinalReport)
@@ -39,13 +64,21 @@ def _fallback_report(run_id: str, exc: Exception) -> FinalReport:
 
 
 def writer_prompt(blackboard: Blackboard, instruction: str) -> str:
+    critique = bb_io.critique_text(blackboard)
+    revision = (
+        f"\n\nPREVIOUS CRITIQUE (fix every listed issue):\n{critique}\n"
+        if critique
+        else ""
+    )
     return (
         f"{instruction}\n\nTASK:\n{bb_io.task_text(blackboard)}\n\n"
         f"PLAN:\n{bb_io.plan_text(blackboard)}\n\n"
         f"EVIDENCE (cite only these source_ref values, exactly as written):\n"
         f"{bb_io.evidence_text(blackboard, limit=8)}\n\n"
-        f"ANALYSIS:\n{bb_io.analysis_text(blackboard)}\n\n"
-        "Write the answer, 3-5 key points, and 1-3 citations whose source_ref is "
+        f"ANALYSIS:\n{bb_io.analysis_text(blackboard)}\n"
+        f"{revision}\n"
+        f"Write an answer of at most {MAX_ANSWER_WORDS} words that ends with a "
+        "full stop, 3-5 key points, and 1-3 citations whose source_ref is "
         "copied verbatim from the evidence lines above. confidence is 0 to 1."
     )
 
@@ -76,6 +109,21 @@ def write_report(
 
     if not isinstance(report, FinalReport):
         report = FinalReport.model_validate(report)
+
+    # A cut-off answer is a real defect: retry once, then mark it.
+    truncated = False
+    if looks_truncated(report.answer):
+        try:
+            retry = generate(prompt + SHORTER)
+            if not isinstance(retry, FinalReport):
+                retry = FinalReport.model_validate(retry)
+            report = retry
+        except Exception:  # noqa: BLE001 - keep the first answer rather than fail
+            pass
+        if looks_truncated(report.answer):
+            report = _truncate(report)
+            truncated = True
+
     report = sanitize_report(report, blackboard, run_id)
 
     cited = {citation.source_ref for citation in report.citations}
@@ -95,4 +143,6 @@ def write_report(
     if fallback:
         ack["fallback"] = True
         ack["note"] = "writer produced invalid output twice; wrote a minimal report"
+    if truncated:
+        ack["truncated"] = True
     return ack

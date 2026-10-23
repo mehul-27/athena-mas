@@ -24,6 +24,15 @@ def _evidence_id(prefix: str, key: str) -> str:
     return f"{prefix}-{hashlib.sha256(key.encode('utf-8')).hexdigest()[:12]}"
 
 
+_REPLACEMENT_CHAR = "\ufffd"
+
+
+def clean_text(text: str) -> str:
+    """PDF extraction leaves U+FFFD where a glyph was lost. Evidence should read
+    as text, so turn that into a plain hyphen instead of a mystery character."""
+    return (text or "").replace(_REPLACEMENT_CHAR, "-")
+
+
 def rag_source_ref(hit) -> str:
     """``document#p<page>-chunk-<n>`` — the citation handle for a RAG hit."""
     if hit.page:
@@ -54,7 +63,7 @@ def _from_rag(result: RagResult, retrieved_by: str) -> list[EvidenceItem]:
                 id=hit.chunk_id,
                 source_type="rag",
                 source_ref=rag_source_ref(hit),
-                content=hit.text,
+                content=clean_text(hit.text),
                 score=hit.score,
                 retrieved_by=retrieved_by,
             )
@@ -68,7 +77,7 @@ def _from_web(result: WebResult, retrieved_by: str) -> list[EvidenceItem]:
             id=_evidence_id("web", hit.url),
             source_type="web",
             source_ref=hit.url,
-            content=f"{hit.title}\n{hit.snippet}".strip(),
+            content=clean_text(f"{hit.title}\n{hit.snippet}".strip()),
             score=None,
             retrieved_by=retrieved_by,
         )

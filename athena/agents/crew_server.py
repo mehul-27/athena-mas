@@ -34,6 +34,7 @@ if __package__ in (None, ""):  # allow `python athena/agents/crew_server.py`
 
 import athena.config.llm  # noqa: F401  (must load before crewai, see crew_roles)
 from athena.agents import crew_roles
+from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report
 from athena.blackboard import Blackboard
 
@@ -51,8 +52,12 @@ def _ack(**fields) -> str:
 
 
 def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
-    """Parse one request, run the role, return a short acknowledgement."""
-    roles = ROLES if roles is None else roles
+    """Parse one request, run the role, return a short acknowledgement.
+
+    A body with ``context`` is a p2p request: the role works from the message
+    alone and returns its output inline. Without ``context`` the role reads and
+    writes the blackboard and returns only section + version.
+    """
     try:
         body = json.loads(text)
     except ValueError:
@@ -63,22 +68,33 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
     run_id = str(body.get("run_id") or "").strip()
     role = str(body.get("role") or "").strip().lower()
     instruction = str(body.get("instruction") or "").strip()
+    p2p = "context" in body
+    context = str(body.get("context") or "")
+    roles = roles if roles is not None else (P2P_ROLES if p2p else ROLES)
 
     if not run_id:
         return _ack(ok=False, error="run_id is required")
     handler = roles.get(role)
     if handler is None:
         return _ack(ok=False, error=f"unknown role {role!r}; expected {sorted(roles)}")
-    if Blackboard.open(run_id, store).read("task") is None:
+    if not p2p and Blackboard.open(run_id, store).read("task") is None:
         return _ack(ok=False, error=f"unknown run_id {run_id!r}")
 
     try:
-        result = handler(run_id, instruction, store=store)
+        if p2p:
+            result = handler(run_id, instruction, store=None, context=context)
+        else:
+            result = handler(run_id, instruction, store=store)
     except Exception as exc:  # noqa: BLE001 - a bad generation is an ack, not a crash
         return _ack(ok=False, role=role, error=f"{type(exc).__name__}: {exc}")
 
-    ack = {"ok": True, "role": role, "section": result.get("section"),
-           "version": result.get("version")}
+    ack: dict = {"ok": True, "role": role}
+    if "section" in result:
+        ack["section"] = result["section"]
+    if "version" in result:
+        ack["version"] = result["version"]
+    if "content" in result:
+        ack["content"] = result["content"]
     if result.get("fallback"):
         ack["fallback"] = True
         ack["note"] = result.get("note", "generation fallback")

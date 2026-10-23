@@ -1,13 +1,14 @@
 """Minimal A2A client used by the ADK stage agents.
 
-Only a run_id, a role and a short instruction travel over A2A. Evidence, drafts
-and transcripts stay in the blackboard; the payload is capped well below the
-600-byte budget the tests assert.
+In blackboard mode the payload is only ``run_id`` + ``role`` + a short
+instruction. In p2p mode it also carries a ``context`` string, because the
+message is the only data path. Byte counters here feed the run summary.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from urllib.parse import urlparse
 
 import httpx
@@ -17,25 +18,46 @@ from a2a.types import Role, SendMessageRequest
 
 INSTRUCTION_LIMIT = 300
 MAX_PAYLOAD_BYTES = 600
+MAX_CONTEXT_CHARS = 6000
+
+_STATS = {"out": 0, "in": 0}
 
 
-def build_payload(run_id: str, role: str, instruction: str) -> str:
+def reset_stats() -> None:
+    _STATS["out"] = 0
+    _STATS["in"] = 0
+
+
+def stats() -> dict[str, int]:
+    return dict(_STATS)
+
+
+def build_payload(run_id: str, role: str, instruction: str, context: str | None = None) -> str:
     """The exact JSON body sent to the CrewAI server."""
-    payload = json.dumps(
-        {
-            "run_id": run_id,
-            "role": role,
-            "instruction": " ".join((instruction or "").split())[:INSTRUCTION_LIMIT],
-        },
-        separators=(",", ":"),
-    )
-    if len(payload.encode("utf-8")) > MAX_PAYLOAD_BYTES:  # pragma: no cover - guarded by the cap
-        raise ValueError(f"A2A payload exceeds {MAX_PAYLOAD_BYTES} bytes")
+    body: dict[str, str] = {
+        "run_id": run_id,
+        "role": role,
+        "instruction": " ".join((instruction or "").split())[:INSTRUCTION_LIMIT],
+    }
+    if context:
+        body["context"] = context[:MAX_CONTEXT_CHARS]
+
+    payload = json.dumps(body, separators=(",", ":"))
+    if context is None and len(payload.encode("utf-8")) > MAX_PAYLOAD_BYTES:
+        raise ValueError(f"blackboard-mode payload exceeds {MAX_PAYLOAD_BYTES} bytes")
     return payload
 
 
-async def send_role_request(card_url: str, payload: str, timeout: float = 300.0) -> str:
-    """Send one payload and return the server's short acknowledgement text."""
+def a2a_timeout() -> float:
+    """A role can wait on the shared limiter before it answers; be patient."""
+    return float(os.getenv("ATHENA_A2A_TIMEOUT") or 900)
+
+
+async def send_role_request(card_url: str, payload: str, timeout: float | None = None) -> str:
+    """Send one payload and return the server's acknowledgement text."""
+    timeout = a2a_timeout() if timeout is None else timeout
+    _STATS["out"] += len(payload.encode("utf-8"))
+
     parsed = urlparse(card_url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
     async with httpx.AsyncClient(timeout=timeout) as http:
@@ -52,4 +74,7 @@ async def send_role_request(card_url: str, payload: str, timeout: float = 300.0)
             text = get_stream_response_text(response)
             if text:
                 chunks.append(text)
-        return "".join(chunks).strip()
+
+    reply = "".join(chunks).strip()
+    _STATS["in"] += len(reply.encode("utf-8"))
+    return reply

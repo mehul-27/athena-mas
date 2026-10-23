@@ -105,14 +105,23 @@ def record_tool_result(
     tool_name: str,
     tool_response: Any,
     store: BlackboardStore | None = None,
+    sink: Any = None,
 ) -> int:
-    """Append the tool's evidence to the blackboard. Returns how many items landed."""
+    """Turn one tool result into evidence. Returns how many items landed.
+
+    ``sink`` is the p2p path: the items are handed to the caller instead of
+    being written to the blackboard, because p2p agents never touch it.
+    """
     result = parse_result(tool_name, tool_response)
     if result is None:
         return 0
     items = to_evidence_items(result, retrieved_by=AUTHOR)
     if not items:
         return 0
+
+    if sink is not None:
+        sink(items)
+        return len(items)
 
     blackboard = Blackboard.open(run_id, store)
     # Idempotent: a retried stage must not duplicate evidence it already wrote.
@@ -129,24 +138,17 @@ def record_tool_result(
     return written
 
 
-def make_evidence_recorder(run_id: str, store: BlackboardStore | None = None):
+def make_evidence_recorder(
+    run_id: str, store: BlackboardStore | None = None, sink: Any = None
+):
     """Build the callback ADK calls after every researcher tool call."""
-    state = {"calls": 0}
-
     def evidence_recorder(tool, args, tool_context, tool_response):
         tool_name = getattr(tool, "name", "")
-        state["calls"] += 1
-        if state["calls"] > MAX_TOOL_CALLS:
-            return {
-                "recorded": 0,
-                "note": f"Tool budget of {MAX_TOOL_CALLS} calls reached. Reply DONE now.",
-            }
-
         result = parse_result(tool_name, tool_response)
         if result is None:
             # Nothing trustworthy arrived: let the model see the original error.
             return None
-        record_tool_result(run_id, tool_name, tool_response, store)
+        record_tool_result(run_id, tool_name, tool_response, store, sink)
         if not result.ok:
             # A failed tool is not evidence, but the model gets a small answer
             # instead of the whole payload it already could not use.
@@ -154,3 +156,32 @@ def make_evidence_recorder(run_id: str, store: BlackboardStore | None = None):
         return compact_result(tool_name, result)
 
     return evidence_recorder
+
+class ToolBudget:
+    """Shared counter so a worker cannot loop on tool calls forever.
+
+    Every tool round-trip is re-sent on the next model call, so an unbounded
+    loop burns the provider quota and the run never ends.
+    """
+
+    def __init__(self, limit: int = MAX_TOOL_CALLS) -> None:
+        self.limit = limit
+        self.calls = 0
+
+    def take(self) -> bool:
+        self.calls += 1
+        return self.calls <= self.limit
+
+
+def make_tool_guard(budget: ToolBudget):
+    """Refuse the tool call once the budget is gone (ADK skips the call)."""
+
+    def before_tool(tool, args, tool_context):
+        if budget.take():
+            return None
+        return {
+            "recorded": 0,
+            "note": f"Tool budget of {budget.limit} calls reached. Reply DONE now.",
+        }
+
+    return before_tool

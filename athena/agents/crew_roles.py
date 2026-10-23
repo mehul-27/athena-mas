@@ -65,7 +65,10 @@ def analyse(
         f"{instruction}\n\nTASK:\n{bb_io.task_text(blackboard)}\n\n"
         f"EVIDENCE (cite ids exactly as shown):\n{bb_io.evidence_text(blackboard)}\n\n"
         "Return key_findings (2-4 short bullets) and gaps (what the evidence does "
-        "not answer)."
+        "not answer).\n"
+        "When you name a source, cite it by its source_ref exactly as shown "
+        "(document name plus page, e.g. nasa_Systems_handbook.pdf#p12-chunk-32). "
+        "Never cite an internal id such as doc_1a2b3c."
     )
     generate = generate or _generate_analysis
     try:
@@ -92,8 +95,14 @@ def critique(
         f"{instruction}\n\nTASK:\n{bb_io.task_text(blackboard)}\n\n"
         f"EVIDENCE:\n{bb_io.evidence_text(blackboard)}\n\n"
         f"REPORT:\n{bb_io.report_text(blackboard)}\n\n"
-        "List concrete issues (empty list if none), pick a severity, and set "
-        "approved=false when anything is unsupported by the evidence."
+        "Grade strictly but fairly:\n"
+        "- approved=true when every claim in the answer is traceable to the "
+        "recorded evidence and the answer is complete.\n"
+        "- approved=false only for concrete issues, and list each one in issues.\n"
+        "- severity is 'high' ONLY for unsupported claims, contradictions with "
+        "the evidence, or a truncated answer. Style and brevity are not 'high'.\n"
+        "- severity 'low' or 'medium' for everything else, with approved=true if "
+        "the answer is still usable."
     )
     generate = generate or _generate_critique
     try:

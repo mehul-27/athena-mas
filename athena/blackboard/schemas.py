@@ -141,7 +141,7 @@ class Citation(_Model):
 class FinalReport(_Model):
     """The structured final answer: the course's required output shape."""
 
-    answer: str = Field(description="The answer, in prose, addressed to the user.")
+    answer: str = Field(description="The answer in prose, addressed to the user, at most 150 words and ending on a complete sentence.")
     key_points: list[str] = Field(default_factory=list, description="The main takeaways.")
     citations: list[Citation] = Field(default_factory=list, description="Sources backing the answer.")
     confidence: float = Field(ge=0.0, le=1.0, description="Self-reported confidence, 0 to 1.")

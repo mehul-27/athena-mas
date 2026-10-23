@@ -7,6 +7,9 @@ structured and validated, never a paragraph the supervisor has to parse.
 
 from __future__ import annotations
 
+import json
+import re
+
 from google.adk.agents import LlmAgent
 
 from athena.agents import bb_io
@@ -14,18 +17,35 @@ from athena.blackboard import Blackboard, BlackboardStore, Plan, PlanStep
 from athena.config.llm import get_adk_model
 
 MAX_STEPS = 4
-OWNERS = {"researcher", "analyst", "writer"}
+WORKER_ROLES = ("rag_researcher", "web_researcher", "calc_researcher")
+DEFAULT_ROLE = "rag_researcher"
 
 INSTRUCTION = """You are the planner in a research pipeline.
 
 Read the question, then call `write_plan` exactly once with 2-4 short steps.
-Each step must be a string in the form "<owner>: <what to do>", where <owner>
-is one of: researcher (gather evidence), analyst (synthesise), writer (draft
-the answer).
+Each step must be a string "<owner>: <what to do>", where <owner> is one of:
+- rag_researcher: search the NASA document corpus
+- web_researcher: search the web for current information
+- calc_researcher: run arithmetic or a forecast over numbers
 
-Cover the whole job: gather, analyse, write. Do not call the tool twice and do
-not answer the question yourself.
+Use at most one step per owner. Do not call the tool twice and do not answer
+the question yourself.
 """
+
+
+def normalise_role(owner: str) -> str:
+    """Map whatever the model wrote onto one of the three worker roles."""
+    cleaned = (owner or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if cleaned in WORKER_ROLES:
+        return cleaned
+    # Common near-misses the model still produces.
+    if "rag" in cleaned or "corpus" in cleaned or "document" in cleaned:
+        return "rag_researcher"
+    if "web" in cleaned or "internet" in cleaned or "online" in cleaned:
+        return "web_researcher"
+    if "calc" in cleaned or "math" in cleaned or "forecast" in cleaned:
+        return "calc_researcher"
+    return DEFAULT_ROLE
 
 
 def parse_steps(raw_steps: list[str]) -> list[PlanStep]:
@@ -33,16 +53,31 @@ def parse_steps(raw_steps: list[str]) -> list[PlanStep]:
     steps: list[PlanStep] = []
     for index, raw in enumerate(raw_steps[:MAX_STEPS], start=1):
         owner, separator, description = str(raw).partition(":")
-        if not separator or owner.strip().lower() not in OWNERS:
-            owner, description = "researcher", str(raw)
+        if not separator:
+            owner, description = DEFAULT_ROLE, str(raw)
         steps.append(
             PlanStep(
                 id=f"s{index}",
                 description=description.strip() or "Investigate the question",
-                assigned_to=owner.strip().lower(),
+                assigned_to=normalise_role(owner),
             )
         )
     return steps
+
+
+def parse_plan_text(text: str) -> list[PlanStep]:
+    """Parse a JSON plan block out of a model reply (p2p mode, no tool)."""
+    match = re.search(r"\{.*\}", text or "", re.DOTALL)
+    if not match:
+        return parse_steps([text[:200] or "Investigate the question"])
+    try:
+        payload = json.loads(match.group(0))
+    except ValueError:
+        return parse_steps([text[:200] or "Investigate the question"])
+    raw = payload.get("steps", []) if isinstance(payload, dict) else payload
+    if not isinstance(raw, list):
+        return parse_steps([str(raw)])
+    return parse_steps([str(item) for item in raw])
 
 
 def build_plan_writer(run_id: str, store: BlackboardStore | None = None):
@@ -59,13 +94,37 @@ def build_plan_writer(run_id: str, store: BlackboardStore | None = None):
     return write_plan
 
 
-def build_planner(run_id: str, store: BlackboardStore | None = None) -> LlmAgent:
-    """The planner agent, bound to one run."""
-    blackboard = Blackboard.open(run_id, store)
+def build_planner(
+    run_id: str,
+    store: BlackboardStore | None = None,
+    task_text: str | None = None,
+    message_mode: bool = False,
+) -> LlmAgent:
+    """The planner agent, bound to one run.
+
+    ``message_mode`` (p2p) removes the blackboard tool: the agent must reply
+    with the plan as JSON, and the supervisor parses it. That keeps p2p agents
+    away from the blackboard entirely.
+    """
+    text = task_text
+    if text is None:
+        text = bb_io.task_text(Blackboard.open(run_id, store))
+
+    if message_mode:
+        instruction = (
+            f"{INSTRUCTION}\nThe task:\n{text}\n\n"
+            'Reply with ONLY JSON: {"steps": ["rag_researcher: ...", '
+            '"web_researcher: ..."]}'
+        )
+        tools = []
+    else:
+        instruction = f"{INSTRUCTION}\nThe task:\n{text}\n"
+        tools = [build_plan_writer(run_id, store)]
+
     return LlmAgent(
         name="planner",
         model=get_adk_model("planner"),
         description="Decomposes the question into a short plan.",
-        instruction=f"{INSTRUCTION}\nThe task:\n{bb_io.task_text(blackboard)}\n",
-        tools=[build_plan_writer(run_id, store)],
+        instruction=instruction,
+        tools=tools,
     )

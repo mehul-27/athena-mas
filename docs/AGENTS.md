@@ -81,3 +81,20 @@ error in its own tool response and can retry. This is implemented in
 - The writer retries once with the validation error appended; if that fails it
   writes a minimal valid `FinalReport` (confidence `0.0`) so the pipeline still
   completes. The runner prints a `writer fallback used` line when this happens.
+## Rate limiting (Step 5)
+
+Both processes share one SQLite-backed sliding window
+(`athena/config/ratelimit.py`). Every model call reserves its estimated input
+tokens and its `max_tokens` before it runs, and settles the real usage after:
+
+- `LLM_ITPM_LIMIT` — input tokens per minute (0 disables).
+- `LLM_OTPM_LIMIT` — output tokens per minute. Providers count the request's
+  `max_tokens`, so a 1500-token writer cannot share a minute with anything
+  else when the plan allows only 1000.
+- `LLM_RATELIMIT_MAX_WAIT_S` — how long a call may wait before it fails with
+  `RateLimitWaitError` instead of hanging.
+
+The hook is the narrowest point both frameworks share: `LiteLlm`'s
+`generate_content_async` for ADK and `LLM.call`/`acall` for CrewAI. The two
+worker-side guards are `before_tool_callback` (refuses a tool call past the
+budget) and `after_tool_callback` (records what the tool returned).
