@@ -6,7 +6,7 @@
 google-adk==2.12.0
 crewai==1.15.28
 
-# Protocols used by the spike
+# Protocols used by the spike and the tools
 a2a-sdk==1.2.3
 mcp==1.28.1
 
@@ -14,13 +14,23 @@ mcp==1.28.1
 # litellm is held below 1.106 on purpose: from 1.106 on, completion() imports
 # its MCP-proxy handler whenever any tool is passed, and that handler needs
 # mcp>=2.2, while crewai pins mcp~=1.28.1. 1.105.3 is the newest release that
-# works with crewai's mcp pin. See the final report / commit message.
+# works with crewai's mcp pin.
 litellm==1.105.3
 python-dotenv==1.2.4
 
 # Serving the A2A spike (a2a-sdk's FastAPI helpers need these)
 fastapi==0.141.1
 uvicorn==0.54.0
+
+# RAG tools: PDF extraction, embeddings, vector store, web search parsing.
+# fastembed pins pillow<13, so pillow moved 13.0.0 -> 12.3.0; `pip check` is clean.
+chromadb==1.5.9
+fastembed==0.9.0
+pypdf==6.21.2
+beautifulsoup4==4.15.0
+
+# Used directly by the calculator/forecast tool
+numpy==2.5.4
 
 # Offline test runner
 pytest==9.1.1

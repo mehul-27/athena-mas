@@ -1,0 +1,41 @@
+id,category,question
+1,Fundamentals,"What does NASA mean by systems engineering, and what broad activities does the discipline cover?"
+2,Fundamentals,"How does NASA define a system, and what kinds of elements can be part of a system?"
+3,Fundamentals,Why does NASA emphasize a whole-system view rather than optimizing individual subsystems independently?
+4,Fundamentals,What are the three sets of common technical processes in NASA's systems engineering engine?
+5,Fundamentals,How are the NASA systems engineering processes applied recursively and iteratively?
+6,Fundamentals,What is the fundamental difference between product verification and product validation?
+7,Fundamentals,Why should validation be performed throughout development rather than only on the final product?
+8,Fundamentals,What role does the Concept of Operations (ConOps) play in systems engineering?
+9,Life Cycle,What is the purpose of Key Decision Points (KDPs) in the NASA program/project life cycle?
+10,Life Cycle,What are the seven major phases of the NASA space flight project life cycle described in the handbook?
+11,Life Cycle,Why are life-cycle phase boundaries useful to NASA project management?
+12,Life Cycle,What is the main purpose of Pre-Phase A in NASA's systems engineering approach?
+13,Life Cycle,How does the systems engineering focus change from Phase C to Phase D?
+14,Life Cycle,What happens to the technical management processes during Phases E and F?
+15,System Design,What are the four system design processes identified by NASA?
+16,System Design,"Why are the four system design processes described as interdependent, iterative, and recursive?"
+17,System Design,What types of information are included when defining stakeholder expectations?
+18,System Design,"How does NASA describe the relationship among architecture, ConOps, and derived requirements during system design?"
+19,System Design,What is the purpose of technical requirements definition?
+20,System Design,What is logical decomposition intended to accomplish?
+21,System Design,What is the purpose of design solution definition?
+22,System Design,How does the depth of design need to support analytical verification?
+23,Product Realization,What are the five product realization processes described by NASA?
+24,Product Realization,In what ways can NASA products be realized?
+25,Product Realization,What does the phrase 'built right' mean in NASA's product realization process?
+26,Product Realization,What does the phrase 'right product' mean in NASA's product realization process?
+27,Product Realization,Why does NASA recommend detecting errors and failures at the lowest practical level of integration?
+28,Product Realization,How should a reused product be treated when it is incorporated into a different system?
+29,Product Realization,Why must test data be examined for trends and anomalies rather than only pass/fail results?
+30,Technical Management,What are the eight crosscutting technical management processes in NASA's systems engineering engine?
+31,Technical Management,What is the purpose of the Technical Planning process?
+32,Technical Management,What is the role of the Systems Engineering Management Plan (SEMP)?
+33,Technical Management,Why is requirements management considered a crosscutting technical management activity?
+34,Technical Management,Why is interface management important in a complex system?
+35,Technical Management,What is the purpose of technical risk management?
+36,Technical Management,What does configuration management control in a NASA project?
+37,Technical Management,Why is technical data management necessary?
+38,Technical Management,What is the purpose of technical assessments?
+39,Technical Management,What is decision analysis intended to provide to NASA project teams?
+40,Integrated / Multi-step,"A project has a design that satisfies its written technical requirements but stakeholders find that it cannot effectively perform the intended mission. According to NASA's framework, which aspect has failed and why?"

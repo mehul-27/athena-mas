@@ -24,6 +24,9 @@ pytest-cache-files-*/
 install.log
 *.log
 
-# Data: keep the directory, ignore the corpus itself
+# Data: the corpus, vector index and model cache stay local.
+# The evaluation CSVs are small and versioned, so they are re-included.
 data/*
 !data/.gitkeep
+!data/eval/
+!data/eval/*.csv

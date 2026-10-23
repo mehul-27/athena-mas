@@ -10,17 +10,39 @@ other over **A2A**, and exposing tools over **MCP**.
 ## Status
 
 This repository is at the **skeleton + interop spike** stage, with the shared
-blackboard and output schemas in place. No product features exist yet; the goal
-right now is to prove that ADK and CrewAI can actually talk to each other, that
-an MCP tool can be attached, and that separate agent processes can share state.
+blackboard, output schemas and the MCP tool servers in place. No product
+features exist yet; the goal right now is to prove that ADK and CrewAI can talk
+to each other, that MCP tools work, and that separate agent processes can share
+state.
 
 - `athena/blackboard/` — shared state store and the Pydantic schemas.
+- `athena/tools/` — three MCP tool servers: RAG search, web search, calculate/forecast.
 - `athena/` — the rest of the package (empty subpackages, reserved by design).
 - `spike/` — throwaway proof-of-concept code for the Stage 1–3 checkpoints.
 - `docs/GUIDELINES.md` — the 11 mandatory project rules and their status.
 
 See [docs/GUIDELINES.md](docs/GUIDELINES.md) for the rules checklist and
 [docs/BLACKBOARD.md](docs/BLACKBOARD.md) for the shared-state design.
+
+## Tools (MCP)
+
+Three stdio servers, each returning a typed Pydantic result rather than a raw
+dict, and reporting failures as `ok=false` instead of raising:
+
+```powershell
+.venv\Scripts\python scripts\ingest_nasa.py    # build data/chroma from data/corpus
+.venv\Scripts\python scripts\demo_tools.py     # call all three servers over stdio
+```
+
+| Server | Tools | Env |
+|---|---|---|
+| `athena/tools/rag_server.py` | `rag_search` | `CHROMA_PATH`, `CORPUS_DIR`, `EMBEDDING_PROVIDER` |
+| `athena/tools/web_server.py` | `web_search` | `SEARCH_PROVIDER` (duckduckgo / searxng / disabled) |
+| `athena/tools/calc_server.py` | `calculate`, `forecast` | — |
+
+`EMBEDDING_PROVIDER=hashing` runs the RAG path with no model download, which is
+what the offline tests use. The NASA corpus PDF is not committed; put it in
+`data/corpus/` (the eval CSVs in `data/eval/` are).
 
 ## Layout
 
