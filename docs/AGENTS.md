@@ -110,3 +110,29 @@ budget) and `after_tool_callback` (records what the tool returned).
   empty reply is reported, not retried again.
 - Reasoning tokens are counted separately from visible output in the event log
   and the metrics.
+
+## When a CrewAI role fails (Step 6e)
+
+A role either produces its section or reports failure — never a placeholder.
+
+- **No placeholder writes.** A failed analyst or critic writes nothing to its
+  blackboard section. Before Step 6e they caught the exception, wrote
+  `gaps=["analysis generation failed: TypeError"]` (or a `medium` critique) and
+  returned success, which is why the ack said `ok:true` while the crew had
+  produced zero tokens.
+- **The ack carries the failure.** `{"ok": false, "role", "error_type",
+  "error": <200 chars, redacted>}`, and the server emits an `error` event with
+  the same type and message.
+- **The run is marked degraded.** The runner prints
+  `WARNING <role> failed: <type>: <msg>` and records `<role>: <type>` in
+  `RunSummary.stage_errors`, which sets `degraded`, which shows in the summary
+  line, the `run_summary` event and the `--compare` table.
+- **Continuing is allowed, silently succeeding is not.** The pipeline continues
+  when the next stage can still work from what the blackboard already holds:
+  a missing analysis is readable (the writer's prompt says
+  "(no analysis yet)"), so the writer and critic still run; a missing evidence
+  section would leave nothing to cite, and the writer falls back to the minimal
+  report. Either way the run is degraded and says so.
+- **A successful call always spends tokens.** An `ok:true` ack with
+  `tokens_in == 0` and `tokens_out == 0` is treated as suspicious and the runner
+  prints `WARNING <role> reported zero tokens`.

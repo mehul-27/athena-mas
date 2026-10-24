@@ -112,13 +112,10 @@ def analyse(
         "Never cite an internal id such as doc_1a2b3c."
     )
     generate = generate or _generate_analysis
-    stats: dict = {}
-    try:
-        analysis, stats = unpack_result(generate(prompt))
-    except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
-        analysis = Analysis(
-            key_findings=[], gaps=[f"analysis generation failed: {type(exc).__name__}"]
-        )
+    # No placeholder on failure: writing a section that looks like real
+    # analysis is what made analyst failures silent. The exception propagates,
+    # the server turns it into ok:false, and nothing is written.
+    analysis, stats = unpack_result(generate(prompt))
     if not isinstance(analysis, Analysis):
         analysis = Analysis.model_validate(analysis)
     version = blackboard.write("analysis", analysis, author="analyst")
@@ -147,15 +144,9 @@ def critique(
         "the answer is still usable."
     )
     generate = generate or _generate_critique
-    stats: dict = {}
-    try:
-        result, stats = unpack_result(generate(prompt))
-    except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
-        result = Critique(
-            issues=[f"critique generation failed: {type(exc).__name__}"],
-            severity="medium",
-            approved=False,
-        )
+    # Same rule as the analyst: a failed critic writes nothing and reports
+    # ok:false. A fabricated "medium severity" critique would silently pass.
+    result, stats = unpack_result(generate(prompt))
     if not isinstance(result, Critique):
         result = Critique.model_validate(result)
     version = blackboard.write("critique", result, author="critic")

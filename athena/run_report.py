@@ -56,3 +56,21 @@ def print_report(blackboard: Blackboard, elapsed: float) -> None:
             f"{entry['seq']:>3}  {entry['author']:<15} {entry['section']:<15} "
             f"{entry['operation']:<9} {entry['version']}"
         )
+
+def ack_warning(text: str) -> str | None:
+    """One warning line for a failed or suspicious role acknowledgement."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+
+    if not body.get("ok", True):
+        return (
+            f"WARNING {body.get('role')} failed: {body.get('error_type', 'Error')}: "
+            f"{str(body.get('error', ''))[:200]}"
+        )
+    if body.get("section") and not (body.get("tokens_in") or body.get("tokens_out")):
+        return f"WARNING {body.get('role')} reported zero tokens"
+    return None

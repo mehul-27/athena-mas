@@ -37,6 +37,7 @@ from athena.agents import crew_roles
 from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report
 from athena.blackboard import Blackboard
+from athena.config.llm import configure_process
 from athena.observability.recorder import Recorder, set_recorder
 from athena.observability.redact import redact
 
@@ -167,6 +168,7 @@ def build_agent_card() -> AgentCard:
 
 
 def create_app(roles: dict | None = None, store=None) -> FastAPI:
+    configure_process()  # export the endpoint and arm the guard
     card = build_agent_card()
     handler = DefaultRequestHandler(
         agent_executor=CrewA2AExecutor(roles, store),

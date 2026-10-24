@@ -111,9 +111,53 @@ def reasoning_effort() -> str:
     return value if value in REASONING_EFFORTS else ""
 
 
+# Litellm resolves a provider base URL from ``<PROVIDER>_API_BASE``; OpenAI also
+# honours the SDK's ``OPENAI_BASE_URL``. Exported so paths that cannot receive
+# api_base as an argument (CrewAI's structured output) still reach the gateway.
+PROVIDER_BASE_VARS = {
+    "openai": ("OPENAI_API_BASE", "OPENAI_BASE_URL"),
+    "groq": ("GROQ_API_BASE",),
+    "deepseek": ("DEEPSEEK_API_BASE",),
+    "gemini": ("GEMINI_API_BASE",),
+    "anthropic": ("ANTHROPIC_API_BASE",),
+    "openrouter": ("OPENROUTER_API_BASE",),
+    "mistral": ("MISTRAL_API_BASE",),
+    "together_ai": ("TOGETHERAI_API_BASE",),
+}
+
+
+def export_endpoint_env() -> list[str]:
+    """Point the provider SDKs at ``LLM_API_BASE`` (process env only, never disk).
+
+    ``InternalInstructor.to_pydantic`` calls litellm with only model/messages, so
+    a structured-output call cannot be told about the gateway directly. These
+    variables are litellm's own mechanism for exactly that case.
+    """
+    base = api_base()
+    if not base:
+        return []
+    prefix = provider_prefix()
+    names = PROVIDER_BASE_VARS.get(prefix, (f"{prefix.upper()}_API_BASE",))
+    exported = []
+    for name in names:
+        if not os.getenv(name):
+            os.environ[name] = base
+            exported.append(name)
+    return exported
+
+
 def api_base() -> str:
     """Optional base URL for OpenAI-compatible providers."""
     return os.getenv("LLM_API_BASE") or ""
+
+
+def configure_process() -> None:
+    """Everything both processes must do before the first model call."""
+    from athena.config.endpoint_guard import install_guard
+
+    _require_api_key()
+    export_endpoint_env()
+    install_guard()
 
 
 def _require_api_key() -> str:
@@ -123,6 +167,7 @@ def _require_api_key() -> str:
             "LLM_API_KEY is not set. Copy .env.example to .env and fill it in."
         )
     export_provider_key(key)
+    export_endpoint_env()
     return key
 
 
@@ -165,7 +210,10 @@ def get_crewai_llm(role: str | None = None):
         api_key=_require_api_key(),
         max_tokens=max_tokens_for(role),
         is_litellm=True,
-        **({"base_url": api_base()} if api_base() else {}),
+                # CrewAI keeps ``base_url`` and ``api_base`` apart and sends the latter
+        # to litellm; setting only ``base_url`` left api_base=None, so the call
+        # fell back to the provider default host. Both are set deliberately.
+        **({"base_url": api_base(), "api_base": api_base()} if api_base() else {}),
         **({"reasoning_effort": reasoning_effort()} if reasoning_effort() else {}),
     )
     _apply_retries(llm)

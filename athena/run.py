@@ -24,9 +24,10 @@ from athena.observability.adk_plugin import MonitoringPlugin
 from athena.observability.hooks import install_hooks
 from athena.agents.a2a_stage import DEFAULT_CARD_URL
 from athena.agents.supervisor import build_supervisor
+from athena.config.llm import configure_process
 from athena.blackboard import Blackboard, Task
 from athena.patterns import VALID_PATTERNS, UnknownPatternError
-from athena.run_report import parts_of, print_report, text_of, tool_lines
+from athena.run_report import ack_warning, parts_of, print_report, text_of, tool_lines
 from athena.summary import RunSummary, finish, format_table, note_ack, summary_line
 from athena.tools import settings
 
@@ -113,14 +114,10 @@ async def _execute(
             if "a2a_payload" in metadata:
                 print(f"    [a2a request] {metadata['a2a_payload_bytes']}B {metadata['a2a_payload']}")
             if event.author in {"analyst", "writer", "critic"} and text.startswith("{"):
-                failure = note_ack(summary, text)
+                note_ack(summary, text)
                 print(f"    [a2a] {text[:160]}")
-                if failure:
-                    print(
-                        f"WARNING {failure.get('role')} failed: "
-                        f"{failure.get('error_type', 'Error')}: "
-                        f"{str(failure.get('error', ''))[:200]}"
-                    )
+                if warning := ack_warning(text):
+                    print(warning)
 
         summary.tool_calls += sum(1 for part in parts_of(event) if part.function_call)
         usage = getattr(event, "usage_metadata", None)
@@ -156,6 +153,7 @@ async def _execute(
 
 
 async def run_one(question: str, pattern: str) -> RunSummary:
+    configure_process()  # export the endpoint and arm the guard
     summary = await _execute(question, pattern, verbose=True)
     print("\n" + summary_line(summary))
     return summary
