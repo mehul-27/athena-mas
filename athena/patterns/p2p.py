@@ -110,7 +110,9 @@ class P2PAgent(BaseAgent):
         except ValueError:
             body = {"ok": False, "error": "server returned a non-JSON reply"}
         if not body.get("ok"):
-            return self._audit_failure(role, str(body.get("error", "unknown error")))
+            # No placeholder write: the ack itself is returned so the runner
+            # sees ok:false, warns, and marks the run degraded.
+            return reply
 
         content = body.get("content", "")
         if role == "analyst":

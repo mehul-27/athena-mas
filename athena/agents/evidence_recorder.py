@@ -106,6 +106,7 @@ def record_tool_result(
     tool_response: Any,
     store: BlackboardStore | None = None,
     sink: Any = None,
+    author: str = AUTHOR,
 ) -> int:
     """Turn one tool result into evidence. Returns how many items landed.
 
@@ -115,7 +116,7 @@ def record_tool_result(
     result = parse_result(tool_name, tool_response)
     if result is None:
         return 0
-    items = to_evidence_items(result, retrieved_by=AUTHOR)
+    items = to_evidence_items(result, retrieved_by=author)
     if not items:
         return 0
 
@@ -132,7 +133,7 @@ def record_tool_result(
     for item in items:
         if item.id in known:
             continue
-        blackboard.append("evidence", item, author=AUTHOR)
+        blackboard.append("evidence", item, author=author)
         known.add(item.id)
         written += 1
     return written
@@ -144,11 +145,13 @@ def make_evidence_recorder(
     """Build the callback ADK calls after every researcher tool call."""
     def evidence_recorder(tool, args, tool_context, tool_response):
         tool_name = getattr(tool, "name", "")
+        # The worker that made the call owns the evidence it produced.
+        author = getattr(tool_context, "agent_name", "") or AUTHOR
         result = parse_result(tool_name, tool_response)
         if result is None:
             # Nothing trustworthy arrived: let the model see the original error.
             return None
-        record_tool_result(run_id, tool_name, tool_response, store, sink)
+        record_tool_result(run_id, tool_name, tool_response, store, sink, author=author)
         if not result.ok:
             # A failed tool is not evidence, but the model gets a small answer
             # instead of the whole payload it already could not use.

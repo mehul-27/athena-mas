@@ -133,7 +133,10 @@ class CrewA2AExecutor(AgentExecutor):
     """Dispatches an A2A message to one CrewAI role."""
 
     def __init__(self, roles: dict | None = None, store=None) -> None:
-        self.roles = roles if roles is not None else ROLES
+        # Keep None: run_role_request picks ROLES or P2P_ROLES from the body.
+        # Defaulting here to ROLES is what sent a p2p request to analyse(),
+        # which does not take a context argument.
+        self.roles = roles
         self.store = store
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:

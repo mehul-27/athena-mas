@@ -22,15 +22,18 @@ from google.adk.tools.mcp_tool import MCPToolset, StdioConnectionParams
 from mcp import StdioServerParameters
 
 from athena.agents import bb_io
-from athena.agents.evidence_recorder import (
-    MAX_TOOL_CALLS,
-    ToolBudget,
-    make_evidence_recorder,
-    make_tool_guard,
-)
+from athena.agents.budget import Budget, make_budget_callbacks
+from athena.agents.evidence_recorder import make_evidence_recorder
 from athena.blackboard import Blackboard, BlackboardStore
 from athena.config.llm import get_adk_model
+from athena.observability.recorder import get_recorder
 from athena.tools.settings import REPO_ROOT
+
+TOOL_DISCIPLINE = (
+    "Call each tool at most once per distinct query. After the tool returns, "
+    "its result is recorded automatically; do not repeat the call, and finish "
+    "with a one-sentence summary."
+)
 
 INSTRUCTION = """You are the researcher. Gather evidence for the task below.
 
@@ -91,14 +94,18 @@ def build_researcher(
     text = task_text if task_text is not None else bb_io.task_text(
         Blackboard.open(run_id, store)
     )
-    budget = ToolBudget(MAX_TOOL_CALLS)
+    budget = Budget.from_env()
+    before_model, before_tool = make_budget_callbacks(budget, get_recorder(), "researcher")
     return LlmAgent(
         name="researcher",
         model=get_adk_model("researcher"),
         description="Gathers evidence with the RAG, web and calculator tools.",
-        instruction=f"{INSTRUCTION}\nThe task:\n{text}\n",
+        instruction=(
+            f"{INSTRUCTION}\n{TOOL_DISCIPLINE}\nThe task:\n{text}\n"
+        ),
         tools=[build_toolset(SERVERS[key]) for key in ("rag", "web", "calc")],
-        before_tool_callback=make_tool_guard(budget),
+        before_model_callback=before_model,
+        before_tool_callback=before_tool,
         after_tool_callback=make_evidence_recorder(run_id, store, sink=sink),
     )
 
@@ -114,15 +121,19 @@ def build_role_researcher(
     text = task_text if task_text is not None else bb_io.task_text(
         Blackboard.open(run_id, store)
     )
-    budget = ToolBudget(MAX_TOOL_CALLS)
+    budget = Budget.from_env()
+    before_model, before_tool = make_budget_callbacks(budget, get_recorder(), role)
     return LlmAgent(
         name=role,
         model=get_adk_model("researcher"),
         description=f"The {role} worker.",
-        instruction=f"You are the {role}. {ROLE_INSTRUCTIONS[role]}\n"
-        f"The task:\n{text}\nReply DONE when finished.",
+        instruction=(
+            f"You are the {role}. {ROLE_INSTRUCTIONS[role]}\n{TOOL_DISCIPLINE}\n"
+            f"The task:\n{text}\nReply DONE when finished."
+        ),
         tools=[build_toolset(SERVERS[ROLE_SERVER[role]])],
-        before_tool_callback=make_tool_guard(budget),
+        before_model_callback=before_model,
+        before_tool_callback=before_tool,
         after_tool_callback=make_evidence_recorder(run_id, store, sink=sink),
     )
 

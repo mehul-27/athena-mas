@@ -151,3 +151,23 @@ are ADK-side — hierarchical and p2p), so this costs no throughput today. If a
 future pattern needs concurrent CrewAI roles, the accounting must move to a
 per-call id (for example the `litellm` call's `metadata`), not to a global
 delta.
+
+## Stubs must not replace the function under test (Step 6j)
+
+A stub that replaces the function you are testing accepts every argument and
+returns every shape, so it cannot catch a signature mismatch. The p2p pattern
+shipped a call to `analyse(..., context=...)` that the real function rejects,
+and the tests passed because they stubbed the roles.
+
+Rules:
+
+- Stub the **layer below** the unit under test (the model call, the HTTP
+  client, the blackboard store), never the function whose contract you mean to
+  check.
+- If a call site and a function can drift, bind them in a test:
+  `inspect.signature(fn).bind(**kwargs_as_production_calls_it)`.
+  `tests/test_contract_real_functions.py` does exactly that for the role
+  functions.
+- When a whole path is stubbed for speed, keep at least one test that runs the
+  real functions end to end against a fake provider
+  (`tests/fake_provider.py`).
