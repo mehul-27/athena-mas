@@ -28,12 +28,14 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
     """
     # athena.config.llm must load first: importing it points CrewAI's storage at
     # the repo before `import crewai` creates %LOCALAPPDATA%\CrewAI.
+    import math
     import time
 
     from athena.config.llm import get_crewai_llm
     from crewai import Agent, Crew, Process, Task
 
     from athena.observability.litellm_usage import usage_scope
+    from athena.observability.usage_hook import install_usage_logger
     from athena.observability.redact import redact
     from athena.observability.recorder import get_recorder
 
@@ -57,7 +59,9 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
             output_pydantic=schema,
         )
         crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-        # Every litellm call inside kickoff lands in this scope.
+        # Building the LLM reset litellm.callbacks (crewai/llm.py:707), so the
+        # hook is re-asserted here, after construction and before the call.
+        install_usage_logger()
         with usage_scope(role) as scope:
             output = crew.kickoff()
     except Exception as exc:
@@ -82,6 +86,22 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
     tokens_out = max(crew_out or 0, scope.tokens_out if scope else 0) or None
     reasoning = max(crew_reasoning or 0, scope.reasoning_tokens if scope else 0) or None
     calls = scope.calls if scope else 0
+
+    # Last resort: the hook never fired but the role produced text. Mark the
+    # numbers as estimates so nothing downstream mistakes them for measured.
+    estimated = False
+    reply_text = str(getattr(output, "raw", "") or "")
+    if not calls and reply_text.strip():
+        tokens_in = tokens_in or math.ceil(len(prompt) / 4)
+        tokens_out = tokens_out or math.ceil(len(reply_text) / 4)
+        reasoning = reasoning or 0
+        estimated = True
+
+    print(
+        f"usage scope {role}: calls={calls} tokens={tokens_in or 0}/"
+        f"{tokens_out or 0} reasoning={reasoning or 0}"
+        + (" (estimated)" if estimated else "")
+    )
     if recorder is not None:
         recorder.emit(
             "model_call", role, "crewai", duration_ms=duration_ms,
@@ -95,6 +115,7 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
         "reasoning_tokens": reasoning or 0,
         "calls": calls,
         "model_ms": int(duration_ms),
+        **({"estimated": True} if estimated else {}),
     }
     return output.pydantic, stats
 

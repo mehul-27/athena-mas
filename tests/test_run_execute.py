@@ -11,8 +11,6 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-import pytest
-
 import athena.run as runner_mod
 
 

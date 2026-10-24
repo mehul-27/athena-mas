@@ -17,11 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from athena.config import llm  # noqa: E402
 from athena.config.endpoint_guard import host_of  # noqa: E402
-from athena.observability.litellm_usage import (  # noqa: E402
-    install_usage_logger,
-    usage_scope,
-)
+from athena.observability.litellm_usage import usage_scope  # noqa: E402
 from athena.observability.redact import redact  # noqa: E402
+from athena.observability.usage_hook import install_usage_logger  # noqa: E402
 
 PROMPT = "Say OK"
 MAX_TOKENS = 300
@@ -58,7 +56,10 @@ class ProbeResult:
         if not self.ok:
             return f"FAILED {self.error_type or 'Error'}: {self.error_message[:120]}"
         prefix = f"ok ({self.reply_chars} chars)"
-        return f"{prefix} USAGE NOT CAPTURED" if self.usage_missing else prefix
+        if not self.usage_missing:
+            return prefix
+        suffix = " (server path)" if self.path == "crewai-server-style" else ""
+        return f"{prefix} USAGE NOT CAPTURED{suffix}"
 
 
 def failure(path: str, host: str, exc: BaseException) -> ProbeResult:
@@ -84,7 +85,7 @@ class PathInfo:
 
 def describe_paths() -> list[tuple[PathInfo, Callable[[], ProbeResult]]]:
     """Build every path's model object once, plus its live probe."""
-    return [_adk_path(), _crew_path(), _structured_path()]
+    return [_adk_path(), _crew_path(), _structured_path(), _server_path()]
 
 
 def _adk_path() -> tuple[PathInfo, Callable[[], ProbeResult]]:
@@ -174,6 +175,44 @@ def probe_crew(info: PathInfo, client: Any, structured: bool) -> ProbeResult:
         result.tokens_out = scope.tokens_out
         result.reasoning_tokens = scope.reasoning_tokens
         result.calls = scope.calls
+    except Exception as exc:  # noqa: BLE001 - the report is the point
+        return failure(info.name, info.host, exc)
+    return result
+
+def _server_path() -> tuple[PathInfo, Callable[[], ProbeResult]]:
+    """The path the A2A server actually takes: crew_call in a worker thread."""
+    info = PathInfo(
+        "crewai-server-style",
+        host_of(llm.api_base() or ""),
+        llm._model_string(),
+        "crew_call via asyncio.to_thread (what the server runs)",
+    )
+    return info, lambda: probe_server(info)
+
+
+def probe_server(info: PathInfo) -> ProbeResult:
+    """Run the real role code path, exactly as the server does."""
+    from athena.agents.crew_roles import crew_call
+
+    result = ProbeResult(path=info.name, host=info.host)
+
+    try:
+        from pydantic import BaseModel
+
+        class Tiny(BaseModel):
+            text: str
+
+        async def run():
+            return await asyncio.to_thread(
+                crew_call, "analyst", "Reply with the single word OK.", PROMPT, Tiny
+            )
+
+        reply, stats = asyncio.run(run())
+        result.reply_chars = len(str(reply))
+        result.tokens_in = int(stats.get("tokens_in") or 0)
+        result.tokens_out = int(stats.get("tokens_out") or 0)
+        result.reasoning_tokens = int(stats.get("reasoning_tokens") or 0)
+        result.calls = int(stats.get("calls") or 0)
     except Exception as exc:  # noqa: BLE001 - the report is the point
         return failure(info.name, info.host, exc)
     return result

@@ -14,7 +14,7 @@ from athena.agents.a2a_stage import A2AStageAgent
 from athena.agents.crew_server import run_role_request
 from athena.blackboard import Blackboard, SQLiteStore, Task, set_write_listener
 from athena.observability.adk_plugin import MonitoringPlugin
-from athena.observability.hooks import _on_write, install_hooks
+from athena.observability.hooks import install_hooks
 from athena.observability.recorder import Recorder, set_recorder
 from athena.observability.store import SQLiteEventStore
 

@@ -136,3 +136,18 @@ A role either produces its section or reports failure — never a placeholder.
 - **A successful call always spends tokens.** An `ok:true` ack with
   `tokens_in == 0` and `tokens_out == 0` is treated as suspicious and the runner
   prints `WARNING <role> reported zero tokens`.
+
+## Usage accounting is serialised (Step 6h)
+
+Token usage for CrewAI roles is a **delta of process-global counters**, because
+CrewAI resets `litellm.callbacks` whenever it builds an LLM and the callback can
+fire on any thread. A delta is only meaningful if one scoped role runs at a
+time, so `usage_scope` holds a process lock for the duration of a role call.
+
+Consequence: two A2A requests to the same CrewAI server are serialised for the
+length of the role. The pipeline runs CrewAI roles sequentially in every
+pattern (sequential, parallel — only the researchers run concurrently, and they
+are ADK-side — hierarchical and p2p), so this costs no throughput today. If a
+future pattern needs concurrent CrewAI roles, the accounting must move to a
+per-call id (for example the `litellm` call's `metadata`), not to a global
+delta.

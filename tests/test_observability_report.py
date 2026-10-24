@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import csv
-from pathlib import Path
 
-import pytest
 
 from athena.observability.events import Event
 from athena.observability.heatmap import render_heatmap

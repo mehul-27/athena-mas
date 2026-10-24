@@ -39,6 +39,7 @@ class AgentRow:
     limiter_wait_ms: float = 0.0
     a2a_bytes: int = 0
     evidence_items: int = 0
+    estimated_calls: int = 0
     runs: int = 1
     stage_ms_list: list[float] = field(default_factory=list)
     a2a_tokens_in: int = 0
@@ -86,6 +87,8 @@ def agent_metrics(run_ids: Iterable[str], events_by_run: dict[str, list[Event]] 
                 row.tokens_in += event.tokens_in or 0
                 row.tokens_out += event.tokens_out or 0
                 row.reasoning_tokens += int(event.extra.get("reasoning_tokens") or 0)
+                if event.extra.get("estimated"):
+                    row.estimated_calls += 1
             elif event.kind == "tool_call":
                 row.tool_calls += 1
             elif event.kind == "error":
@@ -121,14 +124,15 @@ def agent_metrics(run_ids: Iterable[str], events_by_run: dict[str, list[Event]] 
 def format_metrics(rows: list[AgentRow]) -> str:
     """Plain-text table, one line per agent."""
     widths = {"agent": 15, "stage_ms": 9, "calls": 6, "in": 8, "out": 8,
-              "reason": 7, "tools": 6, "err": 4, "wait_ms": 9, "a2a_b": 8, "evid": 5}
+              "reason": 7, "tools": 6, "err": 4, "wait_ms": 9, "a2a_b": 8,
+              "evid": 5, "est": 4}
     header = (
         f"{'agent':<{widths['agent']}} {'stage_ms':>{widths['stage_ms']}} "
         f"{'models':>{widths['calls']}} {'tok_in':>{widths['in']}} "
         f"{'tok_out':>{widths['out']}} {'reason':>{widths['reason']}} "
         f"{'tools':>{widths['tools']}} {'err':>{widths['err']}} "
         f"{'wait_ms':>{widths['wait_ms']}} {'a2a_b':>{widths['a2a_b']}} "
-        f"{'evid':>{widths['evid']}}"
+        f"{'evid':>{widths['evid']}} {'est':>{widths['est']}}"
     )
     lines = [header, "-" * len(header)]
     for row in rows:
@@ -139,6 +143,8 @@ def format_metrics(rows: list[AgentRow]) -> str:
             f"{row.reasoning_tokens:>{widths['reason']}} "
             f"{row.tool_calls:>{widths['tools']}} {row.errors:>{widths['err']}} "
             f"{row.limiter_wait_ms:>{widths['wait_ms']}.0f} "
-            f"{row.a2a_bytes:>{widths['a2a_b']}} {row.evidence_items:>{widths['evid']}}"
+            f"{row.a2a_bytes:>{widths['a2a_b']}} {row.evidence_items:>{widths['evid']}} "
+            # A star means at least one of this agent's numbers was estimated.
+            f"{('*' if row.estimated_calls else ''):>{widths['est']}}"
         )
     return "\n".join(lines)

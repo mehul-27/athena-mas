@@ -38,7 +38,7 @@ from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report
 from athena.blackboard import Blackboard
 from athena.config.llm import configure_process
-from athena.observability.litellm_usage import install_usage_logger
+from athena.observability.usage_hook import callback_count, install_usage_logger
 from athena.observability.recorder import Recorder, set_recorder
 from athena.observability.redact import redact
 
@@ -174,6 +174,7 @@ def create_app(roles: dict | None = None, store=None) -> FastAPI:
     configure_process()  # export the endpoint and arm the guard
     # CrewAI calls end in litellm, so usage is captured there, not in CrewOutput.
     install_usage_logger()
+    print(f"usage logger installed (callbacks: {callback_count()})")
     card = build_agent_card()
     handler = DefaultRequestHandler(
         agent_executor=CrewA2AExecutor(roles, store),

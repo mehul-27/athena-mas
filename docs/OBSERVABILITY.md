@@ -107,3 +107,47 @@ retry.
 also echoed in the A2A ack). `tokens_out` stays the **total** completion count,
 reasoning included, so `tokens_out - reasoning_tokens` is the visible output.
 The metrics table, the heatmap and its CSV all carry the column.
+
+## CrewAI usage capture: why the scope was empty
+
+Step 6f captured usage in `scripts/preflight.py` but recorded `calls == 0` in
+the real server. The causes were checked one by one against the installed
+sources:
+
+| # | Candidate | Verdict |
+|---|---|---|
+| a | logger never installed at server startup | **No.** `python -m athena.agents.crew_server` (`crew_server.py:193`) calls `create_app()`, which runs `configure_process()` and `install_usage_logger()` in the serving process. uvicorn runs one process, no reload. |
+| b | litellm dispatches callbacks on another thread/task | **No for these calls.** `success_handler` (`litellm_core_utils/litellm_logging.py:2786`) runs `_success_handler_body` inline on the completing thread; the async path likewise. It is still an assumption worth removing, and the redesign no longer depends on it. |
+| c | crewai runs the call in a thread without context copy | **No.** The scope in `_crew_call` was opened in the same thread that runs `crew.kickoff()`, so the ContextVar was visible. |
+| d | crewai replaces `litellm.callbacks` | **YES — the cause.** |
+| e | no fallback when the hook misses | **Yes, contributing.** `CrewOutput.token_usage` is empty on the `is_litellm` path, so nothing covered for it. |
+
+Cause (d), concretely: `crewai/llm.py:704-709` is a
+`@model_validator(mode="after")` named `_init_litellm` that runs on **every LLM
+construction** and calls `self.set_callbacks(self.callbacks or [])`.
+`LLM.set_callbacks` (`crewai/llm.py:2496`) finishes with
+`litellm.callbacks = callbacks` (`crewai/llm.py:2519`) — a wholesale
+**replacement** of the global list with the LLM's own, which is empty.
+
+`_crew_call` builds a fresh LLM for every role, so the sequence was: install our
+logger at startup ? construct the LLM ? CrewAI wipes `litellm.callbacks` ?
+`kickoff()` runs with no logger. Preflight escaped this only because its probe
+re-asserts the logger *after* building the client and then calls `client.call`
+directly, which never re-runs `_init_litellm`.
+
+### The design that does not depend on that
+
+- The hook adds every completion to a **process-global, lock-protected** total
+  (`TOTALS`), whatever thread it fires on and whether or not a scope exists.
+- `usage_scope(role)` snapshots the totals on entry and reports the **delta** on
+  exit, so it does not matter which thread produced the call.
+- `install_usage_logger()` is re-asserted immediately before `kickoff()`, after
+  the LLM has been constructed and the callback list reset.
+- A process lock serialises scoped roles, which is what makes a delta
+  unambiguous. The pipeline runs CrewAI roles sequentially in every pattern, so
+  this costs no throughput.
+- On exit the scope waits briefly (`ATHENA_USAGE_SETTLE_S`, default 2 s) for a
+  late async callback before computing the delta.
+- If no call was seen but the role returned text, the numbers become an
+  **estimate** (`tokens = ceil(chars / 4)`, `"estimated": true`), and the runner
+  warns. Real measurements always win.

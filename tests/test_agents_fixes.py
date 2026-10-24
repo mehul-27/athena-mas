@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from athena.agents.crew_roles import _generate_analysis, analyse, critique
+from athena.agents.crew_roles import analyse, critique
 from athena.agents.crew_writer import looks_truncated, write_report, writer_prompt
 from athena.agents.planner import WORKER_ROLES, normalise_role, parse_plan_text, parse_steps
 from athena.blackboard import Blackboard, EvidenceItem, FinalReport, SQLiteStore, Task

@@ -71,6 +71,8 @@ def ack_warning(text: str) -> str | None:
             f"WARNING {body.get('role')} failed: {body.get('error_type', 'Error')}: "
             f"{str(body.get('error', ''))[:200]}"
         )
+    if body.get("estimated"):
+        return f"WARNING {body.get('role')} usage estimated (hook did not fire)"
     if body.get("section") and not (body.get("tokens_in") or body.get("tokens_out")):
         return f"WARNING {body.get('role')} reported zero tokens"
     return None

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from athena.tools.web.search import is_ad_url, web_search
 

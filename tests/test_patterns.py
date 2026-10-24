@@ -99,7 +99,7 @@ def test_every_pattern_builds_with_stubs(monkeypatch) -> None:
     monkeypatch.setattr(p2p, "build_planner", stub, raising=False)
     monkeypatch.setattr(p2p, "build_researcher", stub, raising=False)
 
-    store = SQLiteStore(":memory:") if False else None
+
     for name in VALID_PATTERNS:
         assert build_pattern(name, "run-stub") is not None
 
