@@ -126,6 +126,9 @@ PROVIDER_BASE_VARS = {
 }
 
 
+_EXPORTED_BASE: dict[str, str] = {}
+
+
 def export_endpoint_env() -> list[str]:
     """Point the provider SDKs at ``LLM_API_BASE`` (process env only, never disk).
 
@@ -140,8 +143,12 @@ def export_endpoint_env() -> list[str]:
     names = PROVIDER_BASE_VARS.get(prefix, (f"{prefix.upper()}_API_BASE",))
     exported = []
     for name in names:
-        if not os.getenv(name):
+        current = os.getenv(name)
+        # Update our own previous value (a stale export is worse than none), but
+        # never overwrite a base URL the user set themselves.
+        if not current or _EXPORTED_BASE.get(name) == current:
             os.environ[name] = base
+            _EXPORTED_BASE[name] = base
             exported.append(name)
     return exported
 

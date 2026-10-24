@@ -151,3 +151,39 @@ directly, which never re-runs `_init_litellm`.
 - If no call was seen but the role returned text, the numbers become an
   **estimate** (`tokens = ceil(chars / 4)`, `"estimated": true`), and the runner
   warns. Real measurements always win.
+
+### Why the callback never fired in the server (Step 6i)
+
+Reproduced offline against a fake OpenAI-compatible provider, real crewai and
+real litellm:
+
+```
+callbacks before role: ['UsageLogger']
+usage scope analyst: calls=0 tokens=101/10 reasoning=0 (estimated)
+callbacks after role: ['TokenCalcHandler']
+```
+
+- **(b) was not the problem**: the request reached the provider at
+  `POST /v1/chat/completions`, so the call does go through
+  `litellm.completion`; it is not a native client or a Router.
+- **(a)/(d) were the problem**: CrewAI installs its own callback list.
+  `LLM.set_callbacks` (`crewai/llm.py:2496`) ends with
+  `litellm.callbacks = callbacks` (`crewai/llm.py:2519`) and is called from
+  `_init_litellm` (`crewai/llm.py:707`) as well as from the task/agent path
+  (`crewai/llm.py:1871`, `crewai/llm.py:2016`). Re-asserting our logger before
+  `kickoff()` (Step 6h) is therefore not enough: the list is replaced again
+  *during* the call, with `TokenCalcHandler`.
+- **(c) was not the cause**: a thread-local scope would have been fine; the
+  numbers were missing because no hook ran at all.
+
+**Capture layer chosen: the endpoint-guard wrapper** around
+`litellm.completion`/`litellm.acompletion`. It is the one place every call must
+pass through, it receives the response object, and it cannot be unregistered by
+anything. The `CustomLogger` stays installed as a second pair of eyes, and both
+feed the same totals through `record_once()`, which dedupes by response id so a
+call seen twice is counted once.
+
+The estimate flag was also being dropped: `run_role_request` copied a fixed list
+of ack keys and `estimated` was not in it, so the runner never saw it. It is
+copied now, the runner warns, the metrics table marks the row, and the summary
+line reports `cost basis: measured` or `cost basis: partly estimated`.

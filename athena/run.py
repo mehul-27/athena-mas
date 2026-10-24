@@ -10,11 +10,11 @@ import argparse
 import asyncio
 import csv
 from dataclasses import asdict
-import os
 import sys
 import time
 
 from google.adk.agents.run_config import RunConfig
+from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
@@ -24,6 +24,7 @@ from athena.observability.adk_plugin import MonitoringPlugin
 from athena.observability.hooks import install_hooks
 from athena.agents.a2a_stage import DEFAULT_CARD_URL
 from athena.agents.supervisor import build_supervisor
+from athena.config.caps import cap_message, llm_call_cap
 from athena.config.llm import configure_process
 from athena.blackboard import Blackboard, Task
 from athena.patterns import VALID_PATTERNS, UnknownPatternError
@@ -92,7 +93,8 @@ async def _execute(
 
     # A hard ceiling on model calls: a model that keeps re-calling a refused
     # tool would otherwise loop until the provider quota runs out.
-    run_config = RunConfig(max_llm_calls=int(os.getenv("ATHENA_MAX_LLM_CALLS") or 12))
+    cap = llm_call_cap(pattern)
+    run_config = RunConfig(max_llm_calls=cap)
 
     async for event in runner.run_async(
         user_id=USER_ID,
@@ -154,8 +156,27 @@ async def _execute(
 
 async def run_one(question: str, pattern: str) -> RunSummary:
     configure_process()  # export the endpoint and arm the guard
-    summary = await _execute(question, pattern, verbose=True)
+    try:
+        summary = await _execute(question, pattern, verbose=True)
+    except LlmCallsLimitExceededError:
+        return _cap_reached(pattern)
     print("\n" + summary_line(summary))
+    return summary
+
+
+def _cap_reached(pattern: str) -> RunSummary:
+    """A capped run is a failed run: say so plainly, no traceback."""
+    cap = llm_call_cap(pattern)
+    print("\n" + cap_message(pattern, cap), file=sys.stderr)
+    recorder = Recorder.for_run(f"cap-{pattern}")
+    recorder.emit(
+        "error", "supervisor", "adk", ok=False,
+        error_type="LlmCallsLimitExceededError",
+        error_message=f"cap {cap} reached for pattern {pattern}",
+    )
+    summary = RunSummary(pattern=pattern, run_id=f"cap-{pattern}")
+    summary.failed = True
+    summary.degraded = True
     return summary
 
 
@@ -198,7 +219,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.compare:
             asyncio.run(run_compare(question))
         else:
-            asyncio.run(run_one(question, args.pattern))
+            summary = asyncio.run(run_one(question, args.pattern))
+            if summary.failed:
+                return 2
     except UnknownPatternError as exc:
         raise SystemExit(str(exc)) from exc
     return 0

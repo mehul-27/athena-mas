@@ -8,6 +8,8 @@ call ``install_usage_logger()`` again right before a role runs.
 
 from __future__ import annotations
 
+import threading
+
 from athena.observability.litellm_usage import TOTALS, usage_from_response
 
 _LOGGER = None
@@ -20,6 +22,28 @@ def record(response_obj) -> None:
     except Exception:  # noqa: BLE001 - monitoring must never break a call
         return
     TOTALS.add(tokens_in, tokens_out, reasoning)
+
+
+_SEEN: set[str] = set()
+_SEEN_LOCK = threading.Lock()
+SEEN_LIMIT = 500
+
+
+def record_once(response_obj) -> None:
+    """Count a response once, even if two layers see it (dedupe by id)."""
+    response_id = None
+    if isinstance(response_obj, dict):
+        response_id = response_obj.get("id")
+    else:
+        response_id = getattr(response_obj, "id", None)
+    if response_id:
+        with _SEEN_LOCK:
+            if response_id in _SEEN:
+                return
+            if len(_SEEN) >= SEEN_LIMIT:
+                _SEEN.clear()
+            _SEEN.add(response_id)
+    record(response_obj)
 
 
 def build_logger():

@@ -58,7 +58,7 @@ class ProbeResult:
         prefix = f"ok ({self.reply_chars} chars)"
         if not self.usage_missing:
             return prefix
-        suffix = " (server path)" if self.path == "crewai-server-style" else ""
+        suffix = " (real role path)" if self.path == "crewai-server-style" else ""
         return f"{prefix} USAGE NOT CAPTURED{suffix}"
 
 
@@ -185,34 +185,37 @@ def _server_path() -> tuple[PathInfo, Callable[[], ProbeResult]]:
         "crewai-server-style",
         host_of(llm.api_base() or ""),
         llm._model_string(),
-        "crew_call via asyncio.to_thread (what the server runs)",
+        "analyse() via asyncio.to_thread (what the server runs)",
     )
     return info, lambda: probe_server(info)
 
 
 def probe_server(info: PathInfo) -> ProbeResult:
-    """Run the real role code path, exactly as the server does."""
-    from athena.agents.crew_roles import crew_call
+    """Run the real role function, exactly as the server does."""
+    from tempfile import mkdtemp
+
+    from athena.agents.crew_roles import analyse
+    from athena.blackboard import Blackboard, SQLiteStore, Task
 
     result = ProbeResult(path=info.name, host=info.host)
 
     try:
-        from pydantic import BaseModel
-
-        class Tiny(BaseModel):
-            text: str
+        store = SQLiteStore(Path(mkdtemp(dir=".run" if Path(".run").is_dir() else None)) / "preflight.db")
+        blackboard = Blackboard.create(Task(question="Say OK."), store=store)
 
         async def run():
             return await asyncio.to_thread(
-                crew_call, "analyst", "Reply with the single word OK.", PROMPT, Tiny
+                analyse, blackboard.run_id, "Reply with the single word OK.", store
             )
 
-        reply, stats = asyncio.run(run())
-        result.reply_chars = len(str(reply))
-        result.tokens_in = int(stats.get("tokens_in") or 0)
-        result.tokens_out = int(stats.get("tokens_out") or 0)
-        result.reasoning_tokens = int(stats.get("reasoning_tokens") or 0)
-        result.calls = int(stats.get("calls") or 0)
+        ack = asyncio.run(run())
+        result.reply_chars = 2  # the role returns an ack, not the text
+        result.tokens_in = int(ack.get("tokens_in") or 0)
+        result.tokens_out = int(ack.get("tokens_out") or 0)
+        result.reasoning_tokens = int(ack.get("reasoning_tokens") or 0)
+        result.calls = int(ack.get("calls") or 0)
+        if ack.get("estimated"):
+            result.calls = 0  # forces the USAGE NOT CAPTURED verdict
     except Exception as exc:  # noqa: BLE001 - the report is the point
         return failure(info.name, info.host, exc)
     return result

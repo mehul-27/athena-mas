@@ -87,11 +87,22 @@ def install_guard() -> bool:
 
     import litellm
 
+    def capture(result):
+        """Count usage at the one layer every call must pass through."""
+        try:
+            from athena.observability.usage_hook import record_once
+
+            record_once(result)
+        except Exception:  # noqa: BLE001 - monitoring must never break a call
+            pass
+
     def wrap(function):
         def guarded(*args, **kwargs):
             model = kwargs.get("model") or (args[0] if args else "")
             check_call(str(model), kwargs)
-            return function(*args, **kwargs)
+            result = function(*args, **kwargs)
+            capture(result)
+            return result
 
         return guarded
 
@@ -99,7 +110,9 @@ def install_guard() -> bool:
         async def guarded(*args, **kwargs):
             model = kwargs.get("model") or (args[0] if args else "")
             check_call(str(model), kwargs)
-            return await function(*args, **kwargs)
+            result = await function(*args, **kwargs)
+            capture(result)
+            return result
 
         return guarded
 

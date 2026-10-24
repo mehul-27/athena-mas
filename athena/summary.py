@@ -41,6 +41,8 @@ class RunSummary:
     approved: bool | None = None
     stage_errors: list[str] = field(default_factory=list)
     degraded: bool = False
+    failed: bool = False
+    estimated: bool = False
 
     def row(self) -> tuple[str, ...]:
         return (
@@ -93,6 +95,8 @@ def note_ack(summary: RunSummary, text: str) -> dict | None:
         return body
     if body.get("fallback"):
         summary.degraded = True
+    if body.get("estimated"):
+        summary.estimated = True
     return None
 
 
@@ -109,5 +113,6 @@ def summary_line(summary: RunSummary) -> str:
         f"ADK tokens {summary.adk_tokens} | "
         f"A2A {summary.a2a_bytes_out}B out / {summary.a2a_bytes_in}B in | "
         f"evidence {summary.evidence_count} | tools {summary.tool_calls} | "
-        f"revisions {summary.revision_rounds} | degraded {summary.degraded}{errors}"
+        f"revisions {summary.revision_rounds} | degraded {summary.degraded}{errors} | "
+        + ("cost basis: partly estimated" if summary.estimated else "cost basis: measured")
     )
