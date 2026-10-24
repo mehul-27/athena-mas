@@ -27,10 +27,13 @@ from athena.agents.a2a_stage import DEFAULT_CARD_URL
 from athena.agents.supervisor import build_supervisor
 from athena.blackboard import Blackboard, Task
 from athena.patterns import VALID_PATTERNS, UnknownPatternError
-from athena.summary import RunSummary, format_table
+from athena.run_report import print_report, text_of, tool_lines
+from athena.summary import RunSummary, finish, format_table, note_ack, summary_line
 from athena.tools import settings
 
-APP_NAME = "athena"
+# ADK derives the app name from the root agent's package ("athena/agents"); use
+# the same name so it does not warn about a mismatch.
+APP_NAME = "agents"
 USER_ID = "student"
 
 
@@ -100,6 +103,7 @@ async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSumm
             if "a2a_payload" in metadata:
                 print(f"    [a2a request] {metadata['a2a_payload_bytes']}B {metadata['a2a_payload']}")
             if event.author in {"analyst", "writer", "critic"} and text.startswith("{"):
+                note_ack(summary, text)
                 print(f"    [a2a] {text[:160]}")
 
         summary.tool_calls += sum(1 for part in _parts(event) if part.function_call)
@@ -118,6 +122,7 @@ async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSumm
     summary.confidence = report[0].confidence if report else None
     critique = blackboard.read("critique")
     summary.approved = critique[0].approved if critique else None
+    finish(summary)
 
     # Persist the summary as one event so Step 9 can read everything in one place.
     recorder.emit(
@@ -130,57 +135,13 @@ async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSumm
     set_recorder(None)
 
     if verbose:
-        _print_report(blackboard, summary.wall_s)
+        print_report(blackboard, summary.wall_s)
     return summary
-
-
-def _parts(event):
-    content = getattr(event, "content", None)
-    return content.parts if content and content.parts else []
-
-
-def text_of(event) -> str:
-    return "".join(part.text for part in _parts(event) if part.text and not part.thought)
-
-
-def _short(value, limit: int = 110) -> str:
-    text = json.dumps(value, ensure_ascii=False, default=str) if not isinstance(value, str) else value
-    return text if len(text) <= limit else text[:limit].rstrip() + "..."
-
-
-def tool_lines(event) -> list[str]:
-    lines = []
-    for part in _parts(event):
-        if part.function_call:
-            lines.append(f"[tool] {part.function_call.name} {_short(part.function_call.args)}")
-        if part.function_response:
-            lines.append(f"[tool] {part.function_response.name} -> {_short(part.function_response.response)}")
-    return lines
-
-
-def _print_report(blackboard: Blackboard, elapsed: float) -> None:
-    report = blackboard.read("final_report")
-    print("\n" + "=" * 70)
-    print(report[0].to_markdown() if report else "(no final report was written)")
-    print("=" * 70)
-    print(f"elapsed {elapsed:.1f}s")
-    print("\nblackboard history:")
-    print(f"{'seq':>3}  {'author':<15} {'section':<15} {'operation':<9} version")
-    for entry in blackboard.history():
-        print(
-            f"{entry['seq']:>3}  {entry['author']:<15} {entry['section']:<15} "
-            f"{entry['operation']:<9} {entry['version']}"
-        )
 
 
 async def run_one(question: str, pattern: str) -> RunSummary:
     summary = await _execute(question, pattern, verbose=True)
-    print(
-        f"\nsummary: {summary.pattern} | wall {summary.wall_s:.0f}s | "
-        f"ADK tokens {summary.adk_tokens} | A2A {summary.a2a_bytes_out}B out / "
-        f"{summary.a2a_bytes_in}B in | evidence {summary.evidence_count} | "
-        f"tools {summary.tool_calls} | revisions {summary.revision_rounds}"
-    )
+    print("\n" + summary_line(summary))
     return summary
 
 

@@ -181,6 +181,12 @@ class P2PAgent(BaseAgent):
             body = json.loads(reply)
         except ValueError:
             body = {}
+        if not body.get("ok", True):
+            print(
+                f"WARNING {role} failed: {body.get('error_type', 'A2AError')}: "
+                f"{str(body.get('error', 'role failed'))[:200]}"
+            )
+
         recorder.emit(
             "a2a_call", role, "adk",
             duration_ms=round((time.perf_counter() - started) * 1000, 2),

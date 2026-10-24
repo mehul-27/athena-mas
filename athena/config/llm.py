@@ -149,18 +149,34 @@ def get_adk_model(role: str | None = None):
 def get_crewai_llm(role: str | None = None):
     """Return a CrewAI ``LLM`` instance for the configured model.
 
-    The class also strips CrewAI 1.15.28's internal prompt-cache marker, which
-    strict providers (Groq) reject, and puts every call behind the shared token
-    limiter — see ``athena/config/limited_models.py``.
+    CrewAI routes ``openai/...`` through its **native OpenAI client** unless
+    ``is_litellm=True``; that client rejects LiteLLM-only kwargs such as
+    ``num_retries`` (the live failure). Forcing the LiteLLM path keeps CrewAI on
+    the same client ADK uses, keeps ``reasoning_effort``/``base_url`` working,
+    and keeps the prompt-cache marker workaround applicable. Retries are set
+    after construction, on whichever path we actually got, so a future crewai
+    that returns the native class cannot be handed ``num_retries`` either.
     """
     from athena.config.limited_models import make_crewai_llm_class
 
-    return make_crewai_llm_class()(
+    llm_class = make_crewai_llm_class()
+    llm = llm_class(
         model=_model_string(),
         api_key=_require_api_key(),
         max_tokens=max_tokens_for(role),
-        num_retries=MAX_RETRIES,
+        is_litellm=True,
         **({"base_url": api_base()} if api_base() else {}),
         **({"reasoning_effort": reasoning_effort()} if reasoning_effort() else {}),
     )
+    _apply_retries(llm)
+    return llm
 
+
+def _apply_retries(llm) -> None:
+    """LiteLLM takes ``num_retries``; the native SDKs take ``max_retries``."""
+    if getattr(llm, "is_litellm", False):
+        params = getattr(llm, "additional_params", None)
+        if isinstance(params, dict):
+            params["num_retries"] = MAX_RETRIES
+    elif hasattr(llm, "max_retries"):
+        llm.max_retries = MAX_RETRIES

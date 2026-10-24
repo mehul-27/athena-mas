@@ -5,6 +5,7 @@ Deliberately in-memory: Step 6 will persist these, this step only measures.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 TABLE_COLUMNS = (
@@ -18,6 +19,7 @@ TABLE_COLUMNS = (
     ("rev", 4),
     ("conf", 5),
     ("approved", 8),
+    ("degraded", 9),
 )
 
 
@@ -37,6 +39,8 @@ class RunSummary:
     revision_rounds: int = 0
     confidence: float | None = None
     approved: bool | None = None
+    stage_errors: list[str] = field(default_factory=list)
+    degraded: bool = False
 
     def row(self) -> tuple[str, ...]:
         return (
@@ -50,6 +54,7 @@ class RunSummary:
             str(self.revision_rounds),
             "-" if self.confidence is None else f"{self.confidence:.2f}",
             "-" if self.approved is None else str(self.approved).lower(),
+            "yes" if self.degraded else "no",
         )
 
     def stage_line(self) -> str:
@@ -69,3 +74,35 @@ def format_table(summaries: list[RunSummary]) -> str:
             )
         )
     return "\n".join(lines)
+
+def note_ack(summary: RunSummary, text: str) -> None:
+    """Fold a CrewAI acknowledgement into the run's health flags."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return
+    if not isinstance(body, dict):
+        return
+    if not body.get("ok", True):
+        summary.stage_errors.append(
+            f"{body.get('role', '?')}: {body.get('error_type', 'Error')}"
+        )
+    if body.get("fallback"):
+        summary.degraded = True
+
+
+def finish(summary: RunSummary) -> RunSummary:
+    """A run with any failed stage is degraded, whatever the end state looks like."""
+    summary.degraded = summary.degraded or bool(summary.stage_errors)
+    return summary
+
+def summary_line(summary: RunSummary) -> str:
+    """One line for the runner: cost, size and health of the run."""
+    errors = f" ({', '.join(summary.stage_errors)})" if summary.stage_errors else ""
+    return (
+        f"summary: {summary.pattern} | wall {summary.wall_s:.0f}s | "
+        f"ADK tokens {summary.adk_tokens} | "
+        f"A2A {summary.a2a_bytes_out}B out / {summary.a2a_bytes_in}B in | "
+        f"evidence {summary.evidence_count} | tools {summary.tool_calls} | "
+        f"revisions {summary.revision_rounds} | degraded {summary.degraded}{errors}"
+    )

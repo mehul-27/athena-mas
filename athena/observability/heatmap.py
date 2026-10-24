@@ -7,6 +7,7 @@ printed in the cell. The same table is written as CSV next to the PNG.
 from __future__ import annotations
 
 import csv
+import os
 from pathlib import Path
 
 from athena.observability.metrics import COLUMNS, AgentRow
@@ -45,6 +46,12 @@ def write_csv(rows: list[AgentRow], path: Path) -> Path:
 
 def render_heatmap(rows: list[AgentRow], path: str | Path, title: str) -> Path:
     """Write ``path`` (PNG) plus a CSV beside it. Returns the PNG path."""
+    # matplotlib writes a font cache on import; keep it in the repo so a
+    # read-only or sandboxed home directory does not produce a warning.
+    cache = Path(os.getenv("MPLCONFIGDIR") or Path(".run") / "mpl-cache")
+    cache.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(cache.resolve()))
+
     import matplotlib
 
     matplotlib.use("Agg")

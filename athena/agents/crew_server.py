@@ -39,6 +39,7 @@ from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report
 from athena.blackboard import Blackboard
 from athena.observability.recorder import Recorder, set_recorder
+from athena.observability.redact import redact
 
 HOST, PORT = "127.0.0.1", 9001
 BASE_URL = f"http://{HOST}:{PORT}"
@@ -92,12 +93,15 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         else:
             result = handler(run_id, instruction, store=store)
     except Exception as exc:  # noqa: BLE001 - a bad generation is an ack, not a crash
+        error_type = type(exc).__name__
+        message = (redact(str(exc)) or "")[:200]
         recorder.emit(
             "error", role, "crewai", ok=False,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
-            error_type=type(exc).__name__, error_message=str(exc),
+            error_type=error_type, error_message=message,
         )
-        return _ack(ok=False, role=role, error=f"{type(exc).__name__}: {exc}")
+        # The ADK side decides what to tell the user from these two fields.
+        return _ack(ok=False, role=role, error_type=error_type, error=message)
     finally:
         set_recorder(previous)
     recorder.emit(

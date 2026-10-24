@@ -16,8 +16,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from google.adk.models.lite_llm import LiteLlm
+from google.adk.models.lite_llm import LiteLLMClient, LiteLlm
 
+from athena.config.usage import last_reasoning, reasoning_from_usage, set_last_reasoning
 from athena.config.ratelimit import estimate_tokens, get_limiter, get_output_limiter
 from athena.config.reply_guard import (
     doubled,
@@ -44,14 +45,32 @@ def _messages_text(messages) -> str:
         return str(messages)
 
 
+class UsageCapturingClient(LiteLLMClient):
+    """LiteLLM client that remembers the raw usage of the last call."""
+
+    async def acompletion(self, model, messages, tools, **kwargs):
+        response = await super().acompletion(
+            model=model, messages=messages, tools=tools, **kwargs
+        )
+        set_last_reasoning(reasoning_from_usage(getattr(response, "usage", None)))
+        return response
+
+
 class RateLimitedLiteLlm(LiteLlm):
     """LiteLlm that reserves budget, retries an empty reply once, settles usage."""
 
     async def _run(self, llm_request, stream: bool):
         return [item async for item in super().generate_content_async(llm_request, stream)]
 
+    def _capture_usage(self) -> None:
+        """Install the usage-capturing client once (a declared LiteLlm field)."""
+        if not isinstance(self.llm_client, UsageCapturingClient):
+            self.llm_client = UsageCapturingClient()
+
     async def generate_content_async(self, llm_request, stream: bool = False):
         limiter = get_limiter()
+        self._capture_usage()
+        set_last_reasoning(None)
         output = get_output_limiter()
         reserve = int(self._additional_args.get("max_tokens") or 0)
         estimate = estimate_tokens(_request_text(llm_request))
@@ -86,6 +105,15 @@ class RateLimitedLiteLlm(LiteLlm):
                 continue
             tokens_in = getattr(usage, "prompt_token_count", None) or tokens_in
             tokens_out = getattr(usage, "candidates_token_count", None) or tokens_out
+            # Some gateways report reasoning at the top level, which ADK drops;
+            # put it where the monitoring plugin reads it.
+            if getattr(usage, "thoughts_token_count", None) is None:
+                recovered = reasoning_from_usage(usage) or last_reasoning()
+                if recovered:
+                    try:
+                        usage.thoughts_token_count = recovered
+                    except Exception:  # noqa: BLE001 - never break a call for metrics
+                        pass
 
         limiter.record(tokens_in or estimate)
         output.record(tokens_out or reserve)

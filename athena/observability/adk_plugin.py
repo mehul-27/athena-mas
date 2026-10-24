@@ -19,6 +19,7 @@ from google.adk.tools.base_tool import BaseTool
 from google.genai import types
 
 from athena.observability.context import reset_agent, set_agent
+from athena.config.usage import last_reasoning, reasoning_from_usage
 from athena.observability.recorder import Recorder, get_recorder
 
 
@@ -85,7 +86,13 @@ class MonitoringPlugin(BasePlugin):
             counters[1] += tokens_out or 0
         # ADK maps litellm's completion_tokens_details.reasoning_tokens onto
         # thoughts_token_count, so that is the reasoning signal here.
-        reasoning = getattr(usage, "thoughts_token_count", None) if usage else None
+        reasoning = None
+        if usage:
+            reasoning = (
+                getattr(usage, "thoughts_token_count", None)
+                or reasoning_from_usage(usage)
+                or last_reasoning()
+            )
         self._emit(
             "model_call", agent, tokens_in=tokens_in, tokens_out=tokens_out,
             extra={"reasoning_tokens": reasoning},

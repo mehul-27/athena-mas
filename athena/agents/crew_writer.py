@@ -48,10 +48,11 @@ def _generate_report(prompt: str) -> tuple[object, dict]:
 
 def _fallback_report(run_id: str, exc: Exception) -> FinalReport:
     """A legal FinalReport so the pipeline finishes instead of crashing."""
+    short = " ".join(str(exc).split())[:160]
     return FinalReport(
         answer=(
-            "The report could not be generated: the writer produced output that "
-            f"failed validation ({type(exc).__name__}). The evidence remains on the "
+            f"The report could not be generated: writer failed with "
+            f"{type(exc).__name__}: {short}. The evidence remains on the "
             "blackboard for inspection."
         ),
         key_points=[],
@@ -96,6 +97,7 @@ def write_report(
 
     fallback = False
     stats: dict = {}
+    failure: Exception | None = None
     try:
         report, stats = _unpack(generate(prompt))
     except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
@@ -109,6 +111,7 @@ def write_report(
         except Exception as exc2:  # noqa: BLE001 - documented fallback
             report = _fallback_report(run_id, exc2)
             fallback = True
+            failure = exc2
 
     if not isinstance(report, FinalReport):
         report = FinalReport.model_validate(report)
@@ -145,7 +148,10 @@ def write_report(
     ack = {"section": "final_report", "version": version, **stats}
     if fallback:
         ack["fallback"] = True
-        ack["note"] = "writer produced invalid output twice; wrote a minimal report"
+        ack["note"] = (
+            "writer failed with "
+            f"{type(failure).__name__}: {' '.join(str(failure).split())[:160]}"
+        )
     if truncated:
         ack["truncated"] = True
     return ack

@@ -77,6 +77,18 @@ class A2AStageAgent(BaseAgent):
             body = json.loads(ack)
         except ValueError:
             body = {}
+        failed = not body.get("ok", True)
+        if failed:
+            error_type = body.get("error_type") or "A2AError"
+            message = str(body.get("error") or "role failed")[:200]
+            if recorder is not None:
+                recorder.emit(
+                    "error", self.role, "adk", ok=False,
+                    error_type=error_type, error_message=message,
+                    payload_summary=f"a2a {self.role} failed",
+                )
+            print(f"WARNING {self.role} failed: {error_type}: {message}")
+
         recorder.emit(
             "a2a_call", self.role, "adk",
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
