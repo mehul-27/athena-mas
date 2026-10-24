@@ -198,6 +198,7 @@ class P2PAgent(BaseAgent):
                 "request_bytes": traffic["out"],
                 "response_bytes": traffic["in"],
                 "reasoning_tokens": body.get("reasoning_tokens"),
+                "calls": body.get("calls"),
             },
         )
 

@@ -21,7 +21,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from athena.config import llm  # noqa: E402
-from athena.config.endpoint_guard import expected_host, guard_active, host_of  # noqa: E402
+from athena.config.endpoint_guard import expected_host, guard_active, host_of
+from athena.observability.litellm_usage import install_usage_logger, usage_scope  # noqa: E402
 
 PROMPT = "Say OK"
 MAX_TOKENS = 300
@@ -112,24 +113,30 @@ async def _live_adk(model) -> dict:
     return {"status": "ok", **tokens}
 
 
-def _live_crew(client, structured: bool) -> dict:
-    if structured:
-        from pydantic import BaseModel
+def _live_crew(client, structured: bool, role: str) -> dict:
+    """One tiny call, with usage read at the litellm layer."""
+    with usage_scope(role) as scope:
+        if structured:
+            from pydantic import BaseModel
 
-        class Probe(BaseModel):
-            text: str
+            class Probe(BaseModel):
+                text: str
 
-        raw = client.call(PROMPT, response_model=Probe)
-    else:
-        raw = client.call(PROMPT)
-    return {"status": f"ok ({len(str(raw))} chars)", "in": 0, "out": 0, "reasoning": 0}
+            raw = client.call(PROMPT, response_model=Probe)
+        else:
+            raw = client.call(PROMPT)
+    capturable = scope.tokens_in or scope.tokens_out or scope.calls
+    status = f"ok ({len(str(raw))} chars)"
+    if not capturable:
+        status += " USAGE NOT CAPTURED"
+    return {"status": status, **scope.as_dict()}
 
 
 def run_live(kind: str, client) -> dict:
     try:
         if kind == "adk-lite-llm":
             return asyncio.run(_live_adk(client))
-        return _live_crew(client, structured=kind == "crewai-structured")
+        return _live_crew(client, structured=kind == "crewai-structured", role=kind)
     except Exception as exc:  # noqa: BLE001 - the point is to report it
         return {"status": f"{type(exc).__name__}", "in": 0, "out": 0, "reasoning": 0}
 
@@ -141,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     llm.configure_process()
+    install_usage_logger()
     wanted = expected_host()
     active = guard_active()
     built = collect()
@@ -157,11 +165,15 @@ def main(argv: list[str] | None = None) -> int:
     failed = False
     for path, client in built:
         result = run_live(path.name, client)
-        if result["status"] != "ok" and not result["status"].startswith("ok ("):
+        status = result["status"]
+        if status != "ok" and not status.startswith("ok ("):
+            failed = True
+        if "USAGE NOT CAPTURED" in status:
             failed = True
         print(
-            f"  {path.name:<20} {result['status']:<28} host {path.host or '(default)':<22}"
-            f" tokens {result['in']}/{result['out']} reasoning {result['reasoning']}"
+            f"  {path.name:<20} {status:<34} host {path.host or '(default)':<22}"
+            f" tokens {result['tokens_in']}/{result['tokens_out']} "
+            f"reasoning {result['reasoning_tokens']} calls {result['calls']}"
         )
     return 1 if (failed or mismatch) else 0
 

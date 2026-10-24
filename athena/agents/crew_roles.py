@@ -33,15 +33,18 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
     from athena.config.llm import get_crewai_llm
     from crewai import Agent, Crew, Process, Task
 
+    from athena.observability.litellm_usage import usage_scope
+    from athena.observability.redact import redact
     from athena.observability.recorder import get_recorder
 
     started = time.perf_counter()
     recorder = get_recorder()
+    scope = None
     try:
         agent = Agent(
             role=role.title(),
             goal=goal,
-            backstory=f"You are Athena's {role}. You work only from the material "
+            backstory=f"You are Athena's {role}. You work only on the material "
             f"given to you and never invent sources.",
             llm=get_crewai_llm(role),
             verbose=False,
@@ -54,33 +57,43 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
             output_pydantic=schema,
         )
         crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
-        output = crew.kickoff()
+        # Every litellm call inside kickoff lands in this scope.
+        with usage_scope(role) as scope:
+            output = crew.kickoff()
     except Exception as exc:
         if recorder is not None:
             recorder.emit(
                 "error", role, "crewai", ok=False,
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
-                error_type=type(exc).__name__, error_message=str(exc),
+                error_type=type(exc).__name__, error_message=redact(str(exc))[:200],
                 payload_summary=f"{role}: crew failed",
             )
         raise
 
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    # CrewOutput.token_usage is not populated on this path; the litellm scope is.
+    # Keep whichever number is larger so neither source masks the other.
     usage = getattr(output, "token_usage", None)
-    tokens_in = getattr(usage, "prompt_tokens", None) if usage else None
-    tokens_out = getattr(usage, "completion_tokens", None) if usage else None
-    reasoning = getattr(usage, "reasoning_tokens", None) if usage else None
+    crew_in = getattr(usage, "prompt_tokens", None) if usage else None
+    crew_out = getattr(usage, "completion_tokens", None) if usage else None
+    crew_reasoning = getattr(usage, "reasoning_tokens", None) if usage else None
+
+    tokens_in = max(crew_in or 0, scope.tokens_in if scope else 0) or None
+    tokens_out = max(crew_out or 0, scope.tokens_out if scope else 0) or None
+    reasoning = max(crew_reasoning or 0, scope.reasoning_tokens if scope else 0) or None
+    calls = scope.calls if scope else 0
     if recorder is not None:
         recorder.emit(
             "model_call", role, "crewai", duration_ms=duration_ms,
             tokens_in=tokens_in, tokens_out=tokens_out,
             payload_summary=f"{role}: {len(prompt)} prompt chars",
-            extra={"reasoning_tokens": reasoning},
+            extra={"reasoning_tokens": reasoning, "calls": calls},
         )
     stats = {
         "tokens_in": tokens_in or 0,
         "tokens_out": tokens_out or 0,
         "reasoning_tokens": reasoning or 0,
+        "calls": calls,
         "model_ms": int(duration_ms),
     }
     return output.pydantic, stats

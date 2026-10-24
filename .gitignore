@@ -31,3 +31,5 @@ data/*
 !data/.gitkeep
 !data/eval/
 !data/eval/*.csv
+# Stray zero-byte file the CrewAI package creates in the CWD on some runs.
+/crewai

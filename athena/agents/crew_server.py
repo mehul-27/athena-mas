@@ -38,6 +38,7 @@ from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report
 from athena.blackboard import Blackboard
 from athena.config.llm import configure_process
+from athena.observability.litellm_usage import install_usage_logger
 from athena.observability.recorder import Recorder, set_recorder
 from athena.observability.redact import redact
 
@@ -108,6 +109,8 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         "stage_end", role, "crewai",
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         tokens_in=result.get("tokens_in"), tokens_out=result.get("tokens_out"),
+        extra={"reasoning_tokens": result.get("reasoning_tokens"),
+               "calls": result.get("calls")},
     )
 
     ack: dict = {"ok": True, "role": role}
@@ -117,7 +120,7 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         ack["version"] = result["version"]
     if "content" in result:
         ack["content"] = result["content"]
-    for key in ("tokens_in", "tokens_out", "reasoning_tokens", "model_ms"):
+    for key in ("tokens_in", "tokens_out", "reasoning_tokens", "calls", "model_ms"):
         if result.get(key) is not None:
             ack[key] = result[key]
     if result.get("fallback"):
@@ -169,6 +172,8 @@ def build_agent_card() -> AgentCard:
 
 def create_app(roles: dict | None = None, store=None) -> FastAPI:
     configure_process()  # export the endpoint and arm the guard
+    # CrewAI calls end in litellm, so usage is captured there, not in CrewOutput.
+    install_usage_logger()
     card = build_agent_card()
     handler = DefaultRequestHandler(
         agent_executor=CrewA2AExecutor(roles, store),
