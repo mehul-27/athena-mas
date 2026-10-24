@@ -1,4 +1,4 @@
-"""Static check: no undefined names anywhere in athena/ or scripts/.
+"""Static check: no undefined names anywhere in athena/, scripts/ or tests/.
 
 This is the test that would have caught `_parts` after the Step 6c refactor:
 pyflakes reports a name that is used but never defined or imported. Unused
@@ -14,7 +14,7 @@ import pyflakes.api
 import pyflakes.reporter
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGETS = [ROOT / "athena", ROOT / "scripts"]
+TARGETS = [ROOT / "athena", ROOT / "scripts", ROOT / "tests"]
 
 
 class _Collector(pyflakes.reporter.Reporter):

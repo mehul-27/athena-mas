@@ -1,4 +1,4 @@
-"""Preflight: which host would each LLM call path actually reach?
+"""Preflight: which host would each LLM call path reach, and does it work?
 
 Dry run by default — it builds the same model objects the pipeline builds and
 reports where they point. With ``--live`` it makes one tiny call per path.
@@ -12,65 +12,21 @@ Never prints a key or a full URL: hostnames only, and the key only as a length.
 from __future__ import annotations
 
 import argparse
-import asyncio
-import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from athena.config import llm  # noqa: E402
-from athena.config.endpoint_guard import expected_host, guard_active, host_of
-from athena.observability.litellm_usage import install_usage_logger, usage_scope  # noqa: E402
+from athena.config.endpoint_guard import expected_host, guard_active  # noqa: E402
+from preflight_probes import (  # noqa: E402
+    PathInfo,
+    ProbeResult,
+    describe_paths,
+)
 
-PROMPT = "Say OK"
-MAX_TOKENS = 300
-
-
-@dataclass
-class Path:
-    name: str
-    host: str
-    model: str
-    detail: str
-
-
-def _adk() -> tuple[Path, object]:
-    model = llm.get_adk_model("planner")
-    base = model._additional_args.get("api_base") or ""
-    return (
-        Path("adk-lite-llm", host_of(base), model.model,
-             "api_base passed explicitly"),
-        model,
-    )
-
-
-def _crew_plain() -> tuple[Path, object]:
-    client = llm.get_crewai_llm("analyst")
-    return (
-        Path("crewai-plain", host_of(client.base_url or ""), client.model,
-             "base_url + api_base passed explicitly"),
-        client,
-    )
-
-
-def _crew_structured() -> tuple[Path, object]:
-    """CrewAI's structured path cannot take api_base; it reads the env."""
-    client = llm.get_crewai_llm("writer")
-    env_base = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or ""
-    return (
-        Path("crewai-structured", host_of(env_base), client.model,
-             "env OPENAI_BASE_URL (InternalInstructor passes no api_base)"),
-        client,
-    )
-
-
-BUILDERS = (_adk, _crew_plain, _crew_structured)
-
-
-def collect() -> list[tuple[Path, object]]:
-    return [builder() for builder in BUILDERS]
+HEADER = f"{'path':<20} {'host':<24} {'model':<34} detail"
 
 
 def key_status() -> str:
@@ -78,10 +34,9 @@ def key_status() -> str:
     return f"present (length {len(key)})"
 
 
-def report(paths: list[Path], wanted: str, active: bool) -> tuple[str, bool]:
-    """Render the dry-run table; return it with a mismatch flag."""
-    header = f"{'path':<20} {'host':<24} {'model':<34} detail"
-    lines = [header, "-" * len(header)]
+def table(paths: list[PathInfo], wanted: str, active: bool) -> tuple[str, bool]:
+    """The dry-run view; returns the text and whether any host is wrong."""
+    lines = [HEADER, "-" * len(HEADER)]
     mismatch = False
     for path in paths:
         shown = path.host or "(provider default)"
@@ -95,50 +50,35 @@ def report(paths: list[Path], wanted: str, active: bool) -> tuple[str, bool]:
     return "\n".join(lines), mismatch
 
 
-async def _live_adk(model) -> dict:
-    from google.adk.models.llm_request import LlmRequest
-    from google.genai import types
-
-    request = LlmRequest(
-        contents=[types.Content(role="user", parts=[types.Part(text=PROMPT)])],
-        config=types.GenerateContentConfig(max_output_tokens=MAX_TOKENS),
+def result_line(result: ProbeResult) -> str:
+    return (
+        f"  {result.path:<20} {result.status():<44} host "
+        f"{(result.host or '(default)'):<22} tokens "
+        f"{result.tokens_in}/{result.tokens_out} reasoning "
+        f"{result.reasoning_tokens} calls {result.calls}"
     )
-    tokens = {"in": 0, "out": 0, "reasoning": 0}
-    async for response in model.generate_content_async(request):
-        usage = getattr(response, "usage_metadata", None)
-        if usage:
-            tokens["in"] = getattr(usage, "prompt_token_count", 0) or 0
-            tokens["out"] = getattr(usage, "candidates_token_count", 0) or 0
-            tokens["reasoning"] = getattr(usage, "thoughts_token_count", 0) or 0
-    return {"status": "ok", **tokens}
 
 
-def _live_crew(client, structured: bool, role: str) -> dict:
-    """One tiny call, with usage read at the litellm layer."""
-    with usage_scope(role) as scope:
-        if structured:
-            from pydantic import BaseModel
+def run_live(probes) -> int:
+    """Run every probe, even after a failure, and summarise."""
+    results: list[ProbeResult] = []
+    print("\nlive probe:")
+    for path, probe in probes:
+        try:
+            result = probe()
+        except Exception as exc:  # noqa: BLE001 - a probe must never crash the run
+            from preflight_probes import failure
 
-            class Probe(BaseModel):
-                text: str
+            result = failure(path.name, path.host, exc)
+        results.append(result)
+        print(result_line(result))
 
-            raw = client.call(PROMPT, response_model=Probe)
-        else:
-            raw = client.call(PROMPT)
-    capturable = scope.tokens_in or scope.tokens_out or scope.calls
-    status = f"ok ({len(str(raw))} chars)"
-    if not capturable:
-        status += " USAGE NOT CAPTURED"
-    return {"status": status, **scope.as_dict()}
-
-
-def run_live(kind: str, client) -> dict:
-    try:
-        if kind == "adk-lite-llm":
-            return asyncio.run(_live_adk(client))
-        return _live_crew(client, structured=kind == "crewai-structured", role=kind)
-    except Exception as exc:  # noqa: BLE001 - the point is to report it
-        return {"status": f"{type(exc).__name__}", "in": 0, "out": 0, "reasoning": 0}
+    ok = sum(1 for result in results if not result.failed)
+    print(f"\n{ok} of {len(results)} paths ok")
+    bad = [result.path for result in results if result.failed]
+    if bad:
+        print("failed: " + ", ".join(bad))
+    return 0 if ok == len(results) else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -148,12 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     llm.configure_process()
-    install_usage_logger()
     wanted = expected_host()
     active = guard_active()
-    built = collect()
+    built = describe_paths()
 
-    text, mismatch = report([path for path, _ in built], wanted, active)
+    text, mismatch = table([info for info, _ in built], wanted, active)
     print(text)
     print(f"api key       : {key_status()}")
 
@@ -161,21 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\ndry run: no calls made (pass --live to make one per path)")
         return 1 if mismatch else 0
 
-    print("\nlive probe:")
-    failed = False
-    for path, client in built:
-        result = run_live(path.name, client)
-        status = result["status"]
-        if status != "ok" and not status.startswith("ok ("):
-            failed = True
-        if "USAGE NOT CAPTURED" in status:
-            failed = True
-        print(
-            f"  {path.name:<20} {status:<34} host {path.host or '(default)':<22}"
-            f" tokens {result['tokens_in']}/{result['tokens_out']} "
-            f"reasoning {result['reasoning_tokens']} calls {result['calls']}"
-        )
-    return 1 if (failed or mismatch) else 0
+    return run_live(built) or (1 if mismatch else 0)
 
 
 if __name__ == "__main__":
