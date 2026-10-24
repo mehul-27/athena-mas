@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import sys
 from pathlib import Path
 
@@ -37,6 +38,7 @@ from athena.agents import crew_roles
 from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report
 from athena.blackboard import Blackboard
+from athena.observability.recorder import Recorder, set_recorder
 
 HOST, PORT = "127.0.0.1", 9001
 BASE_URL = f"http://{HOST}:{PORT}"
@@ -80,13 +82,29 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
     if not p2p and Blackboard.open(run_id, store).read("task") is None:
         return _ack(ok=False, error=f"unknown run_id {run_id!r}")
 
+    recorder = Recorder.for_run(run_id)
+    recorder.emit("stage_start", role, "crewai")
+    previous = set_recorder(recorder)
+    started = time.perf_counter()
     try:
         if p2p:
             result = handler(run_id, instruction, store=None, context=context)
         else:
             result = handler(run_id, instruction, store=store)
     except Exception as exc:  # noqa: BLE001 - a bad generation is an ack, not a crash
+        recorder.emit(
+            "error", role, "crewai", ok=False,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            error_type=type(exc).__name__, error_message=str(exc),
+        )
         return _ack(ok=False, role=role, error=f"{type(exc).__name__}: {exc}")
+    finally:
+        set_recorder(previous)
+    recorder.emit(
+        "stage_end", role, "crewai",
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        tokens_in=result.get("tokens_in"), tokens_out=result.get("tokens_out"),
+    )
 
     ack: dict = {"ok": True, "role": role}
     if "section" in result:
@@ -95,6 +113,9 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         ack["version"] = result["version"]
     if "content" in result:
         ack["content"] = result["content"]
+    for key in ("tokens_in", "tokens_out", "model_ms"):
+        if result.get(key) is not None:
+            ack[key] = result[key]
     if result.get("fallback"):
         ack["fallback"] = True
         ack["note"] = result.get("note", "generation fallback")

@@ -6,7 +6,7 @@ and return their output inline as JSON, which is the point of the p2p baseline.
 
 from __future__ import annotations
 
-from athena.agents.crew_roles import _crew_call
+from athena.agents.crew_roles import _crew_call, _unpack
 from athena.blackboard import Analysis, Critique, FinalReport
 
 ANALYST_PROMPT = (
@@ -32,22 +32,27 @@ def _content(model) -> str:
 
 def p2p_analyse(run_id: str, instruction: str, store=None, context: str = "") -> dict:
     prompt = f"{instruction}\n\n{context}\n\n{ANALYST_PROMPT}"
-    analysis = _crew_call("analyst", "Synthesise the evidence into findings and gaps.",
-                          prompt, Analysis)
-    return {"section": "analysis", "content": _content(analysis)}
+    analysis, stats = _unpack(
+        _crew_call("analyst", "Synthesise the evidence into findings and gaps.",
+                   prompt, Analysis)
+    )
+    return {"section": "analysis", "content": _content(analysis), **stats}
 
 
 def p2p_write_report(run_id: str, instruction: str, store=None, context: str = "") -> dict:
     prompt = f"{instruction}\n\n{context}\n\n{WRITER_PROMPT}"
-    report = _crew_call("writer", "Write a cited research report.", prompt, FinalReport)
-    return {"section": "final_report", "content": _content(report)}
+    report, stats = _unpack(
+        _crew_call("writer", "Write a cited research report.", prompt, FinalReport)
+    )
+    return {"section": "final_report", "content": _content(report), **stats}
 
 
 def p2p_critique(run_id: str, instruction: str, store=None, context: str = "") -> dict:
     prompt = f"{instruction}\n\n{context}\n\n{CRITIC_PROMPT}"
-    critique = _crew_call("critic", "Review the report against the evidence.",
-                          prompt, Critique)
-    return {"section": "critique", "content": _content(critique)}
+    critique, stats = _unpack(
+        _crew_call("critic", "Review the report against the evidence.", prompt, Critique)
+    )
+    return {"section": "critique", "content": _content(critique), **stats}
 
 
 P2P_ROLES = {

@@ -21,6 +21,12 @@ MAX_PAYLOAD_BYTES = 600
 MAX_CONTEXT_CHARS = 6000
 
 _STATS = {"out": 0, "in": 0}
+_LAST = {"out": 0, "in": 0}
+
+
+def last_call() -> dict[str, int]:
+    """Bytes of the most recent exchange in this process."""
+    return dict(_LAST)
 
 
 def reset_stats() -> None:
@@ -76,5 +82,8 @@ async def send_role_request(card_url: str, payload: str, timeout: float | None =
                 chunks.append(text)
 
     reply = "".join(chunks).strip()
-    _STATS["in"] += len(reply.encode("utf-8"))
+    in_bytes = len(reply.encode("utf-8"))
+    _STATS["in"] += in_bytes
+    _LAST["out"] = len(payload.encode("utf-8"))
+    _LAST["in"] = in_bytes
     return reply

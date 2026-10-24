@@ -18,6 +18,25 @@ from typing import Callable
 
 WINDOW_SECONDS = 60.0
 BUSY_TIMEOUT_MS = 30_000
+WAIT_EVENT_THRESHOLD_MS = 50
+
+_WAIT_LISTENER = None
+
+
+def set_wait_listener(listener) -> None:
+    """Install a callback for real waits: fn(waited_ms, tokens, agent)."""
+    global _WAIT_LISTENER
+    _WAIT_LISTENER = listener
+
+
+def _notify_wait(waited_ms: float, tokens: int, agent: str) -> None:
+    listener = _WAIT_LISTENER
+    if listener is None:
+        return
+    try:
+        listener(waited_ms, tokens, agent)
+    except Exception:  # noqa: BLE001 - monitoring must never break a call
+        pass
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS calls (
@@ -54,6 +73,7 @@ class TokenLimiter:
         window: float = WINDOW_SECONDS,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        on_wait: Callable[[float, int, str], None] = _notify_wait,
     ) -> None:
         self.path = str(path or default_db_path())
         self.limit = int(limit if limit is not None else os.getenv("LLM_ITPM_LIMIT") or 0)
@@ -64,6 +84,7 @@ class TokenLimiter:
         self.window = window
         self._clock = clock
         self._sleep = sleep
+        self._on_wait = on_wait
         self._last_id: int | None = None
 
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -119,7 +140,7 @@ class TokenLimiter:
         finally:
             conn.close()
 
-    def acquire(self, estimated_tokens: int) -> None:
+    def acquire(self, estimated_tokens: int, agent: str = "") -> None:
         """Reserve budget, waiting for the window to free space if needed."""
         estimate = max(0, int(estimated_tokens))
         if self.limit <= 0:
@@ -165,6 +186,9 @@ class TokenLimiter:
                     f"(limit {self.limit}/min, used {used}); "
                     f"max wait is {self.max_wait_s:.0f}s"
                 )
+            waited_ms = round(wait * 1000, 1)
+            if waited_ms > WAIT_EVENT_THRESHOLD_MS:
+                self._on_wait(waited_ms, estimate, agent)
             self._sleep(wait)
 
     def record(self, actual_tokens: int) -> None:

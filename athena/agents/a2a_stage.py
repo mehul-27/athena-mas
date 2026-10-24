@@ -7,6 +7,7 @@ back is a one-line acknowledgement, never content.
 
 from __future__ import annotations
 
+import time
 from typing import Any, AsyncGenerator
 
 from google.adk.agents import BaseAgent
@@ -14,7 +15,11 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
 from google.genai import types
 
+import json
+
+from athena.agents import a2a_client
 from athena.agents.a2a_client import build_payload, send_role_request
+from athena.observability.recorder import get_recorder
 
 DEFAULT_CARD_URL = "http://127.0.0.1:9001/.well-known/agent-card.json"
 
@@ -38,7 +43,20 @@ class A2AStageAgent(BaseAgent):
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
         payload = build_payload(self.run_id, self.role, self.instruction)
-        ack = await send_role_request(self.card_url, payload)
+        started = time.perf_counter()
+        try:
+            ack = await send_role_request(self.card_url, payload)
+        except Exception as exc:
+            recorder = get_recorder()
+            if recorder is not None:
+                recorder.emit(
+                    "error", self.role, "adk", ok=False,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                    error_type=type(exc).__name__, error_message=str(exc),
+                    payload_summary=f"a2a {self.role}",
+                )
+            raise
+        self._record_call(ack, started)
         yield Event(
             author=self.name,
             content=types.Content(parts=[types.Part(text=ack)]),
@@ -47,6 +65,26 @@ class A2AStageAgent(BaseAgent):
                 "a2a_payload": payload,
                 "a2a_payload_bytes": len(payload.encode("utf-8")),
             },
+        )
+
+    def _record_call(self, ack: str, started: float) -> None:
+        """Emit one a2a_call event with bytes, timing and CrewAI token usage."""
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        traffic = a2a_client.last_call()
+        try:
+            body = json.loads(ack)
+        except ValueError:
+            body = {}
+        recorder.emit(
+            "a2a_call", self.role, "adk",
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            ok=bool(body.get("ok", True)),
+            tokens_in=body.get("tokens_in"),
+            tokens_out=body.get("tokens_out"),
+            payload_summary=f"{self.role}: {traffic['out']}B out / {traffic['in']}B in",
+            extra={"request_bytes": traffic["out"], "response_bytes": traffic["in"]},
         )
 
 

@@ -13,6 +13,7 @@ import json
 from google.adk.models.lite_llm import LiteLlm
 
 from athena.config.ratelimit import estimate_tokens, get_limiter, get_output_limiter
+from athena.observability.context import current_agent
 
 
 def _request_text(llm_request) -> str:
@@ -39,8 +40,8 @@ class RateLimitedLiteLlm(LiteLlm):
         output = get_output_limiter()
         reserve = int(self._additional_args.get("max_tokens") or 0)
         estimate = estimate_tokens(_request_text(llm_request))
-        limiter.acquire(estimate)
-        output.acquire(reserve)
+        limiter.acquire(estimate, agent=current_agent())
+        output.acquire(reserve, agent=current_agent())
 
         reported = False
         completion = None
@@ -80,8 +81,8 @@ def make_crewai_llm_class():
             output = get_output_limiter()
             reserve = int(self.max_tokens or 0)
             estimate = estimate_tokens(_messages_text(messages))
-            limiter.acquire(estimate)
-            output.acquire(reserve)
+            limiter.acquire(estimate, agent=current_agent())
+            output.acquire(reserve, agent=current_agent())
             try:
                 return super().call(
                     messages, tools=tools, callbacks=callbacks,
@@ -98,8 +99,8 @@ def make_crewai_llm_class():
             output = get_output_limiter()
             reserve = int(self.max_tokens or 0)
             estimate = estimate_tokens(_messages_text(messages))
-            limiter.acquire(estimate)
-            output.acquire(reserve)
+            limiter.acquire(estimate, agent=current_agent())
+            output.acquire(reserve, agent=current_agent())
             try:
                 return await super().acall(
                     messages, tools=tools, callbacks=callbacks,

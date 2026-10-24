@@ -58,6 +58,29 @@ __all__ = [
 ]
 
 
+_WRITE_LISTENER = None
+
+
+def set_write_listener(listener) -> None:
+    """Install a callback for every mutation: fn(section, version, author, operation).
+
+    Off by default. The runner turns it on so monitoring can see section writes
+    without the blackboard knowing anything about monitoring.
+    """
+    global _WRITE_LISTENER
+    _WRITE_LISTENER = listener
+
+
+def _notify_write(section: str, version: int, author: str, operation: str) -> None:
+    listener = _WRITE_LISTENER
+    if listener is None:
+        return
+    try:
+        listener(section, version, author, operation)
+    except Exception:  # noqa: BLE001 - a listener must never break a write
+        pass
+
+
 class Blackboard:
     """A run-scoped facade over a :class:`BlackboardStore`."""
 
@@ -88,13 +111,17 @@ class Blackboard:
         expected_version: int | None = None,
     ) -> int:
         """Replace a section and return its new version."""
-        return self.store.write(
+        version = self.store.write(
             self.run_id, section, value, author, expected_version=expected_version
         )
+        _notify_write(section, version, author, "write")
+        return version
 
     def append(self, section: str, item: Any, author: str) -> int:
         """Append one item to a list section and return its new version."""
-        return self.store.append(self.run_id, section, item, author)
+        version = self.store.append(self.run_id, section, item, author)
+        _notify_write(section, version, author, "append")
+        return version
 
     def snapshot(self) -> dict[str, Any]:
         """Return every section of this run as validated models, plus versions."""

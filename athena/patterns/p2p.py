@@ -22,7 +22,9 @@ from athena.agents.a2a_stage import DEFAULT_CARD_URL, INSTRUCTIONS
 from athena.agents.planner import build_planner, parse_plan_text
 from athena.agents.report_sanitize import evidence_ids_for, sanitize_report
 from athena.agents.researcher import build_researcher
+from athena.agents import a2a_client
 from athena.blackboard import Analysis, Blackboard, Critique, Draft, FinalReport, Plan
+from athena.observability.recorder import get_recorder
 from athena.patterns.context import P2PContext, render_plan
 
 
@@ -100,7 +102,9 @@ class P2PAgent(BaseAgent):
     async def _call_role(self, role: str, context: P2PContext) -> str:
         """Send one stage's context, parse the reply, audit it."""
         payload = build_payload(self.run_id, role, INSTRUCTIONS[role], context.for_role(role))
+        started = time.perf_counter()
         reply = await send_role_request(self.card_url, payload)
+        self._record_call(role, reply, started)
         try:
             body = json.loads(reply)
         except ValueError:
@@ -165,6 +169,27 @@ class P2PAgent(BaseAgent):
                 author="critic",
             )
         return ""
+
+
+    def _record_call(self, role: str, reply: str, started: float) -> None:
+        """Emit the p2p A2A exchange, including the context bytes it carried."""
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        traffic = a2a_client.last_call()
+        try:
+            body = json.loads(reply)
+        except ValueError:
+            body = {}
+        recorder.emit(
+            "a2a_call", role, "adk",
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            ok=bool(body.get("ok", True)),
+            tokens_in=body.get("tokens_in"),
+            tokens_out=body.get("tokens_out"),
+            payload_summary=f"p2p {role}: {traffic['out']}B out / {traffic['in']}B in",
+            extra={"request_bytes": traffic["out"], "response_bytes": traffic["in"]},
+        )
 
 
 def build(run_id: str, store: Any = None, card_url: str = "") -> P2PAgent:

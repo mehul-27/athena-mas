@@ -62,17 +62,56 @@ def max_tokens_for(role: str | None = None) -> int:
     return int(os.getenv("LLM_MAX_TOKENS") or DEFAULT_MAX_TOKENS)
 
 
+PROVIDER_KEY_VARS = {
+    "groq": "GROQ_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "together_ai": "TOGETHERAI_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+}
+
+
+def provider_prefix(model: str | None = None) -> str:
+    """The provider part of a LiteLLM model string, e.g. 'groq'."""
+    return (model or _model_string()).split("/", 1)[0].strip().lower()
+
+
+def provider_key_var(model: str | None = None) -> str | None:
+    """The conventional environment variable for this provider, if we know it."""
+    return PROVIDER_KEY_VARS.get(provider_prefix(model))
+
+
+def export_provider_key(key: str, model: str | None = None) -> str:
+    """Mirror LLM_API_KEY into the provider's own variable; return its name.
+
+    CrewAI's structured-output path (instructor) builds its own client and reads
+    the provider key from the environment, so the key has to exist under the
+    conventional name. An already-set variable wins. Unknown providers get an
+    empty string: LLM_API_KEY stays the only handle, which is documented.
+    """
+    name = provider_key_var(model)
+    if not name:
+        return ""
+    if not os.getenv(name):
+        os.environ[name] = key
+    return name
+
+
+def api_base() -> str:
+    """Optional base URL for OpenAI-compatible providers."""
+    return os.getenv("LLM_API_BASE") or ""
+
+
 def _require_api_key() -> str:
     key = os.getenv("LLM_API_KEY")
     if not key:
         raise RuntimeError(
             "LLM_API_KEY is not set. Copy .env.example to .env and fill it in."
         )
-    # CrewAI's structured-output path (instructor) builds its own client and
-    # reads the provider key from the environment, ignoring the client we
-    # configured. Export it under the conventional name so both paths work.
-    provider = _model_string().split("/", 1)[0].upper()
-    os.environ[f"{provider}_API_KEY"] = key
+    export_provider_key(key)
     return key
 
 
@@ -91,6 +130,7 @@ def get_adk_model(role: str | None = None):
         api_key=_require_api_key(),
         max_tokens=max_tokens_for(role),
         num_retries=MAX_RETRIES,
+        **({"api_base": api_base()} if api_base() else {}),
     )
 
 
@@ -108,5 +148,6 @@ def get_crewai_llm(role: str | None = None):
         api_key=_require_api_key(),
         max_tokens=max_tokens_for(role),
         num_retries=MAX_RETRIES,
+        **({"base_url": api_base()} if api_base() else {}),
     )
 

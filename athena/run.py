@@ -9,14 +9,20 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+from dataclasses import asdict
 import json
+import os
 import sys
 import time
 
+from google.adk.agents.run_config import RunConfig
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
 from athena.agents import a2a_client
+from athena.observability import Recorder, set_recorder
+from athena.observability.adk_plugin import MonitoringPlugin
+from athena.observability.hooks import install_hooks
 from athena.agents.a2a_stage import DEFAULT_CARD_URL
 from athena.agents.supervisor import build_supervisor
 from athena.blackboard import Blackboard, Task
@@ -52,8 +58,14 @@ def server_is_up(card_url: str = DEFAULT_CARD_URL) -> bool:
 
 async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSummary:
     blackboard = Blackboard.create(Task(question=question, pattern=pattern))
+    recorder = Recorder.for_run(blackboard.run_id)
+    set_recorder(recorder)
+    install_hooks()
+
     runner = InMemoryRunner(
-        agent=build_supervisor(blackboard.run_id, pattern=pattern), app_name=APP_NAME
+        agent=build_supervisor(blackboard.run_id, pattern=pattern),
+        app_name=APP_NAME,
+        plugins=[MonitoringPlugin(recorder)],
     )
     session = await runner.session_service.create_session(app_name=APP_NAME, user_id=USER_ID)
 
@@ -64,10 +76,15 @@ async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSumm
     if verbose:
         print(f"\nrun_id: {blackboard.run_id}\nquestion: {question}\npattern: {pattern}\nstages:")
 
+    # A hard ceiling on model calls: a model that keeps re-calling a refused
+    # tool would otherwise loop until the provider quota runs out.
+    run_config = RunConfig(max_llm_calls=int(os.getenv("ATHENA_MAX_LLM_CALLS") or 12))
+
     async for event in runner.run_async(
         user_id=USER_ID,
         session_id=session.id,
         new_message=types.Content(role="user", parts=[types.Part(text=question)]),
+        run_config=run_config,
     ):
         metadata = event.custom_metadata or {}
         if "stage" in metadata:
@@ -101,6 +118,16 @@ async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSumm
     summary.confidence = report[0].confidence if report else None
     critique = blackboard.read("critique")
     summary.approved = critique[0].approved if critique else None
+
+    # Persist the summary as one event so Step 9 can read everything in one place.
+    recorder.emit(
+        "stage_end",
+        "supervisor",
+        "adk",
+        payload_summary=f"run_summary {pattern}",
+        extra=asdict(summary),
+    )
+    set_recorder(None)
 
     if verbose:
         _print_report(blackboard, summary.wall_s)

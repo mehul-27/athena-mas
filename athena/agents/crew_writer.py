@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable
 
 from athena.agents import bb_io
-from athena.agents.crew_roles import _crew_call
+from athena.agents.crew_roles import _crew_call, _unpack
 from athena.agents.report_sanitize import sanitize_report
 from athena.blackboard import Blackboard, BlackboardStore, Draft, FinalReport
 
@@ -42,7 +42,7 @@ def _truncate(report: FinalReport) -> FinalReport:
     )
 
 
-def _generate_report(prompt: str) -> FinalReport:
+def _generate_report(prompt: str) -> tuple[object, dict]:
     return _crew_call("writer", "Write a cited research report.", prompt, FinalReport)
 
 
@@ -95,13 +95,16 @@ def write_report(
     generate = generate or _generate_report
 
     fallback = False
+    stats: dict = {}
     try:
-        report = generate(prompt)
+        report, stats = _unpack(generate(prompt))
     except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
         try:
-            report = generate(
-                f"{prompt}\n\nYour previous output was rejected: {exc}\n"
-                "Return only valid JSON."
+            report, stats = _unpack(
+                generate(
+                    f"{prompt}\n\nYour previous output was rejected: {exc}\n"
+                    "Return only valid JSON."
+                )
             )
         except Exception as exc2:  # noqa: BLE001 - documented fallback
             report = _fallback_report(run_id, exc2)
@@ -139,7 +142,7 @@ def write_report(
     )
     version = blackboard.write("final_report", report, author="writer")
 
-    ack = {"section": "final_report", "version": version}
+    ack = {"section": "final_report", "version": version, **stats}
     if fallback:
         ack["fallback"] = True
         ack["note"] = "writer produced invalid output twice; wrote a minimal report"

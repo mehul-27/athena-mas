@@ -55,6 +55,14 @@ def main() -> int:
         missing += 1
     if not os.getenv("LLM_MODEL"):
         missing += 1
+    if os.getenv("LLM_MODEL"):
+        from athena.config.llm import provider_key_var, provider_prefix
+
+        prefix = provider_prefix()
+        exported = provider_key_var() or "(none - LLM_API_KEY only)"
+        print()
+        print(f"{'provider prefix':<26} {prefix}")
+        print(f"{'exported key variable':<26} {exported}")
     print()
     print("required missing:", missing)
     return 1 if missing else 0
