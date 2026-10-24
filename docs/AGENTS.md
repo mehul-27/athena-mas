@@ -98,3 +98,15 @@ The hook is the narrowest point both frameworks share: `LiteLlm`'s
 `generate_content_async` for ADK and `LLM.call`/`acall` for CrewAI. The two
 worker-side guards are `before_tool_callback` (refuses a tool call past the
 budget) and `after_tool_callback` (records what the tool returned).
+## Reasoning models (Step 6b)
+
+- `LLM_REASONING_EFFORT` (`low|medium|high`, empty = not sent) is passed to ADK's
+  `LiteLlm` (via its extra completion kwargs) and to `crewai.LLM` (a native
+  field, so it also covers the `output_pydantic` path).
+- Per-role output budgets are planner 1500, researcher 2000, analyst 1500,
+  writer 3000, critic 1500; `LLM_MAX_TOKENS_<ROLE>` overrides any of them.
+- An empty reply with `finish_reason=length` is retried once with the budget
+  doubled (cap 4000) and logged as an `empty_reply` error event; the second
+  empty reply is reported, not retried again.
+- Reasoning tokens are counted separately from visible output in the event log
+  and the metrics.

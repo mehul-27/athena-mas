@@ -83,7 +83,13 @@ class MonitoringPlugin(BasePlugin):
         if counters is not None:
             counters[0] += tokens_in or 0
             counters[1] += tokens_out or 0
-        self._emit("model_call", agent, tokens_in=tokens_in, tokens_out=tokens_out)
+        # ADK maps litellm's completion_tokens_details.reasoning_tokens onto
+        # thoughts_token_count, so that is the reasoning signal here.
+        reasoning = getattr(usage, "thoughts_token_count", None) if usage else None
+        self._emit(
+            "model_call", agent, tokens_in=tokens_in, tokens_out=tokens_out,
+            extra={"reasoning_tokens": reasoning},
+        )
         return None
 
     async def on_model_error_callback(

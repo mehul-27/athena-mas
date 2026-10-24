@@ -16,6 +16,7 @@ COLUMNS = (
     "model_calls",
     "tokens_in",
     "tokens_out",
+    "reasoning_tokens",
     "tool_calls",
     "errors",
     "limiter_wait_ms",
@@ -32,6 +33,7 @@ class AgentRow:
     model_calls: int = 0
     tokens_in: int = 0
     tokens_out: int = 0
+    reasoning_tokens: int = 0
     tool_calls: int = 0
     errors: int = 0
     limiter_wait_ms: float = 0.0
@@ -41,6 +43,7 @@ class AgentRow:
     stage_ms_list: list[float] = field(default_factory=list)
     a2a_tokens_in: int = 0
     a2a_tokens_out: int = 0
+    a2a_reasoning_tokens: int = 0
 
     def means(self) -> dict[str, float]:
         runs = max(1, self.runs)
@@ -49,7 +52,7 @@ class AgentRow:
 
     def as_dict(self) -> dict:
         values = asdict(self)
-        for key in ("stage_ms_list", "a2a_tokens_in", "a2a_tokens_out"):
+        for key in ("stage_ms_list", "a2a_tokens_in", "a2a_tokens_out", "a2a_reasoning_tokens"):
             values.pop(key, None)
         return values
 
@@ -82,6 +85,7 @@ def agent_metrics(run_ids: Iterable[str], events_by_run: dict[str, list[Event]] 
                 row.model_calls += 1
                 row.tokens_in += event.tokens_in or 0
                 row.tokens_out += event.tokens_out or 0
+                row.reasoning_tokens += int(event.extra.get("reasoning_tokens") or 0)
             elif event.kind == "tool_call":
                 row.tool_calls += 1
             elif event.kind == "error":
@@ -93,6 +97,7 @@ def agent_metrics(run_ids: Iterable[str], events_by_run: dict[str, list[Event]] 
                 row.a2a_bytes += int(event.extra.get("response_bytes", 0))
                 row.a2a_tokens_in += event.tokens_in or 0
                 row.a2a_tokens_out += event.tokens_out or 0
+                row.a2a_reasoning_tokens += int(event.extra.get("reasoning_tokens") or 0)
 
         for agent in (evidence_by_run or {}).get(run_id, []):
             row = rows.setdefault(agent, _blank(agent))
@@ -108,6 +113,7 @@ def agent_metrics(run_ids: Iterable[str], events_by_run: dict[str, list[Event]] 
         # the ADK side only).
         if not row.tokens_in and not row.tokens_out:
             row.tokens_in, row.tokens_out = row.a2a_tokens_in, row.a2a_tokens_out
+            row.reasoning_tokens = row.a2a_reasoning_tokens
 
     return sorted(rows.values(), key=lambda row: row.agent)
 
@@ -115,21 +121,24 @@ def agent_metrics(run_ids: Iterable[str], events_by_run: dict[str, list[Event]] 
 def format_metrics(rows: list[AgentRow]) -> str:
     """Plain-text table, one line per agent."""
     widths = {"agent": 15, "stage_ms": 9, "calls": 6, "in": 8, "out": 8,
-              "tools": 6, "err": 4, "wait_ms": 9, "a2a_b": 8, "evid": 5}
+              "reason": 7, "tools": 6, "err": 4, "wait_ms": 9, "a2a_b": 8, "evid": 5}
     header = (
         f"{'agent':<{widths['agent']}} {'stage_ms':>{widths['stage_ms']}} "
         f"{'models':>{widths['calls']}} {'tok_in':>{widths['in']}} "
-        f"{'tok_out':>{widths['out']}} {'tools':>{widths['tools']}} "
-        f"{'err':>{widths['err']}} {'wait_ms':>{widths['wait_ms']}} "
-        f"{'a2a_b':>{widths['a2a_b']}} {'evid':>{widths['evid']}}"
+        f"{'tok_out':>{widths['out']}} {'reason':>{widths['reason']}} "
+        f"{'tools':>{widths['tools']}} {'err':>{widths['err']}} "
+        f"{'wait_ms':>{widths['wait_ms']}} {'a2a_b':>{widths['a2a_b']}} "
+        f"{'evid':>{widths['evid']}}"
     )
     lines = [header, "-" * len(header)]
     for row in rows:
         lines.append(
             f"{row.agent:<{widths['agent']}} {row.stage_ms:>{widths['stage_ms']}.0f} "
             f"{row.model_calls:>{widths['calls']}} {row.tokens_in:>{widths['in']}} "
-            f"{row.tokens_out:>{widths['out']}} {row.tool_calls:>{widths['tools']}} "
-            f"{row.errors:>{widths['err']}} {row.limiter_wait_ms:>{widths['wait_ms']}.0f} "
+            f"{row.tokens_out:>{widths['out']}} "
+            f"{row.reasoning_tokens:>{widths['reason']}} "
+            f"{row.tool_calls:>{widths['tools']}} {row.errors:>{widths['err']}} "
+            f"{row.limiter_wait_ms:>{widths['wait_ms']}.0f} "
             f"{row.a2a_bytes:>{widths['a2a_b']}} {row.evidence_items:>{widths['evid']}}"
         )
     return "\n".join(lines)

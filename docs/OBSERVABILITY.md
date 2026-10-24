@@ -85,3 +85,25 @@ aggregate.
 - Guardrail decisions are not events yet; Step 7 adds them as their own kind.
 - CrewAI's token numbers are per crew call, not per provider request: a crew
   that retries internally still reports one number.
+## Reasoning models
+
+A reasoning model spends output tokens on hidden reasoning before it writes
+anything visible. Two consequences are built in:
+
+- **Budgets are generous and per role** (planner 1500, researcher 2000, analyst
+  1500, writer 3000, critic 1500; `LLM_MAX_TOKENS_<ROLE>` still wins).
+- **`LLM_REASONING_EFFORT`** (`low|medium|high`) is forwarded to both frameworks
+  when set, and not sent at all when empty.
+
+When a call comes back with no visible text and `finish_reason` is `length`, the
+model layer retries **once** with the output budget doubled (capped at 4000) and
+records an `error` event with `error_type: "empty_reply"` on every occurrence.
+CrewAI exposes no `finish_reason`, so there an empty result alone triggers the
+retry.
+
+`model_call` events carry `extra.reasoning_tokens` (ADK:
+`usage.thoughts_token_count`, which is where ADK puts litellm's
+`completion_tokens_details.reasoning_tokens`; CrewAI: `UsageMetrics.reasoning_tokens`,
+also echoed in the A2A ack). `tokens_out` stays the **total** completion count,
+reasoning included, so `tokens_out - reasoning_tokens` is the visible output.
+The metrics table, the heatmap and its CSV all carry the column.

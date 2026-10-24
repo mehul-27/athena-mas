@@ -69,14 +69,20 @@ def _crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object,
     usage = getattr(output, "token_usage", None)
     tokens_in = getattr(usage, "prompt_tokens", None) if usage else None
     tokens_out = getattr(usage, "completion_tokens", None) if usage else None
+    reasoning = getattr(usage, "reasoning_tokens", None) if usage else None
     if recorder is not None:
         recorder.emit(
             "model_call", role, "crewai", duration_ms=duration_ms,
             tokens_in=tokens_in, tokens_out=tokens_out,
             payload_summary=f"{role}: {len(prompt)} prompt chars",
+            extra={"reasoning_tokens": reasoning},
         )
-    stats = {"tokens_in": tokens_in or 0, "tokens_out": tokens_out or 0,
-             "model_ms": int(duration_ms)}
+    stats = {
+        "tokens_in": tokens_in or 0,
+        "tokens_out": tokens_out or 0,
+        "reasoning_tokens": reasoning or 0,
+        "model_ms": int(duration_ms),
+    }
     return output.pydantic, stats
 
 

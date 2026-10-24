@@ -84,7 +84,11 @@ class A2AStageAgent(BaseAgent):
             tokens_in=body.get("tokens_in"),
             tokens_out=body.get("tokens_out"),
             payload_summary=f"{self.role}: {traffic['out']}B out / {traffic['in']}B in",
-            extra={"request_bytes": traffic["out"], "response_bytes": traffic["in"]},
+            extra={
+                "request_bytes": traffic["out"],
+                "response_bytes": traffic["in"],
+                "reasoning_tokens": body.get("reasoning_tokens"),
+            },
         )
 
 

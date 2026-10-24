@@ -39,12 +39,13 @@ MAX_RETRIES = 3
 # the others only produce a few lines. Override one role with
 # LLM_MAX_TOKENS_<ROLE> (e.g. LLM_MAX_TOKENS_WRITER=2000).
 ROLE_MAX_TOKENS = {
-    "planner": 400,
-    "researcher": 600,
-    "analyst": 500,
-    "writer": 1500,
-    "critic": 400,
+    "planner": 1500,
+    "researcher": 2000,
+    "analyst": 1500,
+    "writer": 3000,
+    "critic": 1500,
 }
+REASONING_EFFORTS = ("low", "medium", "high")
 
 
 def _model_string() -> str:
@@ -100,6 +101,16 @@ def export_provider_key(key: str, model: str | None = None) -> str:
     return name
 
 
+def reasoning_effort() -> str:
+    """``LLM_REASONING_EFFORT`` when it names a level, else "" (not sent).
+
+    Reasoning models spend output tokens on hidden reasoning, which is why the
+    per-role budgets below are generous and why an empty reply is retried.
+    """
+    value = (os.getenv("LLM_REASONING_EFFORT") or "").strip().lower()
+    return value if value in REASONING_EFFORTS else ""
+
+
 def api_base() -> str:
     """Optional base URL for OpenAI-compatible providers."""
     return os.getenv("LLM_API_BASE") or ""
@@ -131,6 +142,7 @@ def get_adk_model(role: str | None = None):
         max_tokens=max_tokens_for(role),
         num_retries=MAX_RETRIES,
         **({"api_base": api_base()} if api_base() else {}),
+        **({"reasoning_effort": reasoning_effort()} if reasoning_effort() else {}),
     )
 
 
@@ -149,5 +161,6 @@ def get_crewai_llm(role: str | None = None):
         max_tokens=max_tokens_for(role),
         num_retries=MAX_RETRIES,
         **({"base_url": api_base()} if api_base() else {}),
+        **({"reasoning_effort": reasoning_effort()} if reasoning_effort() else {}),
     )
 

@@ -16,6 +16,7 @@ COLUMN_LABELS = {
     "model_calls": "model calls",
     "tokens_in": "tokens in",
     "tokens_out": "tokens out",
+    "reasoning_tokens": "reasoning",
     "tool_calls": "tool calls",
     "errors": "errors",
     "limiter_wait_ms": "limiter wait ms",

@@ -25,6 +25,7 @@ VARIABLES = (
     "LLM_ITPM_LIMIT",
     "LLM_RATELIMIT_MAX_WAIT_S",
     "LLM_MAX_TOKENS",
+    "LLM_REASONING_EFFORT",
     "SEARCH_PROVIDER",
     "SEARXNG_INSTANCE",
     "BRAVE_API_KEY",
@@ -48,6 +49,9 @@ def main() -> int:
             continue
         if any(marker in name for marker in SECRET_MARKERS):
             print(f"{name:<26} SET (length {len(value)})")
+        elif name == "LLM_REASONING_EFFORT":
+            # Not a secret: the level itself is what you want to confirm.
+            print(f"{name:<26} SET ({value})")
         else:
             print(f"{name:<26} SET")
 

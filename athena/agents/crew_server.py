@@ -113,7 +113,7 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         ack["version"] = result["version"]
     if "content" in result:
         ack["content"] = result["content"]
-    for key in ("tokens_in", "tokens_out", "model_ms"):
+    for key in ("tokens_in", "tokens_out", "reasoning_tokens", "model_ms"):
         if result.get(key) is not None:
             ack[key] = result[key]
     if result.get("fallback"):
