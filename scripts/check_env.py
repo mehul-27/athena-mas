@@ -19,7 +19,7 @@ _SHELL_VARS = set(os.environ)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import athena.config.llm  # noqa: E402,F401  (loads .env; prints nothing)
+from athena.config.llm import provider_key_var, provider_prefix  # noqa: E402  (loads .env)
 
 SECRET_MARKERS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD")
 
@@ -71,8 +71,6 @@ def main() -> int:
         print(f"{name:<26} {_describe(name)}")
 
     if os.getenv("LLM_MODEL"):
-        from athena.config.llm import provider_key_var, provider_prefix
-
         prefix = provider_prefix()
         exported = provider_key_var() or "(none - LLM_API_KEY only)"
         print()

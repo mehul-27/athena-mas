@@ -33,7 +33,6 @@ from fastapi import FastAPI
 if __package__ in (None, ""):  # allow `python athena/agents/crew_server.py`
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import athena.config.llm  # noqa: F401  (must load before crewai, see crew_roles)
 from athena.agents import crew_roles
 from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report

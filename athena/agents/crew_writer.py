@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable
 
 from athena.agents import bb_io
-from athena.agents.crew_roles import _crew_call, _unpack
+from athena.agents.crew_roles import crew_call, unpack_result
 from athena.agents.report_sanitize import sanitize_report
 from athena.blackboard import Blackboard, BlackboardStore, Draft, FinalReport
 
@@ -20,7 +20,7 @@ MAX_ANSWER_WORDS = 150
 TERMINAL = (".", "!", "?", '"', "'", "”", "’", ")")
 SHORTER = (
     "\n\nYour previous answer was cut off mid-sentence. Rewrite the whole "
-    f"report with an answer of at most 120 words that ends with a full stop."
+    "report with an answer of at most 120 words that ends with a full stop."
 )
 
 
@@ -43,7 +43,7 @@ def _truncate(report: FinalReport) -> FinalReport:
 
 
 def _generate_report(prompt: str) -> tuple[object, dict]:
-    return _crew_call("writer", "Write a cited research report.", prompt, FinalReport)
+    return crew_call("writer", "Write a cited research report.", prompt, FinalReport)
 
 
 def _fallback_report(run_id: str, exc: Exception) -> FinalReport:
@@ -99,10 +99,10 @@ def write_report(
     stats: dict = {}
     failure: Exception | None = None
     try:
-        report, stats = _unpack(generate(prompt))
+        report, stats = unpack_result(generate(prompt))
     except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
         try:
-            report, stats = _unpack(
+            report, stats = unpack_result(
                 generate(
                     f"{prompt}\n\nYour previous output was rejected: {exc}\n"
                     "Return only valid JSON."

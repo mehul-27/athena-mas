@@ -14,8 +14,6 @@ counts as a failure.
 from __future__ import annotations
 
 import json
-from typing import Any
-
 from google.adk.models.lite_llm import LiteLLMClient, LiteLlm
 
 from athena.config.usage import last_reasoning, reasoning_from_usage, set_last_reasoning
@@ -27,7 +25,6 @@ from athena.config.reply_guard import (
     note_empty_reply,
 )
 from athena.observability.context import current_agent
-from athena.observability.recorder import get_recorder
 
 def _request_text(llm_request) -> str:
     try:

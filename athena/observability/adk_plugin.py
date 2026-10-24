@@ -18,7 +18,7 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.tools.base_tool import BaseTool
 from google.genai import types
 
-from athena.observability.context import reset_agent, set_agent
+from athena.observability.context import set_agent
 from athena.config.usage import last_reasoning, reasoning_from_usage
 from athena.observability.recorder import Recorder, get_recorder
 

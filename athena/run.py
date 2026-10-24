@@ -10,7 +10,6 @@ import argparse
 import asyncio
 import csv
 from dataclasses import asdict
-import json
 import os
 import sys
 import time
@@ -27,7 +26,7 @@ from athena.agents.a2a_stage import DEFAULT_CARD_URL
 from athena.agents.supervisor import build_supervisor
 from athena.blackboard import Blackboard, Task
 from athena.patterns import VALID_PATTERNS, UnknownPatternError
-from athena.run_report import print_report, text_of, tool_lines
+from athena.run_report import parts_of, print_report, text_of, tool_lines
 from athena.summary import RunSummary, finish, format_table, note_ack, summary_line
 from athena.tools import settings
 
@@ -59,17 +58,28 @@ def server_is_up(card_url: str = DEFAULT_CARD_URL) -> bool:
         return False
 
 
-async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSummary:
+def default_runner(run_id: str, pattern: str, recorder) -> "InMemoryRunner":
+    """The real ADK runner. Tests inject a stub factory instead."""
+    return InMemoryRunner(
+        agent=build_supervisor(run_id, pattern=pattern),
+        app_name=APP_NAME,
+        plugins=[MonitoringPlugin(recorder)],
+    )
+
+
+async def _execute(
+    question: str,
+    pattern: str,
+    verbose: bool = True,
+    runner_factory=None,
+) -> RunSummary:
     blackboard = Blackboard.create(Task(question=question, pattern=pattern))
     recorder = Recorder.for_run(blackboard.run_id)
     set_recorder(recorder)
     install_hooks()
 
-    runner = InMemoryRunner(
-        agent=build_supervisor(blackboard.run_id, pattern=pattern),
-        app_name=APP_NAME,
-        plugins=[MonitoringPlugin(recorder)],
-    )
+    build_runner = runner_factory or default_runner
+    runner = build_runner(blackboard.run_id, pattern, recorder)
     session = await runner.session_service.create_session(app_name=APP_NAME, user_id=USER_ID)
 
     summary = RunSummary(pattern=pattern, run_id=blackboard.run_id)
@@ -103,10 +113,16 @@ async def _execute(question: str, pattern: str, verbose: bool = True) -> RunSumm
             if "a2a_payload" in metadata:
                 print(f"    [a2a request] {metadata['a2a_payload_bytes']}B {metadata['a2a_payload']}")
             if event.author in {"analyst", "writer", "critic"} and text.startswith("{"):
-                note_ack(summary, text)
+                failure = note_ack(summary, text)
                 print(f"    [a2a] {text[:160]}")
+                if failure:
+                    print(
+                        f"WARNING {failure.get('role')} failed: "
+                        f"{failure.get('error_type', 'Error')}: "
+                        f"{str(failure.get('error', ''))[:200]}"
+                    )
 
-        summary.tool_calls += sum(1 for part in _parts(event) if part.function_call)
+        summary.tool_calls += sum(1 for part in parts_of(event) if part.function_call)
         usage = getattr(event, "usage_metadata", None)
         if usage is not None:
             summary.adk_tokens += int(getattr(usage, "prompt_token_count", 0) or 0)

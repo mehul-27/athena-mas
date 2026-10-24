@@ -10,13 +10,14 @@ import json
 from athena.blackboard import Blackboard
 
 
-def _parts(event):
+def parts_of(event):
+    """The content parts of an ADK event (empty when there are none)."""
     content = getattr(event, "content", None)
     return content.parts if content and content.parts else []
 
 
 def text_of(event) -> str:
-    return "".join(part.text for part in _parts(event) if part.text and not part.thought)
+    return "".join(part.text for part in parts_of(event) if part.text and not part.thought)
 
 
 def _short(value, limit: int = 110) -> str:
@@ -31,7 +32,7 @@ def _short(value, limit: int = 110) -> str:
 def tool_lines(event) -> list[str]:
     """Tool calls and their results, one short line each."""
     lines = []
-    for part in _parts(event):
+    for part in parts_of(event):
         if part.function_call:
             lines.append(f"[tool] {part.function_call.name} {_short(part.function_call.args)}")
         if part.function_response:

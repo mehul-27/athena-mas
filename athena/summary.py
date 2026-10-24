@@ -75,20 +75,25 @@ def format_table(summaries: list[RunSummary]) -> str:
         )
     return "\n".join(lines)
 
-def note_ack(summary: RunSummary, text: str) -> None:
-    """Fold a CrewAI acknowledgement into the run's health flags."""
+def note_ack(summary: RunSummary, text: str) -> dict | None:
+    """Fold a CrewAI acknowledgement into the run's health flags.
+
+    Returns the body when the role failed, so the runner can print the warning.
+    """
     try:
         body = json.loads(text)
     except ValueError:
-        return
+        return None
     if not isinstance(body, dict):
-        return
+        return None
     if not body.get("ok", True):
         summary.stage_errors.append(
             f"{body.get('role', '?')}: {body.get('error_type', 'Error')}"
         )
+        return body
     if body.get("fallback"):
         summary.degraded = True
+    return None
 
 
 def finish(summary: RunSummary) -> RunSummary:

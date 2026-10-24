@@ -129,7 +129,7 @@ def test_failure_ack_redacts_a_key(blackboard: Blackboard, monkeypatch) -> None:
     assert "gsk_live" not in (stored.error_message or "")
 
 
-def test_a2a_stage_warns_and_emits_on_failure(blackboard: Blackboard, capsys) -> None:
+def test_a2a_stage_emits_error_on_failure(blackboard: Blackboard) -> None:
     set_recorder(Recorder(blackboard.run_id, SQLiteEventStore()))
     agent = A2AStageAgent(
         name="analyst", role="analyst", run_id=blackboard.run_id,
@@ -141,8 +141,6 @@ def test_a2a_stage_warns_and_emits_on_failure(blackboard: Blackboard, capsys) ->
 
     agent._record_call(ack, time.perf_counter())
 
-    printed = capsys.readouterr().out
-    assert "WARNING analyst failed: TypeError: bad kwarg" in printed
     kinds = [(e.kind, e.error_type) for e in SQLiteEventStore().events(blackboard.run_id)]
     assert ("error", "TypeError") in kinds
     set_recorder(None)

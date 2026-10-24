@@ -19,7 +19,7 @@ from athena.blackboard import (
 Generate = Callable[[str], object]
 
 
-def _crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, dict]:
+def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, dict]:
     """Run one single-agent Crew; return its structured output and usage.
 
     This is the single entry point every CrewAI role goes through, so it is also
@@ -87,11 +87,11 @@ def _crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object,
 
 
 def _generate_analysis(prompt: str) -> tuple[object, dict]:
-    return _crew_call("analyst", "Synthesise the evidence into findings and gaps.", prompt, Analysis)
+    return crew_call("analyst", "Synthesise the evidence into findings and gaps.", prompt, Analysis)
 
 
 def _generate_critique(prompt: str) -> tuple[object, dict]:
-    return _crew_call("critic", "Review the report against the evidence.", prompt, Critique)
+    return crew_call("critic", "Review the report against the evidence.", prompt, Critique)
 
 
 def analyse(
@@ -114,7 +114,7 @@ def analyse(
     generate = generate or _generate_analysis
     stats: dict = {}
     try:
-        analysis, stats = _unpack(generate(prompt))
+        analysis, stats = unpack_result(generate(prompt))
     except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
         analysis = Analysis(
             key_findings=[], gaps=[f"analysis generation failed: {type(exc).__name__}"]
@@ -149,7 +149,7 @@ def critique(
     generate = generate or _generate_critique
     stats: dict = {}
     try:
-        result, stats = _unpack(generate(prompt))
+        result, stats = unpack_result(generate(prompt))
     except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
         result = Critique(
             issues=[f"critique generation failed: {type(exc).__name__}"],
@@ -161,7 +161,7 @@ def critique(
     version = blackboard.write("critique", result, author="critic")
     return {"section": "critique", "version": version, **stats}
 
-def _unpack(value) -> tuple[object, dict]:
+def unpack_result(value) -> tuple[object, dict]:
     """Accept both ``model`` and ``(model, usage)`` from a generator."""
     if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], dict):
         return value

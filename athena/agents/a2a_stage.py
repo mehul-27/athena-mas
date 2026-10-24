@@ -87,7 +87,6 @@ class A2AStageAgent(BaseAgent):
                     error_type=error_type, error_message=message,
                     payload_summary=f"a2a {self.role} failed",
                 )
-            print(f"WARNING {self.role} failed: {error_type}: {message}")
 
         recorder.emit(
             "a2a_call", self.role, "adk",

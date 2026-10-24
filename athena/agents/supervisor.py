@@ -81,14 +81,9 @@ def build_supervisor(
 ):
     """Build the supervisor for a pattern. See ``athena.patterns``."""
     from athena.agents.a2a_stage import DEFAULT_CARD_URL
-    from athena.patterns import UnknownPatternError, build_pattern
+    from athena.patterns import build_pattern
 
     return build_pattern(pattern, run_id, store, card_url or DEFAULT_CARD_URL)
 
 
-__all__ = [
-    "SupervisorAgent",
-    "build_supervisor",
-    "timed_stage",
-    "UnknownPatternError",
-]
+__all__ = ["SupervisorAgent", "build_supervisor", "timed_stage"]
