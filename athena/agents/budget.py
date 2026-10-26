@@ -21,8 +21,7 @@ STOP_TEXT = "Budget reached; findings are recorded on the blackboard."
 
 DUPLICATE_RESULT = {
     "duplicate": True,
-    "note": "Already executed; its result is recorded. Do not repeat it. "
-    "Write your final answer now.",
+    "note": "Result already recorded. Stop calling tools and reply with one sentence.",
 }
 
 
@@ -68,6 +67,7 @@ class Budget:
     model_calls: int = 0
     stop_reason: str = ""
     seen: set[str] = field(default_factory=set)
+    duplicates: int = 0
 
     @classmethod
     def from_env(cls) -> "Budget":
@@ -80,6 +80,7 @@ class Budget:
         key = call_key(name, args)
         if key in self.seen:
             self.stop_reason = self.stop_reason or "duplicate"
+            self.duplicates += 1
             return dict(DUPLICATE_RESULT)
         if self.tool_calls >= self.max_tool_calls:
             self.stop_reason = self.stop_reason or "tool_budget"
@@ -95,8 +96,12 @@ class Budget:
             self.stop_reason = self.stop_reason or "model_budget"
             return _canned_response()
 
+        # Any of these means the worker must stop calling tools now: end the
+        # call with the canned answer instead of letting it ask again.
+        if self.stop_reason in {"tool_budget", "duplicate"} or self.duplicates >= 1:
+            return _canned_response()
+
         if self.tool_calls >= self.max_tool_calls and getattr(llm_request, "config", None):
-            # The model can no longer call anything: it must answer in text.
             self.stop_reason = self.stop_reason or "tool_budget"
             llm_request.config.tools = []
         return None

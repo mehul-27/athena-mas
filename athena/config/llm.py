@@ -193,6 +193,8 @@ def get_adk_model(role: str | None = None):
         api_key=_require_api_key(),
         max_tokens=max_tokens_for(role),
         num_retries=MAX_RETRIES,
+        # A hard per-request timeout; the guard clamps it again per role.
+        timeout=float(os.getenv("ATHENA_LLM_TIMEOUT_S") or 120),
         **({"api_base": api_base()} if api_base() else {}),
         **({"reasoning_effort": reasoning_effort()} if reasoning_effort() else {}),
     )

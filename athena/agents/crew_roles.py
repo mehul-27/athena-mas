@@ -19,6 +19,10 @@ from athena.blackboard import (
 Generate = Callable[[str], object]
 
 
+class RunawayOutputError(RuntimeError):
+    """A model call produced far more output than the role is allowed."""
+
+
 def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, dict]:
     """Run one single-agent Crew; return its structured output and usage.
 
@@ -31,7 +35,8 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
     import math
     import time
 
-    from athena.config.llm import get_crewai_llm
+    from athena.config.call_limits import role_limits, take_runaway
+    from athena.config.llm import get_crewai_llm, max_tokens_for
     from crewai import Agent, Crew, Process, Task
 
     from athena.observability.litellm_usage import usage_scope
@@ -62,8 +67,14 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
         # Building the LLM reset litellm.callbacks (crewai/llm.py:707), so the
         # hook is re-asserted here, after construction and before the call.
         install_usage_logger()
-        with usage_scope(role) as scope:
+        with role_limits(role, max_tokens_for(role)), usage_scope(role) as scope:
             output = crew.kickoff()
+        runaway = take_runaway()
+        if runaway:
+            raise RunawayOutputError(
+                f"{runaway['role']} returned {runaway['tokens']} tokens "
+                f"against a cap of {runaway['cap']}"
+            )
     except Exception as exc:
         if recorder is not None:
             recorder.emit(

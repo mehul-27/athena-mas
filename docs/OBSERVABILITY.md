@@ -187,3 +187,24 @@ The estimate flag was also being dropped: `run_role_request` copied a fixed list
 of ack keys and `estimated` was not in it, so the runner never saw it. It is
 copied now, the runner warns, the metrics table marks the row, and the summary
 line reports `cost basis: measured` or `cost basis: partly estimated`.
+
+### Output caps and timeouts (Step 6k)
+
+Every model call is clamped in the endpoint-guard wrapper, the one layer all
+CrewAI paths cross (plain kickoff, `output_pydantic` through instructor, the
+empty-reply retry). The wrapper reads the role recorded by the server
+(`athena/config/call_limits.py`, process-level, not a ContextVar) and:
+
+- sets `max_tokens` to the role cap when the request omits it or asks for more;
+- sets `timeout` to `ATHENA_LLM_TIMEOUT_S` (default 120) when it is missing or
+  larger.
+
+Why it was needed: a critic call returned 131,951 completion tokens (1,335 of
+them reasoning) in 589 s. The role cap was 1,500 and the global cap 4,000, but
+the request the wrapper saw carried neither, and the A2A timeout was 900 s, so
+nothing stopped it. The A2A client now defaults to
+`ATHENA_A2A_TIMEOUT_S` = 240 s.
+
+After a call, more than 3x the role cap is flagged as a runaway: an
+`error` event with `error_type: runaway_output` is recorded and the role fails
+with `RunawayOutputError` (ok:false, no blackboard write).

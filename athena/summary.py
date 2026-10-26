@@ -19,6 +19,7 @@ TABLE_COLUMNS = (
     ("rev", 4),
     ("conf", 5),
     ("approved", 8),
+    ("severity", 9),
     ("degraded", 9),
 )
 
@@ -39,6 +40,7 @@ class RunSummary:
     revision_rounds: int = 0
     confidence: float | None = None
     approved: bool | None = None
+    severity: str | None = None
     stage_errors: list[str] = field(default_factory=list)
     degraded: bool = False
     failed: bool = False
@@ -56,6 +58,7 @@ class RunSummary:
             str(self.revision_rounds),
             "-" if self.confidence is None else f"{self.confidence:.2f}",
             "-" if self.approved is None else str(self.approved).lower(),
+            self.severity or "-",
             "yes" if self.degraded else "no",
         )
 
@@ -114,5 +117,13 @@ def summary_line(summary: RunSummary) -> str:
         f"A2A {summary.a2a_bytes_out}B out / {summary.a2a_bytes_in}B in | "
         f"evidence {summary.evidence_count} | tools {summary.tool_calls} | "
         f"revisions {summary.revision_rounds} | degraded {summary.degraded}{errors} | "
+        f"critic {_verdict(summary)} | "
         + ("cost basis: partly estimated" if summary.estimated else "cost basis: measured")
     )
+
+def _verdict(summary: RunSummary) -> str:
+    """'approved (low)' / 'rejected (high)' / 'unknown' for the summary line."""
+    if summary.approved is None:
+        return "unknown"
+    verdict = "approved" if summary.approved else "rejected"
+    return f"{verdict} ({summary.severity})" if summary.severity else verdict

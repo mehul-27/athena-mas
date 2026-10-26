@@ -18,7 +18,7 @@ from a2a.types import Role, SendMessageRequest
 
 INSTRUCTION_LIMIT = 300
 MAX_PAYLOAD_BYTES = 600
-MAX_CONTEXT_CHARS = 6000
+MAX_CONTEXT_CHARS = 9000
 
 _STATS = {"out": 0, "in": 0}
 _LAST = {"out": 0, "in": 0}
@@ -55,8 +55,16 @@ def build_payload(run_id: str, role: str, instruction: str, context: str | None 
 
 
 def a2a_timeout() -> float:
-    """A role can wait on the shared limiter before it answers; be patient."""
-    return float(os.getenv("ATHENA_A2A_TIMEOUT") or 900)
+    """How long one role may take before the caller gives up.
+
+    A role waits on the shared limiter before it answers, so this cannot be
+    tiny; but 900 s let a runaway call hold the pipeline for ten minutes.
+    """
+    return float(
+        os.getenv("ATHENA_A2A_TIMEOUT_S")
+        or os.getenv("ATHENA_A2A_TIMEOUT")
+        or 240
+    )
 
 
 async def send_role_request(card_url: str, payload: str, timeout: float | None = None) -> str:

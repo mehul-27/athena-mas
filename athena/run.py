@@ -137,6 +137,7 @@ async def _execute(
     summary.confidence = report[0].confidence if report else None
     critique = blackboard.read("critique")
     summary.approved = critique[0].approved if critique else None
+    summary.severity = critique[0].severity if critique else None
     finish(summary)
 
     # Persist the summary as one event so Step 9 can read everything in one place.

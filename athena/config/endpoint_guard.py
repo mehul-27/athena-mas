@@ -88,18 +88,29 @@ def install_guard() -> bool:
     import litellm
 
     def capture(result):
-        """Count usage at the one layer every call must pass through."""
+        """Count usage and flag a runaway completion."""
         try:
+            from athena.observability.litellm_usage import usage_from_response
             from athena.observability.usage_hook import record_once
+            from athena.config.call_limits import note_completion
 
             record_once(result)
+            _in, out, _reasoning = usage_from_response(result)
+            note_completion(out)
         except Exception:  # noqa: BLE001 - monitoring must never break a call
             pass
+
+    def _prepare(kwargs: dict) -> None:
+        """Clamp the call to the running role's cap and timeout."""
+        from athena.config.call_limits import clamp
+
+        clamp(kwargs)
 
     def wrap(function):
         def guarded(*args, **kwargs):
             model = kwargs.get("model") or (args[0] if args else "")
             check_call(str(model), kwargs)
+            _prepare(kwargs)
             result = function(*args, **kwargs)
             capture(result)
             return result
@@ -110,6 +121,7 @@ def install_guard() -> bool:
         async def guarded(*args, **kwargs):
             model = kwargs.get("model") or (args[0] if args else "")
             check_call(str(model), kwargs)
+            _prepare(kwargs)
             result = await function(*args, **kwargs)
             capture(result)
             return result
