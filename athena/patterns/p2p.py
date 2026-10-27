@@ -115,10 +115,16 @@ class P2PAgent(BaseAgent):
             return reply
 
         content = body.get("content", "")
+        # Carry the stage output forward. Without this the context object never
+        # held the analysis or the report, so the critic was asked to review
+        # material that had never been put in its message (Step 8-demo, 0a).
         if role == "analyst":
+            context.analysis = content
             return self._audit_analysis(content)
         if role == "writer":
+            context.report = content
             return self._audit_report(content, context.evidence)
+        context.critique = content
         return self._audit_critique(content)
 
     def _audit_analysis(self, content: str) -> str:

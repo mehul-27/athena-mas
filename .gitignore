@@ -33,3 +33,8 @@ data/*
 !data/eval/*.csv
 # Stray zero-byte file the CrewAI package creates in the CWD on some runs.
 /crewai
+# The demo ships its recorded runs and curated questions (public handbook data).
+!data/demo/
+!data/demo/questions.json
+!data/demo/replay/
+!data/demo/replay/*.json

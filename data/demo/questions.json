@@ -1,0 +1,30 @@
+[
+  {
+    "id": "demo-1",
+    "kind": "handbook lookup",
+    "text": "What does the NASA Systems Engineering Handbook say systems engineering is, and which broad activities does the discipline cover?"
+  },
+  {
+    "id": "demo-2",
+    "kind": "handbook lookup",
+    "text": "What does the handbook mean by the life cycle of a system, and which phases does it describe?"
+  },
+  {
+    "id": "demo-3",
+    "kind": "handbook lookup",
+    "text": "What does the handbook say about technical reviews and why they matter in systems engineering?"
+  },
+  {
+    "id": "demo-4",
+    "kind": "multi-hop",
+    "text": "How do requirements, architecture and verification relate to each other in the handbook's technical processes?"
+  },
+  {
+    "id": "demo-5",
+    "kind": "numeric",
+    "text": "The handbook defines a risk threshold of a probability of 67 percent and above for a high-risk rating (page 179). A design has a 40 percent chance of a two-week slip and a 50 percent chance of a three-week slip. Use the calculator to compute the expected schedule slip in weeks, and explain how that expected value should be compared with the handbook's threshold.",
+    "source": "data/corpus/nasa_Systems_handbook.pdf",
+    "page": 179,
+    "note": "The 67 percent threshold is the handbook's own wording (page 179). The 40/50 percent inputs are the demo's, so the arithmetic is verifiable: 0.4*2 + 0.5*3 = 2.3 weeks. Human to confirm the citation before the demo."
+  }
+]

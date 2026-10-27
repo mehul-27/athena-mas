@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import json
 from dataclasses import asdict
 import sys
 import time
@@ -74,8 +75,9 @@ async def _execute(
     pattern: str,
     verbose: bool = True,
     runner_factory=None,
+    run_id: str | None = None,
 ) -> RunSummary:
-    blackboard = Blackboard.create(Task(question=question, pattern=pattern))
+    blackboard = Blackboard.create(Task(question=question, pattern=pattern, run_id=run_id or ""))
     recorder = Recorder.for_run(blackboard.run_id)
     set_recorder(recorder)
     install_hooks()
@@ -155,10 +157,10 @@ async def _execute(
     return summary
 
 
-async def run_one(question: str, pattern: str) -> RunSummary:
+async def run_one(question: str, pattern: str, run_id: str = "") -> RunSummary:
     configure_process()  # export the endpoint and arm the guard
     try:
-        summary = await _execute(question, pattern, verbose=True)
+        summary = await _execute(question, pattern, verbose=True, run_id=run_id or None)
     except LlmCallsLimitExceededError:
         return _cap_reached(pattern)
     print("\n" + summary_line(summary))
@@ -202,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--eval-id", type=int, help="question id from the NASA eval CSV")
     parser.add_argument("--pattern", default="sequential", help=f"one of {list(VALID_PATTERNS)}")
     parser.add_argument("--compare", action="store_true", help="run every pattern on this question")
+    # Used by the demo API: it needs the run id before the run starts.
+    parser.add_argument("--run-id", default="", help="use this run id instead of a new one")
+    parser.add_argument("--json-summary", default="", help="write the RunSummary as JSON here")
     args = parser.parse_args(argv)
 
     if args.pattern not in VALID_PATTERNS:
@@ -220,7 +225,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.compare:
             asyncio.run(run_compare(question))
         else:
-            summary = asyncio.run(run_one(question, args.pattern))
+            summary = asyncio.run(run_one(question, args.pattern, run_id=args.run_id))
+            if args.json_summary:
+                write_summary_json(summary, args.json_summary)
             if summary.failed:
                 return 2
     except UnknownPatternError as exc:
@@ -230,3 +237,11 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+def write_summary_json(summary: RunSummary, path: str) -> None:
+    """Write the RunSummary so the demo API can read it without the blackboard."""
+    from pathlib import Path
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(asdict(summary), indent=2, default=str), encoding="utf-8")

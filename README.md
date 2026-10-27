@@ -100,3 +100,19 @@ The Agent Card is served at
 rather than `localhost` on purpose: ADK requires the card's RPC URL to share an
 origin with the URL the card was fetched from.
 
+## Demo
+
+```bat
+call .venv\Scripts\activate.bat
+set /p LLM_API_KEY=Key: 
+cls
+set LLM_API_BASE=http://your-gateway.example/v1
+set LLM_MODEL=openai/deepseek/deepseek-v4.1-flash
+python scripts\demo.py
+```
+
+One command starts the CrewAI A2A server, the demo API on 127.0.0.1:8000 and
+the browser, and Ctrl+C stops everything it started. Without a key:
+`python scripts\demo.py --replay-only` plays the recorded runs in
+`data/demo/replay/`. See `docs/DEMO.md` for the walkthrough and the honest list
+of what is not implemented yet.

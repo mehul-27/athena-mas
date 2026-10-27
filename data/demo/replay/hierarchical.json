@@ -1,0 +1,1164 @@
+{
+  "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+  "summary": {
+    "pattern": "hierarchical",
+    "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+    "wall_s": 55.79165690000809,
+    "stage_ms": {
+      "planner": 7582.1,
+      "rag_researcher": 2581.7,
+      "web_researcher": 9501.4,
+      "analyst": 7946.4,
+      "writer": 10414.8,
+      "critic": 6204.0
+    },
+    "adk_tokens": 9837,
+    "a2a_bytes_out": 479,
+    "a2a_bytes_in": 436,
+    "evidence_count": 3,
+    "tool_calls": 3,
+    "revision_rounds": 0,
+    "confidence": 0.4,
+    "approved": true,
+    "severity": "low",
+    "stage_errors": [],
+    "degraded": false,
+    "failed": false,
+    "estimated": false
+  },
+  "events": [
+    {
+      "event_id": "e0516c4a-98b6-4026-a8ec-bea22a38e2c0",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:16.852695+00:00",
+      "seq": 1,
+      "kind": "stage_start",
+      "agent": "supervisor",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "d3517343-f1e7-4b01-8b12-4ed13419e2a7",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:16.860433+00:00",
+      "seq": 2,
+      "kind": "stage_start",
+      "agent": "planner",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "33989be4-fbd4-4bcb-b40c-ddccb4bb75bc",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:22.382779+00:00",
+      "seq": 3,
+      "kind": "model_call",
+      "agent": "planner",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": 534,
+      "tokens_out": 210,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": 89
+      }
+    },
+    {
+      "event_id": "14dead8e-6351-43e0-bbd7-239752bf8418",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:22.404109+00:00",
+      "seq": 4,
+      "kind": "blackboard_write",
+      "agent": "planner",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "write plan v1",
+      "extra": {
+        "section": "plan",
+        "version": 1,
+        "operation": "write"
+      }
+    },
+    {
+      "event_id": "ed78aa4f-273d-48d8-a6d3-e45cfb244c86",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:22.412542+00:00",
+      "seq": 5,
+      "kind": "tool_call",
+      "agent": "planner",
+      "framework": "adk",
+      "duration_ms": 19.36,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "write_plan: {'steps': [\"rag_researcher: Search the NASA document corpus (e.g., NASA Systems Engineering Handbook) for NASA's explicit definition of systems engineering\", 'r...",
+      "extra": {}
+    },
+    {
+      "event_id": "27102aa1-64be-44a9-971d-e4c83572a828",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:24.424569+00:00",
+      "seq": 6,
+      "kind": "model_call",
+      "agent": "planner",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": 771,
+      "tokens_out": 90,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": null
+      }
+    },
+    {
+      "event_id": "aa6ce810-911c-47da-b70d-4d1b128a8734",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:24.434037+00:00",
+      "seq": 7,
+      "kind": "stage_end",
+      "agent": "planner",
+      "framework": "adk",
+      "duration_ms": 7573.61,
+      "tokens_in": 1305,
+      "tokens_out": 300,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "c1d6f756-748b-40ea-bf12-b313352e99d5",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:24.447536+00:00",
+      "seq": 8,
+      "kind": "stage_start",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "a20841c8-9011-4226-9829-c261e1ecbcda",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:28.665199+00:00",
+      "seq": 9,
+      "kind": "model_call",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": 1200,
+      "tokens_out": 78,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": null
+      }
+    },
+    {
+      "event_id": "104fed25-ea1d-4c57-8d61-334e5e8defa3",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:31.418940+00:00",
+      "seq": 10,
+      "kind": "tool_call",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": 2743.34,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "rag_search: {'query': 'NASA definition of systems engineering and the broad activities it covers', 'top_k': 3}",
+      "extra": {}
+    },
+    {
+      "event_id": "8cb048d3-f445-492f-8335-e86374c6e3f4",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:31.436581+00:00",
+      "seq": 11,
+      "kind": "blackboard_write",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "append evidence v1",
+      "extra": {
+        "section": "evidence",
+        "version": 1,
+        "operation": "append"
+      }
+    },
+    {
+      "event_id": "9e828394-ad6f-4f45-93b3-93ce6a5c81a9",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:31.451568+00:00",
+      "seq": 12,
+      "kind": "blackboard_write",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "append evidence v2",
+      "extra": {
+        "section": "evidence",
+        "version": 2,
+        "operation": "append"
+      }
+    },
+    {
+      "event_id": "2885ce9b-edfd-40cc-b713-86c53dafbb4d",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:31.466611+00:00",
+      "seq": 13,
+      "kind": "blackboard_write",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "append evidence v3",
+      "extra": {
+        "section": "evidence",
+        "version": 3,
+        "operation": "append"
+      }
+    },
+    {
+      "event_id": "fe0a2b20-d7c9-4951-8844-7a6ea39afafc",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:35.879299+00:00",
+      "seq": 14,
+      "kind": "model_call",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": 1348,
+      "tokens_out": 315,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": 202
+      }
+    },
+    {
+      "event_id": "5386a7e3-6903-4296-9f16-cc0323c458ec",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:35.886847+00:00",
+      "seq": 15,
+      "kind": "stage_end",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": 11439.32,
+      "tokens_in": 2548,
+      "tokens_out": 393,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "23051b33-5da5-4700-9f3f-2d7c11dec3ee",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:35.895585+00:00",
+      "seq": 16,
+      "kind": "stage_start",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "3c606ccf-a20b-4c08-bc40-03637ef9c172",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:38.454200+00:00",
+      "seq": 17,
+      "kind": "model_call",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": 1686,
+      "tokens_out": 130,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": null
+      }
+    },
+    {
+      "event_id": "36dd33e0-3d48-47ee-bbde-15a4ec91e79c",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:38.465913+00:00",
+      "seq": 18,
+      "kind": "stage_end",
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "duration_ms": 2570.31,
+      "tokens_in": 1686,
+      "tokens_out": 130,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "5db5d5ce-9a9b-4f6a-8c56-c9cb87d1c984",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:38.477781+00:00",
+      "seq": 19,
+      "kind": "stage_start",
+      "agent": "web_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "a406a434-74e2-4b66-b64e-576a8f09dbc8",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:44.206914+00:00",
+      "seq": 20,
+      "kind": "model_call",
+      "agent": "web_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": 2092,
+      "tokens_out": 78,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": 17
+      }
+    },
+    {
+      "event_id": "13c480f7-8eaf-4380-b9ce-05b95a2f7552",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:45.726229+00:00",
+      "seq": 21,
+      "kind": "tool_call",
+      "agent": "web_researcher",
+      "framework": "adk",
+      "duration_ms": 1507.29,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "web_search: {'query': 'NASA systems engineering definition nasa.gov', 'max_results': 3}",
+      "extra": {}
+    },
+    {
+      "event_id": "e57f1b12-ccae-43ac-9e5e-ba9ed4791021",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:47.960932+00:00",
+      "seq": 22,
+      "kind": "model_call",
+      "agent": "web_researcher",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": 2206,
+      "tokens_out": 109,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": null
+      }
+    },
+    {
+      "event_id": "ea5f756e-93f2-42e3-9da3-b3227534470a",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:47.970236+00:00",
+      "seq": 23,
+      "kind": "stage_end",
+      "agent": "web_researcher",
+      "framework": "adk",
+      "duration_ms": 9492.47,
+      "tokens_in": 4298,
+      "tokens_out": 187,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "270ed4bc-b458-497e-840f-4b3e3bc1391c",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:47.979350+00:00",
+      "seq": 24,
+      "kind": "stage_start",
+      "agent": "analyst",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "20f74869-1e73-4e26-853d-e7c20ec97b2c",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:48.234054+00:00",
+      "seq": 25,
+      "kind": "stage_start",
+      "agent": "analyst",
+      "framework": "crewai",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "cbfd65cf-529e-494e-b679-cbd2664e09bb",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:55.883312+00:00",
+      "seq": 26,
+      "kind": "model_call",
+      "agent": "analyst",
+      "framework": "crewai",
+      "duration_ms": 7635.73,
+      "tokens_in": 1296,
+      "tokens_out": 1012,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "analyst: 2543 prompt chars",
+      "extra": {
+        "reasoning_tokens": 424,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "98605860-4cb7-4e7b-bac4-9af861e49808",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:55.899431+00:00",
+      "seq": 27,
+      "kind": "stage_end",
+      "agent": "analyst",
+      "framework": "crewai",
+      "duration_ms": 7656.63,
+      "tokens_in": 1296,
+      "tokens_out": 1012,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": 424,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "7786e501-86c4-464f-946c-bfaa3ad7f5c9",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:55.909744+00:00",
+      "seq": 28,
+      "kind": "a2a_call",
+      "agent": "analyst",
+      "framework": "adk",
+      "duration_ms": 7921.83,
+      "tokens_in": 1296,
+      "tokens_out": 1012,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "analyst: 156B out / 145B in",
+      "extra": {
+        "request_bytes": 156,
+        "response_bytes": 145,
+        "reasoning_tokens": 424,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "69151789-d268-4eb7-857f-4b22bf0ee106",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:55.917776+00:00",
+      "seq": 29,
+      "kind": "stage_end",
+      "agent": "analyst",
+      "framework": "adk",
+      "duration_ms": 7938.42,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "8b36797d-def4-4a95-84c8-45cff5afb2bc",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:55.925896+00:00",
+      "seq": 30,
+      "kind": "stage_start",
+      "agent": "writer",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "93e82847-a0d2-4f4d-9d7e-df3214dd1675",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:01:56.292265+00:00",
+      "seq": 31,
+      "kind": "stage_start",
+      "agent": "writer",
+      "framework": "crewai",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "8dc2f6f2-568a-4aec-9974-f37f7ca3d6ae",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:06.285833+00:00",
+      "seq": 32,
+      "kind": "model_call",
+      "agent": "writer",
+      "framework": "crewai",
+      "duration_ms": 9977.22,
+      "tokens_in": 3163,
+      "tokens_out": 1793,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "writer: 5444 prompt chars",
+      "extra": {
+        "reasoning_tokens": 855,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "d8019889-a803-49df-aa5b-9b0840aa2b3b",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:06.313961+00:00",
+      "seq": 33,
+      "kind": "stage_end",
+      "agent": "writer",
+      "framework": "crewai",
+      "duration_ms": 10015.08,
+      "tokens_in": 3163,
+      "tokens_out": 1793,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": 855,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "1b8e9089-8e6f-4f60-89c3-18eea02a1c93",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:06.324954+00:00",
+      "seq": 34,
+      "kind": "a2a_call",
+      "agent": "writer",
+      "framework": "adk",
+      "duration_ms": 10392.0,
+      "tokens_in": 3163,
+      "tokens_out": 1793,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "writer: 164B out / 148B in",
+      "extra": {
+        "request_bytes": 164,
+        "response_bytes": 148,
+        "reasoning_tokens": 855,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "b0d0289b-6b19-4a82-a9e8-2b6d749b2442",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:06.333016+00:00",
+      "seq": 35,
+      "kind": "stage_end",
+      "agent": "writer",
+      "framework": "adk",
+      "duration_ms": 10407.11,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "a4f291b4-74ba-472e-b242-81cc282136a5",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:06.340987+00:00",
+      "seq": 36,
+      "kind": "stage_start",
+      "agent": "critic",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "701745b4-8d80-4bb7-900d-dfd2aa0c8fe0",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:06.694264+00:00",
+      "seq": 37,
+      "kind": "stage_start",
+      "agent": "critic",
+      "framework": "crewai",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "4316a9f5-b2a5-47ee-80aa-91b2186051d3",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:12.491422+00:00",
+      "seq": 38,
+      "kind": "model_call",
+      "agent": "critic",
+      "framework": "crewai",
+      "duration_ms": 5779.68,
+      "tokens_in": 1608,
+      "tokens_out": 726,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "critic: 3833 prompt chars",
+      "extra": {
+        "reasoning_tokens": 587,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "6dcfb2dd-574f-4ecb-bf4a-82f21f6285ae",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:12.509495+00:00",
+      "seq": 39,
+      "kind": "stage_end",
+      "agent": "critic",
+      "framework": "crewai",
+      "duration_ms": 5805.37,
+      "tokens_in": 1608,
+      "tokens_out": 726,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {
+        "reasoning_tokens": 587,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "87e8c922-cd7e-4ddb-9ecb-84d433448800",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:12.523316+00:00",
+      "seq": 40,
+      "kind": "a2a_call",
+      "agent": "critic",
+      "framework": "adk",
+      "duration_ms": 6174.73,
+      "tokens_in": 1608,
+      "tokens_out": 726,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "critic: 159B out / 143B in",
+      "extra": {
+        "request_bytes": 159,
+        "response_bytes": 143,
+        "reasoning_tokens": 587,
+        "calls": 1
+      }
+    },
+    {
+      "event_id": "5c1e8d0c-da5e-4b56-96c5-490a0a1d2f64",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:12.534986+00:00",
+      "seq": 41,
+      "kind": "stage_end",
+      "agent": "critic",
+      "framework": "adk",
+      "duration_ms": 6194.0,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "2ab206f1-37cb-4db0-bc7d-5effbea699f5",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:12.550663+00:00",
+      "seq": 42,
+      "kind": "stage_end",
+      "agent": "supervisor",
+      "framework": "adk",
+      "duration_ms": 55697.97,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": null,
+      "extra": {}
+    },
+    {
+      "event_id": "27382175-76d3-4e05-9953-3639a36a2cd0",
+      "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+      "ts": "2026-10-26T19:02:12.569236+00:00",
+      "seq": 43,
+      "kind": "stage_end",
+      "agent": "supervisor",
+      "framework": "adk",
+      "duration_ms": null,
+      "tokens_in": null,
+      "tokens_out": null,
+      "ok": true,
+      "error_type": null,
+      "error_message": null,
+      "payload_summary": "run_summary hierarchical",
+      "extra": {
+        "pattern": "hierarchical",
+        "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+        "wall_s": 55.79165690000809,
+        "stage_ms": {
+          "planner": 7582.1,
+          "rag_researcher": 2581.7,
+          "web_researcher": 9501.4,
+          "analyst": 7946.4,
+          "writer": 10414.8,
+          "critic": 6204.0
+        },
+        "adk_tokens": 9837,
+        "a2a_bytes_out": 479,
+        "a2a_bytes_in": 436,
+        "evidence_count": 3,
+        "tool_calls": 3,
+        "revision_rounds": 0,
+        "confidence": 0.4,
+        "approved": true,
+        "severity": "low",
+        "stage_errors": [],
+        "degraded": false,
+        "failed": false,
+        "estimated": false
+      }
+    }
+  ],
+  "blackboard": {
+    "task": {
+      "value": {
+        "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd",
+        "question": "What does NASA mean by systems engineering, and what broad activities does the discipline cover?",
+        "pattern": "hierarchical",
+        "persona": null,
+        "created_at": "2026-10-26T19:01:14.887442Z"
+      },
+      "version": 1
+    },
+    "plan": {
+      "value": {
+        "steps": [
+          {
+            "id": "s1",
+            "description": "Search the NASA document corpus (e.g., NASA Systems Engineering Handbook) for NASA's explicit definition of systems engineering",
+            "assigned_to": "rag_researcher",
+            "status": "pending"
+          },
+          {
+            "id": "s2",
+            "description": "Identify the broad activities/phases the discipline covers, such as requirements definition, design, verification and validation, and technical management processes",
+            "assigned_to": "rag_researcher",
+            "status": "pending"
+          },
+          {
+            "id": "s3",
+            "description": "Cross-check NASA's published systems engineering definition and activity scope on nasa.gov for corroboration",
+            "assigned_to": "web_researcher",
+            "status": "pending"
+          }
+        ]
+      },
+      "version": 1
+    },
+    "analysis": {
+      "value": {
+        "key_findings": [
+          "NASA's SE handbook is intended to provide general guidance and information on systems engineering useful to the NASA community, and it \"provides a generic description of Systems Engineering (SE) as it should be applied throughout NASA,\" with a goal of increasing awareness and consistency across the Agency and advancing the practice of SE (nasa_Systems_handbook.pdf#p11-chunk-28; nasa_Systems_handbook.pdf#p10-chunk-27).",
+          "The handbook presents NASA-specific perspectives and data and is positioned as a companion for implementing NPR 7123.1, Systems Engineering Processes and Requirements, as well as Center-specific handbooks and directives developed for implementing SE at NASA (nasa_Systems_handbook.pdf#p11-chunk-28; nasa_Systems_handbook.pdf#p10-chunk-27).",
+          "The only concrete activity coverage in the evidence sits in a program/project life-cycle and preliminary design context: estimating cost and range and developing a system-level cost-effectiveness model, defining the WBS, developing SOWs, and acquiring systems engineering tools and models, along with solidifying system requirements, top-level system architecture, and ConOps and developing conceptual designs and analyses (nasa_Systems_handbook.pdf#p34-chunk-120)."
+        ],
+        "gaps": [
+          "No explicit definitional statement of what NASA means by systems engineering is captured: the Section 1.1 Purpose text breaks off mid-sentence (\"It provides a generic description of Systems Engineering (SE) as it should be applied throughout NA...\"), so the scope statement itself is not in evidence (nasa_Systems_handbook.pdf#p10-chunk-27).",
+          "The evidence does not enumerate the broad activities/process areas the discipline covers; no list of SE processes or technical management activities is present, and the content of NPR 7123.1 is only referenced, not described (nasa_Systems_handbook.pdf#p11-chunk-28).",
+          "Coverage of the life cycle is fragmentary and limited to Phase A/preliminary design excerpts; Pre-Phase A through operations, cross-cutting technical processes, and Center-specific variations are not documented, and one chunk is largely a contributor list (nasa_Systems_handbook.pdf#p10-chunk-27; nasa_Systems_handbook.pdf#p34-chunk-120).",
+          "The evidence does not support the task's hierarchical pattern beyond handbook purpose and a partial life-cycle excerpt sequence; no parent/child structure of SE activities or sub-activities can be reconstructed from these three chunks."
+        ]
+      },
+      "version": 1
+    },
+    "draft": {
+      "value": {
+        "text": "NASA's Systems Engineering Handbook is intended to provide general guidance and information on systems engineering useful to the NASA community, giving \"a generic description of Systems Engineering (SE) as it should be applied throughout NASA\" and seeking to increase awareness and consistency across the Agency and advance the practice of SE. It is a companion for implementing NPR 7123.1, Systems Engineering Processes and Requirements, plus Center-specific handbooks and directives. On activities, the evidence covers only life-cycle and preliminary design work: cost estimation and a system-level cost-effectiveness model, defining the WBS, developing SOWs, acquiring SE tools and models, and solidifying system requirements, top-level architecture and ConOps with conceptual designs and analyses. The evidence does not state NASA's explicit definitional wording or enumerate the discipline's process areas, so the full hierarchical scope cannot be reconstructed.",
+        "based_on_evidence_ids": [
+          "doc_b89c76ef3fb99639",
+          "doc_286eae410657c1f4",
+          "doc_ea484bcba491eff9"
+        ]
+      },
+      "version": 1
+    },
+    "critique": {
+      "value": {
+        "issues": [
+          "The activity 'cost estimation' is reconstructed from a truncated evidence fragment ('t estimate and range'), a small but acceptable extrapolation from the recorded text.",
+          "The answer's treatment of the 'broad activities' half of the question is thin relative to the hierarchical pattern, though it transparently flags the evidence gap rather than inventing process areas."
+        ],
+        "severity": "low",
+        "approved": true
+      },
+      "version": 1
+    },
+    "final_report": {
+      "value": {
+        "answer": "NASA's Systems Engineering Handbook is intended to provide general guidance and information on systems engineering useful to the NASA community, giving \"a generic description of Systems Engineering (SE) as it should be applied throughout NASA\" and seeking to increase awareness and consistency across the Agency and advance the practice of SE. It is a companion for implementing NPR 7123.1, Systems Engineering Processes and Requirements, plus Center-specific handbooks and directives. On activities, the evidence covers only life-cycle and preliminary design work: cost estimation and a system-level cost-effectiveness model, defining the WBS, developing SOWs, acquiring SE tools and models, and solidifying system requirements, top-level architecture and ConOps with conceptual designs and analyses. The evidence does not state NASA's explicit definitional wording or enumerate the discipline's process areas, so the full hierarchical scope cannot be reconstructed.",
+        "key_points": [
+          "NASA's handbook aims to give the NASA community general guidance on systems engineering and \"a generic description of Systems Engineering (SE) as it should be applied throughout NASA,\" promoting Agency-wide awareness, consistency and advanced SE practice.",
+          "The handbook is positioned as a companion for implementing NPR 7123.1, Systems Engineering Processes and Requirements, together with Center-specific handbooks and directives.",
+          "The only concrete activity coverage in evidence is life-cycle/preliminary-design work: cost estimation and a system-level cost-effectiveness model, WBS definition, SOW development, acquiring SE tools and models, and solidifying requirements, top-level architecture and ConOps.",
+          "No explicit definitional statement of systems engineering and no enumeration of process areas (requirements, design, verification and validation, technical management) appear in the evidence, so the hierarchical activity structure cannot be reconstructed.",
+          "The planned nasa.gov web corroboration step returned no evidence, leaving the answer based on three handbook chunks only."
+        ],
+        "citations": [
+          {
+            "source_type": "rag",
+            "source_ref": "nasa_Systems_handbook.pdf#p11-chunk-28",
+            "quote_or_summary": "\"It provides a generic description of Systems Engineering (SE) as it should be applied throughout NASA,\" with a goal of increasing awareness and consistency across the Agency and advancing the practice of SE; the handbook is a companion for implementing NPR 7123.1 and Center-specific handbooks and directives."
+          },
+          {
+            "source_type": "rag",
+            "source_ref": "nasa_Systems_handbook.pdf#p10-chunk-27",
+            "quote_or_summary": "\"This handbook is intended to provide general guidance and information on systems engineering that will be useful to the NASA community\"; the purpose text breaks off mid-sentence after \"as it should be applied throughout NA...\"."
+          },
+          {
+            "source_type": "rag",
+            "source_ref": "nasa_Systems_handbook.pdf#p34-chunk-120",
+            "quote_or_summary": "Program/project life-cycle and preliminary design excerpt listing \"estimate and range and develop system-level cost-effectiveness model\", \"Define the WBS\", \"Develop SOWs\", \"Acquire systems engineering tools and models\", and more developed system requirements, top-level architecture and ConOps."
+          }
+        ],
+        "confidence": 0.4,
+        "tools_used": [
+          "rag_search"
+        ],
+        "guardrail_flags": [],
+        "run_id": "3f0d638d-97d1-4634-9ea6-f4e743d39ccd"
+      },
+      "version": 1
+    }
+  },
+  "evidence": [
+    {
+      "id": "doc_b89c76ef3fb99639",
+      "source_ref": "nasa_Systems_handbook.pdf#p11-chunk-28",
+      "score": 0.7092,
+      "retrieved_by": "rag_researcher",
+      "text": "It \nprovides a generic description of Systems Engineering \n(SE) as it should be applied throughout NASA. A goal \nof the handbook is to increase awareness and consis -\ntency across the Agency and advance the practice of \nSE. This handbook provides perspectives relevant to \nNASA and data particular to NASA. This handbook should be used as a companion for \nimplementing NPR 7123.1, Systems Engineering \nProcesses and Requirements, as well as the Center-\nspecific handbooks and directives developed for"
+    },
+    {
+      "id": "doc_286eae410657c1f4",
+      "source_ref": "nasa_Systems_handbook.pdf#p10-chunk-27",
+      "score": 0.686,
+      "retrieved_by": "rag_researcher",
+      "text": "Weiland, Karen, NASA/Glenn Research Center\nWiedeman, Grace, Dell Services\nWiedenmannott, Ulrich, NASA/Glenn Research Center\nWitt, Elton, NASA/Johnson Space Center\nWoytach, Jeffrey, NASA/Glenn Research Center\nWright, Michael, NASA/Marshall Space Flight Center\nYu, Henry, NASA/Kennedy Space Center\n1\nNASA SYSTEMS ENGINEERING HANDBOOK\n1.0 Introduction\n1.1 Purpose\nT\nhis handbook is intended to provide general \nguidance and information on systems engineer -\ning that will be useful to the NASA community"
+    },
+    {
+      "id": "doc_ea484bcba491eff9",
+      "source_ref": "nasa_Systems_handbook.pdf#p34-chunk-120",
+      "score": 0.6795,
+      "retrieved_by": "rag_researcher",
+      "text": "t estimate and range and develop system-level cost-effectiveness model\n > Define the WBS\n > Develop SOWs\n > Acquire systems engineering tools and models\n(continued)\n25\n3.0 NASA Program/Project Life Cycle\nNASA SYSTEMS ENGINEERING HANDBOOK\nsolidified, and the project develops more definition \nin the system requirements, top-level system architec-\nture, and ConOps. Conceptual designs and analyses \n(including engineering units and physical models, as \nappropriate) are developed and exhibit more engi"
+    }
+  ],
+  "history": [
+    {
+      "seq": 387,
+      "author": "system",
+      "section": "task",
+      "operation": "create",
+      "version": 1
+    },
+    {
+      "seq": 388,
+      "author": "planner",
+      "section": "plan",
+      "operation": "write",
+      "version": 1
+    },
+    {
+      "seq": 389,
+      "author": "rag_researcher",
+      "section": "evidence",
+      "operation": "append",
+      "version": 1
+    },
+    {
+      "seq": 390,
+      "author": "rag_researcher",
+      "section": "evidence",
+      "operation": "append",
+      "version": 2
+    },
+    {
+      "seq": 391,
+      "author": "rag_researcher",
+      "section": "evidence",
+      "operation": "append",
+      "version": 3
+    },
+    {
+      "seq": 392,
+      "author": "analyst",
+      "section": "analysis",
+      "operation": "write",
+      "version": 1
+    },
+    {
+      "seq": 393,
+      "author": "writer",
+      "section": "draft",
+      "operation": "write",
+      "version": 1
+    },
+    {
+      "seq": 394,
+      "author": "writer",
+      "section": "final_report",
+      "operation": "write",
+      "version": 1
+    },
+    {
+      "seq": 395,
+      "author": "critic",
+      "section": "critique",
+      "operation": "write",
+      "version": 1
+    }
+  ],
+  "metrics": [
+    {
+      "agent": "analyst",
+      "framework": "adk",
+      "stage_ms": 15595.05,
+      "model_calls": 1,
+      "tokens_in": 1296,
+      "tokens_out": 1012,
+      "reasoning_tokens": 424,
+      "tool_calls": 0,
+      "errors": 0,
+      "limiter_wait_ms": 0.0,
+      "a2a_bytes": 301,
+      "evidence_items": 0,
+      "estimated_calls": 0,
+      "runs": 1
+    },
+    {
+      "agent": "critic",
+      "framework": "adk",
+      "stage_ms": 11999.369999999999,
+      "model_calls": 1,
+      "tokens_in": 1608,
+      "tokens_out": 726,
+      "reasoning_tokens": 587,
+      "tool_calls": 0,
+      "errors": 0,
+      "limiter_wait_ms": 0.0,
+      "a2a_bytes": 302,
+      "evidence_items": 0,
+      "estimated_calls": 0,
+      "runs": 1
+    },
+    {
+      "agent": "planner",
+      "framework": "adk",
+      "stage_ms": 7573.61,
+      "model_calls": 2,
+      "tokens_in": 1305,
+      "tokens_out": 300,
+      "reasoning_tokens": 89,
+      "tool_calls": 1,
+      "errors": 0,
+      "limiter_wait_ms": 0.0,
+      "a2a_bytes": 0,
+      "evidence_items": 0,
+      "estimated_calls": 0,
+      "runs": 1
+    },
+    {
+      "agent": "rag_researcher",
+      "framework": "adk",
+      "stage_ms": 14009.63,
+      "model_calls": 3,
+      "tokens_in": 4234,
+      "tokens_out": 523,
+      "reasoning_tokens": 202,
+      "tool_calls": 1,
+      "errors": 0,
+      "limiter_wait_ms": 0.0,
+      "a2a_bytes": 0,
+      "evidence_items": 0,
+      "estimated_calls": 0,
+      "runs": 1
+    },
+    {
+      "agent": "supervisor",
+      "framework": "adk",
+      "stage_ms": 55697.97,
+      "model_calls": 0,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "reasoning_tokens": 0,
+      "tool_calls": 0,
+      "errors": 0,
+      "limiter_wait_ms": 0.0,
+      "a2a_bytes": 0,
+      "evidence_items": 0,
+      "estimated_calls": 0,
+      "runs": 1
+    },
+    {
+      "agent": "web_researcher",
+      "framework": "adk",
+      "stage_ms": 9492.47,
+      "model_calls": 2,
+      "tokens_in": 4298,
+      "tokens_out": 187,
+      "reasoning_tokens": 17,
+      "tool_calls": 1,
+      "errors": 0,
+      "limiter_wait_ms": 0.0,
+      "a2a_bytes": 0,
+      "evidence_items": 0,
+      "estimated_calls": 0,
+      "runs": 1
+    },
+    {
+      "agent": "writer",
+      "framework": "adk",
+      "stage_ms": 20422.190000000002,
+      "model_calls": 1,
+      "tokens_in": 3163,
+      "tokens_out": 1793,
+      "reasoning_tokens": 855,
+      "tool_calls": 0,
+      "errors": 0,
+      "limiter_wait_ms": 0.0,
+      "a2a_bytes": 312,
+      "evidence_items": 0,
+      "estimated_calls": 0,
+      "runs": 1
+    }
+  ],
+  "heatmap_png": "[REDACTED]/gAAE/4BB5Q5hAABAABJREFUeJzs3Qd8VEW7x/F/[REDACTED]++9h5bek/uZiVmyhJJkF0I2v++[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+Ph4vffee+rbt699/j///[REDACTED]+1zXL9+vWJjY1WpUiXdcsstatKkSaa2vXr10m+//ea43759e8e/Fy5cqO+++86OV65cORugv/LKK7M0B3MRg3k9q1evnumYeY1/+uknzZkzRydPnlSdOnV03333qWLFijl+HmZM09bM+fDhwypdurSuuuoq9e7dWz4+Pi7NFwAAAAAA5F8E3wEAAADkO//++6+++uor+29vb++zBt83bNhgA6yenN3+5Zdfqn///kpKSnLa//rrr+v+++/XuHHjHPv27t1rA+/NmzfXU089ZS9IqFu3rj325ptv6vnnn1dqaqqj/ccff6wPPvhADz/8cI7nZwLj1113nVauXOm0/4033tCyZctUv379bD8Pc8GFuWjABOkzMvM17f/55x8VKVIkx3MGAAAAAAD5F8F3AAAAAPnO+[REDACTED]+/vbrP4PP/zQZv7ffPPN6tq1q227a9cue/vggw/[REDACTED]+SRR1StWjXt2LHDlv0PDw/[REDACTED]+UpUVJQmT55sA7Umg/vrr7+2WfDPPfeco83gwYP1yy+/2H/fdttt8vVN+[REDACTED]+[REDACTED]++[REDACTED]+vOO+9UgwYNMs3t+++/t6+BCaovXbpUxYsXdxx77LHHFBcXl+3nYZjgvTF16lRbwj6dqX5g5pF+[REDACTED]+6JFixyZ3rNmzXLsNwHzjCZOnGiDuykpKfb+jz/+aIO6pqx9esDelK03a4mb/RmZoLTpO2bMmExryZug+[REDACTED]/[REDACTED]+L548WJ7a8rq52S+AAAAAAAABN8BAAAA5CsmeFqhQgVbDj09a9pkaM+fP19t2rSx+0aOHGnX/zaZ3SagbdY3Nxo2bOg0limrbvqbNcRNQN+[REDACTED]++[REDACTED]+dOhQx+thjpsg+rBhw2y1ADMvw8fHx2aKm7XfTQA+o+DgYDuv7du3O/aZsvQmkF2vXj2bJV+wYEH7uBkvfEi3atUqm8n+f//3f/rmm2/sRQnmfsuWLXX33XeftbrAhZ6HMWjQIJvFbsZ4++23VbZsWe3fv9+[REDACTED]+[REDACTED]+9rg9Jdffpkp+H6hcdPnbcqvZyy1bgLKZh17c9GAyYg3wfGsSM+4T9ejRw+brZ+ubdu2NqBtmEoB5rhhSr+bzP4iRYqcdVyz35TEN2Xp4+Pj7QUBJiN/yZIlNjif/jqYgLh5nTIygXNzoYK5eOH999937Ddl9s267Cbj/szs/gs9D8P8DEwgfdu2bTbAb9Z/N8zra/YHBAQ4nlt25gsAAAAAAEDwHQAAAEC+YQLsJlidsUS6WR/9+uuvt+vAf/jhh2fNqD6X22+/3em+CUybgLcJHBsmazo8PNyuG54eNM/[REDACTED]/Pz97ay4yOBsTmDdl8s1rbl4LE4A3mfrpgex0999/f6Zgdvrz/fzzz/Xiiy/aCxhOnDhh52aetwmAT5s2LdvPw/yczRxq1aplg/rmNdq3b58t/9+[REDACTED]+DrsJuhs7d+6029kUKlQo2+Mab7755nnLn0dHR2f5eZiS+GZLz6g3pd5Ntvs777xjM/PPxQTITVUAU7b9bEx5/fT12s0FAWd7bufaZy4u2LVrl137PWP2ulnn3lQM+P33323Q37wu2XkeQ4YMseXj//[REDACTED]+8Ouvv+ro0aP23xlLk5+[REDACTED]/uu+9sFnxOpQewzUUJF2LWQ1+wYIENlKeX6jdMWXcTlO/atau9X7JkSUdp+DOdbZ/JVDdjXnHFFZleL/M4Bw8etKXhQ0NDs/[REDACTED]/plkv3ASATdlzk21tgvAZN7P+ePpa6tlhyq+bkugms9uUZDel0c2/TSB82bJlWR7ngw8+[REDACTED]+pjz+2TL4b7zxRns7atQop7L2//zzj32OJlCeHnjPzvMw/cw69GeWrDfl6E2p+fRS/[REDACTED]/58G6R/9913bSDb6NKli11z3axvbsrVp2dyZ5UJHps+7dq1swHdypUr24xtkxl+7NgxDRs2zAbis8MEiE1W/[REDACTED]++9jrYmGP7AAw/[REDACTED]+hhtusGOWK1fOrvm+ZcsWx/[REDACTED]//rrr+368Cbz+qqrrrKl6v/44w9bqj4nWfAdOnSwmdMmKG3KqP/9999atGiRDZZ369bNPm52pZeXNwH4zZs32/mtWbPGBqDvvvvuLI/z9NNP24sBTMb3n3/+aTP/TcD6yiuv1F9//eUo234+BQoUsM/PtDVrvM+ePdsG3s2FDuaCB5Pdn868/sOHD7drxZvS7ekXDnzzzTeZxjVruc+cOVPt27e345n5mMC3yXYfOXKkU0A9O8/[REDACTED]+[REDACTED]/maZhMwNkFxky1/JpPtbvqZsU0p9KJFizodz+64sbGxdn4m0GzWRjfrlO/cudOWVb/Qc01n/iTcvXu37WcC3jVq1LCl2c9kXj/zOjZu3Nhmi5+Nmb8JlJvjZ67VnpHJ+DcXCxQqVMgG6VNSUmygPj1z/kxmbjt27LDPxzz/[REDACTED]++[REDACTED]+[REDACTED]+ZgnJ7CsjjWvGZCG7AEqkAkL945/YEAAAAAAAAAAAAAADI6wi+[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+AwAAAAAAAAAAAADgIoLvOK/[REDACTED]+dONW7cWCEhIbzwGYRHxGrSLyt19FiUBg/qIh8f5+tlPvtmoQ6HRTrta1yvvK7rfEW22hjL1+zV0lV7lJKSqm7ta6tG1ZLZfizkfXsOR+vHeXtVJNRf915bLUt9Vm8/[REDACTED]+[REDACTED]/btr36/feFSk2VunVrqVq1Kl+UPvBcJ09GaNq0uTp27JSaNq2jDh2aXZQ+[REDACTED]+[REDACTED]/fuP2PeV2Nh4tW/fVI0b174ofQAA8CRkviPX/[REDACTED]/o2M5sl5U2Dw/+[REDACTED]+EcdnvhTX/6+U2OmZe2/x3d/2KSrB/2htTtOatbSg6pz16+as+[REDACTED]+v2sIWOXa8eBSP0yb49q956sr2c6n1PPfrhEbQf+qhWbj2ndjpNq1f8Xjflpo1Ob2Lgk9Xz6D/V+cY4d68+lB9RmwK+[REDACTED]+OSUbI1z1+[REDACTED]+JW/TqH/v0764Ix/5TsUlq/f4aPf3LLm0Ji9WszSdV/42VGvPvoWyNg/zhhx9mq3792/[REDACTED]/fzuu++/[REDACTED]+1WF9roNKVaqjzQpF6H/apYUK1286ruNKzKVnhNz0zz/LVbv2zZox41+tXbtdV1/dX2+++aXb+wAA4GlIHQMuU1c1r6LnH+msmX9t1L/[REDACTED]/[REDACTED]/68Iu2GfvkWgN/nSNxj/bQn27pJ07A99dqgfeWaLt31wvLy/nK+[REDACTED]/Ktbu1STn6+3zYh/+5t1mjWqu7q0KG/b9O5URdc/M1vXt6mkcv9VT3jhk+VaueWYVk/spZJF0zKat+[REDACTED]/jw5HJ+[REDACTED]+32zVE+3K6tXZ+5yOmTPg/Rur6spKBRz7Ppp/UI//[REDACTED]/Qo888qbNIC1YMNQtfeDZHn/8HdWpU0V//jla3t7e6t//BhsE7dOnmzp3buG2PvBcY8f+pJUrN2vz5h9VunRxRUZGq0GDPhoxYoLefvtxt/[REDACTED]/mtTRH56UhVtQH6YduXqc0LuMJ+J779/hPr2vUaffPKC3depU3Pdc8/L6t27iypXLuuWPgAAeCIy3/OApKQkbd26VStXrjzn2uv79++3a7PHxsba+wcOHNDy5ct18uRJl8Y90549e+zjREdHn/X4unXrtGjRorOuHW8eZ9++ffaDWDqT7b5rV9qH+[REDACTED]+GjEdlus2HLIfn7+zgC70a7ltUVHZOgGXM2ZPuxkDf5+njr/1qXz7S0wflM+3e/Av291bt9Rce++6+[REDACTED]+b2jUp42jTtnEZxScka9q8PY6s90+[REDACTED]/+tV9mZYJBbTJ/[REDACTED]/FrutDzxXVFSMZs1arHvu+T8bRDeaNaurRo1q6scf57itDzzbjz/+peuuu9oG0Y0CBUJ0221dz3s+5KQPPE/lM0rM+/737/TblP9KyV+pgjbwbpSSv6oqSKt1+rtBc78QOVv52urVW2wlFvOZJp0JoAcHB2rq1H/[REDACTED]/[REDACTED]+[REDACTED]+vD0+YsQIffDBB/bf99xzjx3bbOPGjXPptcsvTDzh6PEoHTh8SuO+/le1rn5FP81Yna02NaqUUEJCslasPX3Bw6IVu+3txq2Hs/[REDACTED]+f8y2mtUKGRvF6076mhj1n43Nu4+ZW/Xbj9hA/ZtG5XWz//s1jvfrLW3Zn14eLaE5BQbHK9Z2DmwbtZ9N+u3u2LaznAlpKTqylLBLs4SlxuzPvsH8w5qQp+aWa68Mnl1mAoH+[REDACTED]/1znQ076wLOZn3vNmqcvcjbM/T17Dik2Ns5tfeCZjinBlp+fpjB9rP02s73ef2u6n1SSEpSqEnK+oLqk/HVUXKCK09J//2T83eTv72ez18/[REDACTED]/+OOPFRwcrDfffDNTHxNUX7VqlWrXrm0zzE3we+[REDACTED]/IyEgNHDjQsa9Pnz52PibQb/[REDACTED]+qnK2qdzhx9fsQvuu/Jb9XxqpoqUjg4S206tamlm3s0Uvc+Y9T35uZ2Hfc/[REDACTED]/zzx/mIVDvVXzUqFNWH6Vr0wZpnmj/0/FS8cyEvsoaITTT6OVOi/rPd0hf19FJV4eq3K7NoRHq+Bf+/VgHrF1aA4v7c8SXhsku74eos+vrm6yhQ8d2WOjGZuOqF35x7Qp7fWkL+vd47HgeeJiopVoUKZy8QXLhxqj7mrDzxX+s/[REDACTED]+37yUvx/a78HnZGPZe6nHwMy/m4qWPD0cpTp7yvn+0yU3T4AAHgiMt8vYyZb/[REDACTED]/Xpk2bbJb6xIkT7f5Jkya5NG46Ezh54IEHbL+lS5c6Hfvss89UuXJlde/e3d43WfSmlHy3bt109OhRWwZ/x44dOnjwoB3DeOGFF/Too4/af3/++eeOsvP333//eV8bU77elLfPuJk55TcZg+HGQ3ddrYjIOK1Yuy9bbX4Yd6++G3O3ypQsqJpVS2ruz2k/k4xB9ayMg/wlONBXEf8FStNFxSYqOSVVIZQFh6RfF+zVXf+bq1FPttIN7So7vSafD22nn9/orAqlQlSlbAH99fF1CvD3UeH/[REDACTED]+vBgv3SPp6aNd8zCk9IVsh/QdLs2huZoG5Tt+nqsiEa1baCW+[REDACTED]/Zfkq9v9ysl7tX0l3NS+V4HHimkJBARURkXmIrPDxKISFBbusDz5X+M4+IiMrGOZT9PvBs5ud+5vuKOR/SjgW6rQ88k8liv07FdatK6WlV1HpFab7SKoz5/1dq3gTmM4pViuMYYKT//omMzPy+cr73oez2AQDAExF8v4y1aNFC/fr1s8HwtWvXauHChdq5c6c6d+5s12g3AfYzvfbaa7aUfLq+ffuqWLFiNujtyrgZ3XvvvQoICLDZ7+lMwN9k1A8YMMCxRp2fn5/q1KljMxozBvRLlSqlZ5991qXXxpStN+XsM27msfM7b7NAqQmAZshYz2qbzm1r6dmHO+vR/u1sUP1IWKRaNK7k0mPBs9WqUEB7jkQrMen0H+3b9kc6jiF/+23hPt3ywhy9NaiFHr657lnbtG9aVk/f0UBP9Klvl7bYeSBCLa4oYY/[REDACTED]/9+2X4qXjWLZP8Lm32RCer081Y1LBGk77pVle9/v7/[REDACTED]/2yjnutYXoM7V8jxOPBctWpVsl8YHzly3LHv+PFTOnky0h5zVx94rurVy9u/[REDACTED]//ZPxd1NSUpJ27z543s9E2e0DAIAnIvh+GTt27Jhdv71IkSJq2LChLR1v1kNPLwtvjp+pbt3MAY7ixYs7Bb9zMu6Z49188822zLwJ1hsmEO/[REDACTED]/[REDACTED]+[REDACTED]/XGw801qPcVZ22zaVfaeZRu2KcrVbFUqG5om/[REDACTED]+BN49UddaRfTKtZWctmB/b3WrXUTPdirvaDd/Z7h6fLpBz3Ysr5e6VszxOPBsnTpdacs2f/HFdMe+[REDACTED]+Up7PpgL0Y3Vq7do5crN6tWrg6PdTz/N0Vdf/ZqtPsg/zM/[REDACTED]+B2KVUNlXkIF+VeTJrXtWu2ff/6LY99PP/1ly8f37NnesW/[REDACTED]+XgmXx8nNdHTZf+B3xOxz3Tgw8+qG+++cYG4O+88059/fXX6tWrl0qWLJnpYoB58+[REDACTED]+[REDACTED]+jkqRhdUbuM/vl3m/[REDACTED]/WpKz9fb8UmJGvohLUqXyJYDaoVUZUyoRp+dwP1f2uJ/llzRCcjEjTt3/36+dW2jsoI8Dxzlh3QonVHtX1/2gU57363TsEBvrq5YxUbFDdZ6TcN/lPVyxdURHSiXp2wytH3nh41Va5k2tpvo3/apN2HItWwRjH9u+awtuwN16/vdFNgwOnfCx89c5U6PDRDR0/EqlblwjaoH+jvo8H9GubCM4e77I6I1zdbTjju/7IzXLsjEtSoRLCuq5xW8eCFZqX1+55wtf1pi9qXL6CZu8NVs3CgHmpQIlvjdJ+2TUdjk1S/[REDACTED]+eVf/+r2rTpt3y8fHWN9/8ro8/ftaxdrLx6qvj9fjjfdS2bZMs90H+8f77T6lNm/7q0uVh1atXTd9//4duv727undv7Wjz3XezdPjwcfXr1yPLfZB/PPjgzfrxxzm6+ur71KNHG/3993L73vLSS/c52ixfvklDhnyixx+/XX5+[REDACTED]/p1lAvamXH16efplitBOxaqaglRdp5cohOcyS4+OG/eCrr/+KR05ckLFixfWxIm/adiw+1Wt2ukLUz/44Hu1bFlf1113dZb7AADg6Qi+X6ZMsHzWrFk2I/2PP/[REDACTED]/frnBm3bFabbbmiqCe/doTKl0gIOWW1jmH2/zdmgVev368G7r9YN3RsoJDgg2+Mgb4s351xCsjo0Tlv/1vw748U7Juj5Qt8r1LDa6T/[REDACTED]/PRk33qO/ZnlLFo84dPt9bsJfu1dGOY7vm/WrqhXSUVDHEuc3hF1SLa+P3N+unvXToeHm8fz6wdby4GQd6VnCrFmf+RNLhZ2rIC5n7Sf+eQUTTQV0t719GP209qb1SChl5ZRr2qFXHKXM/KOL1rFFViSqptm/[REDACTED]/[REDACTED]/[REDACTED]/tGXLHj366G265ZbOjvWUDfOe8+KL98rf3y/LfeDZfOWlJ1RBWxRjy8wXko+aqayqyvkcKCY/Pa/[REDACTED]/Q1Kn/KDY2Xn/[REDACTED]/O///3PZqiHh4fbgLVZ79wEqmfOnKnu3bvbtq+//roGDx5s12uvXbu20zjmvikVv2DBgmyP+[REDACTED]++adOmKlOmjA4ePKi3335ba9as0ZQpU3TjjTfqxx9/tGXwTUC+f//+dqyKFSvaLTsWLVpk137/95cn1KpZlRy95oC2LOZFgGuCyAKAa1K+TitjDLjCqyrvRXCN9xPv8xICAPK8D7xuz+[REDACTED]/88wzevXVV3N9XFNu/[REDACTED]/VudOjQwT6+[REDACTED]///yzXY/dZLAPGjTIZo///fffKlKkiKOtWf/[REDACTED]//vmnzW4/U/ny5XXgwAFNnDhRS5cuteu+ly5dWp07d7ZZ7ibD3ShWrJjmzp2rjz/+[REDACTED]//[REDACTED]+[REDACTED]/WtGnT7L+vvvpqtW/[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+65bI9z9OhR3XnnnQoJCVHBggVVrFgxO058fDw/GyCP8M3tCQAAAAAAAAAAAAB51W+//[REDACTED]/Tmm29q7969+[REDACTED]+IrdnAACA61J4EQEAl4jJVO/du7duvPFGVapUSa1bt872GJ988okNvLdq1Uo//PCDypcvrzVr1qhnz576/[REDACTED]+[REDACTED]+[REDACTED]+APch+[REDACTED]+jitcvOqqxY8eqfv36TsfS12C/WIKDg+1tVFTUWY+b/[REDACTED]+azltU3JecvdnY/APfwdtM4AAAAAAAAAAAAQK4FvFzdcouXl5eaN2+uXbt2aenSpU7HJk+erJSUFLVo0SLX5gcg6wi+AwAAAAAAAAAAIE/LzeB7amqqjh07ZrdTp0451nFP3xcbG+toGx8fn2mf0a9fP3t7++[REDACTED]+uEiVK2K1NmzZ23/jx4x373nnnHUfbiRMn2n2jRo1yGuPOO+[REDACTED]/Hg4GDHvwMDA23bjPsMHx8f/frrr3rrrbf0448/[REDACTED]+RYsWtcHyrOjbt6/[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]/[REDACTED]+euI9q+49A5x3BXG+R9G3ad0qY94Vlun5ycYtvvOhR1UeeFy8u+[REDACTED]+[REDACTED]/[REDACTED]+DndHH3iuQ4eOaf367YqLi7+ofeC5IiOjtW7ddp04EX5R+[REDACTED]/YHhf226yVem/0r1q6YrsiImIUe/RbBQb6Z7vNj1MX6ZGnxysw0E9JSckKDQnU5K+[REDACTED]+vC1OeVf5WckmqDZLUqFNCU/7VVuRLBl2TeuPT+[REDACTED]/oWC/Wyg/tH/q6LX+tW+[REDACTED]+wvoqE+jld8PH0xM2a8PcBVS4RZIP0z/Wsqoe787vK0w3ed0yrouNVzv/0nzdXhgbqjYrFHfcXR8bq4d1hikxOUVFfb+[REDACTED]/[REDACTED]/qJmzVqsUqWK6uTJCH3yyWD16dPdrX3g2UaO/Fz/+99nKlu2uPbvP6r7779BH374rP2d5c4+[REDACTED]+[REDACTED]+lwU/[REDACTED]/iLaf00LWV9c1T5/7DecLsvXpq/[REDACTED]/qon2fd9b93SrqljdW2KB8+gUht7+9Utc2K6n9n3fWxtHtNX1Ic73+43b9sSrskjxXXBpdGxbX0pGtnba6FULVumZhVS+d9uXepgNR6t6ohI6N76QN77XRjg/bauvBaD0yYaPTWOb+tGVHtfKN1lr3ztXa9kE7kXyaf9xUNFR/[REDACTED]+putX/GC8veSbioSmkvPCpdaSkqKbr75WdWpU1lHj/6hI0f+UOPGtdSr17PnvJg4J33g2Z5//[REDACTED]+++k1jxvzo1j7wPMeUoLtVVkNVVS+[REDACTED]+xRnj5ss9wgl60lV0hBV0XBVVWOF6gsdtNnyyD/uumuY/Px87eebgwd/V+/[REDACTED]+toy8uXLxYrRHmpdfvFVdOzU67xXqF2ozb+FGG3R4ZEBatoRp9/hDPbRz9xH9MWeNW9sgb/P389HHjzdX/aqnr3S/kGkL9utERLyG3FnP3g/w99HgO67Q36uOaOdB/qjyVC/dWkPXNS8l73O875gy8cO+[REDACTED]/[REDACTED]+jTVlH5YSShQLU56qymrfxhKPNrqMxGv/Xfr1+Ry3VKJMWtA/w89Yj15D1nl/[REDACTED]/[REDACTED]/9G8b825STnzt3pdv6wHMlJibpiy9+1cMP36KSJYvafQ880EulSxe3+93VB57t00+[REDACTED]++[REDACTED]/K9gqpe81FZFFK9U7RdLYuQXe/Yc0uzZSzR48N0KDAyw+1566T6dOhWpqVP/[REDACTED]+enWkN94EDB+q5556z/27durU9ZrZXXnnlvGu+[REDACTED]/rJxX6QOHI/T9VeWUnh0ojbsjVRUrHNga/[REDACTED]/YK0aVC6om1qXueTPC5fOF//sV2igr3q3Ov/[REDACTED]/[REDACTED]/[REDACTED]/eg5s3rnvN8yEkfeDbzczc//[REDACTED]/jvWFFWMM030n//ZPzdVLRoIdWoUVErV25xWx/[REDACTED]/rk2bNungwYOaPHmyUxn51157TV9++aXT+[REDACTED]+mWfu/ohad62QD68Nd/UEhIoI4dj3RrG+Q/Juu9WIbAu1GkgL9d5/R4OFfD51cHT6T97H9feVS3vbXSrge/60iM7ulcQR8+UE8+Pl46Hpn2O6NYwdNrdRum7Yn/jhl3dyqvueuOa8DH61Qw2FcnoxI1+sF6Cg3i44unMpUTvvjngG6/uoy9AONcpiw5rJ+XHtG0Z5s4rRNfrIC/nv5qs6avCFNIgI+[REDACTED]/U/Hihe0xd/WB50r/mRcrVijT+bBq1Ra39YFnM+[REDACTED]+ZC/rufztw37c/G9JmiozaAX0rO3wHAc6X/bjrzM07a55tTbusDuBtrvgO4HPDtdT4zbNgwG/CuX7++RowYYddhN+ux//[REDACTED]+7ttHmfat2+f9u/f77Rv3bp12Xgl8ofQ0CAt/HOE3ho1TW+8P1WBAX4aMeR2PfTkpwoM9HNrG+Q/vr7eik9IzrR2vAme+flynWh+5ePt5Vgbfse4jioQ7Kt1uyPU+tl/VatciB67vqrj/IhPdM5KNqXmTcazERmTpLbPL1KfdmU17/[REDACTED]+zqeLjl/pr/XH1e/j9ZqxG01dV2Tkk7nXlhEgr3dN6a9PWe++/[REDACTED]/WLCNfLy+tiY7XNVsO2DL0Z2a/[REDACTED]+8FzpP/P4+NMXFGblHMpuH3i2s72vxMamXeSanfeiC/WBZ6qsID2ltItPNytan+mA/OSlhiogn/9WM05SqlOfRKU6jmVkgvef6oAC5a0+4m+w/CT9fSMhIVFBQT5O7ysX+n2WnT7AxVrz3ZX+AOAqfuvlM19//bWKFi1qg9wlS57+wrp27dpnbf/MM8/o8ccfP++YAQEBjkC7Cc6bEvPunseZTCn7l19+[REDACTED]/ZcBNprsJvBv1KxdUxwbF9c+64zb4XvG/NiZLvkSh05kTB0/EqUm1tGydhZtP6MipeD1+fVUbRDXa1iumZtULa8rCwwTfPdSEv/[REDACTED]/ree+LiZeexKS9EDJQjbwbjQMCdBVoUGafjI6U/[REDACTED]/5gcPHlPjxqf3m/[REDACTED]/SOUd2fPIHzL+[REDACTED]+O+mK2QkADdcN2Vbm8Dz5acnKLlW447Ssp3alJah0/EaeXW0+u7T194QMGBPmpZN23td+Q/[REDACTED]+[REDACTED]/hl+dFzZr3P33RC//[REDACTED]+QbPlZiSqpRU5+[REDACTED]/[REDACTED]/yhTJniqlOnimbMWODYd/JkhP79d406dTr9t9POnfu1ZcvubPVB/tGpU3P9/vsipaScrhQ1ffp8uz/dsWOntHz5RkebrPSBZ0tRaqaM9mSlKlyJCv7vK+[REDACTED]/[REDACTED]/f+UerUrr7q1a2ov+[REDACTED]+IhRp5fyOdiIzXkAlrNPiOKxQaRKDLU+0/FqvDJ+[REDACTED]+KlcsUEO/[REDACTED]+z4uzt59vt/[REDACTED]/[REDACTED]//3U3jANKVdMJX19NOVklDbFJei9SmnvO+m2xibY4P2k6pw3+VH58qX04IM36eGH37DZ6z4+Pnr88Xd03309VbXq6YuD2rcfoMcf76PhwwdkuQ/yjxEjHlLv3s+rcuUyatCght5440tVqVJWd955raPNs89+oMOHj2vBgvFZ7oP846mn+uqrr2aoX79huuuu6/Trrwu0bNlGLVo0wdFm6tR/dP/[REDACTED]+mll8bY5SjNuu3PP/+RundvrTZtTpdpufXWwWrZsr4++2xIlvsAFxNl5wFcDgi+[REDACTED]/nmh/n66ZfF9t9NG1fVo8+m/cH84Zv3qVWLWlluM/rd+/XKGz/atpUrltTfvw53HEvnrjbI216duF7bD0TZfwcH+OrBd5fZf8/7oLOCAnzl6+OlpjWLqniGMuE/DL9ab36/Se9N3qwAf2+9+1BT3Xdd5oxUeI6fFh7S1/+kLTfQtHohPf/lJvvvN+6qo47/Za3fcnVZhQb56tNZe/TNPwdsNvzy965WvUqn3+8f6VHFZsJ//fd+RcUlq3vTkhp8c3XH2so+Pl76fXgLjZq+S+[REDACTED]/LFWS08UCUapUN0e6wWD302QanY0tHtnb8+407aqla6WCN/XOfrZTQqHJBjR9Yz168Ac9VIcBPY6qU1Lij4fr+eKRK+vno+[REDACTED]+o4VRcWpXIEidC53O/kL+MmrU06pevYLGjfvZXjj8xBO367HH+ji1ady4lsqWLZGtPsg/[REDACTED]/lCtXUgsXTtDIkV9o2LBxdvmBefPGqVGj03+DlyhR2J4nPj7eWe4Dz+Yvb92ncpqnk1qtSHu/[REDACTED]+mqFjTo/RVcVUXyRh5BfPP3+3SpUqqu+//[REDACTED]++vd5++[REDACTED]/[REDACTED]+[REDACTED]+d43JYtW9qMoieffFL+/v4KDQ3VK6+8csnnAQAAAAAAAAAA8m/Z+ZxuabXTAMA1BN/zmRIlSmjJkiU2E71UqVJKSUlRsWLFdOutt+[REDACTED]/8XbDBgCuoux8PmcC5X5+[REDACTED]/[REDACTED]+5jvn6+[REDACTED]+[REDACTED]/kqV+[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+0zZX+[REDACTED]++2Y5QtW1YVK1aUj4+[REDACTED]//[REDACTED]+QQCXDMF3AAAAAAAAAAAAIIfee+89HT16VLfffrv27t2r+fPna8+[REDACTED]+[REDACTED]+udEQkKCNm/[REDACTED]+OCDKlmypC05bwL4Ztz+/fvnaH4ALi2C7wAAAAAAAAAAAIBk120/[REDACTED]/[REDACTED]+Z31uNmfmJh4wcffsWOHXTPerPdeo0YNlSpVyma+z507V/fcc49++uknR2l6AJcvgu8AAAAAAAAAAADI+2u+u9jfGDt2rOrXr+907HxZ5wUKFLC3J0+[REDACTED]+fzjhEbG6sFCxaobdu2jsB72py89Oijj+rll1/[REDACTED]++[REDACTED]+u+[REDACTED]/nDKl4h9++GF9/PHHevrpp0+P6e2tjz76SBUqVHDs++2332xwfeTIkXr++ecd+[REDACTED]/+[REDACTED]+n+[REDACTED]+[REDACTED]/7v/+z2/lcc801djub0NBQPf7443IXk40/fvx4FSxY0JbGN4F/rzNq85uS9wDch+A7AAAAAAAAAAAA8jQTUnZlyfdcWi7+oklKStI333xj/[REDACTED]+evPNN3N7KkC+[REDACTED]+[REDACTED]+nuSokWLat++fRds5+Pjc0nmA+QXBN8BAAAAAAAAAACQp3m5GHx3KXB/[REDACTED]/[REDACTED]+fn666qqrcm1ugKch+A4AAAAAAAAAAIA8jbLzmR0/flxPP/20vvnmGyUmJp71dStWrJiOHTt20X8+[REDACTED]/wBMRfAcAAAAAAAAAAAA8SGxsrH7//[REDACTED]/Lydq2/J/H19ZW3t7f8/f0JvAOXkIe9lQAAAAAAAAAAACC/rvnuyuZJ/[REDACTED]/fee6/27t2b29MB8gXKzgMAAAAAAAAAAAAepkKFCnr//fd18803q1KlSipRooQtQ59R0aJFtXbt2lybI+BpCL4DAAAAAAAAAAAgT/[REDACTED]/[REDACTED]+T2dIB8g+B7Hrdr1y5NmzbNvoHCs9111zAVLtw+[REDACTED]/S7J80TuiE9J0fhDp9R17T7VXLpTHdbs05eHwy/YLywhSQ9sOWz7NFi+W8N3H1NiSuolmTNyx4nwOL377TpdcduPKtL5K3v/TJt3n9K9r8xV9ZsmqcbNP+j2IX/ZfRmlpKTqf+NXqtYtP6hcj29124tztP9otFObax//3T5Gxu2+EfMu+nPEpff3v1vV865xqth0qK5oN0KPD/1Jx084nw+nwmN0/[REDACTED]/q4acn6NjxCKc23/+0UFd1G6oytQaqabvB+uaHBbk2X1w+wpWov3RM72mnRmlXlvrEK0W/6ajt86526lcdUZySL/[REDACTED]+[REDACTED]//Kzud087SIWUhIiKpWrar4+[REDACTED]/[REDACTED]/HUqMXq0qK85nx0raa91UXJKalq/+CviopJdLQZMna5Ppq8UR8/c5X+/PAahUcnqtujM5WYlOJoExmTaB9n18+3OrYPn2p9qZ4qLpG9+0/ovbF/68G7r9biGU9p/Lu3a/7iHeo9YIJTu1vun6DV6/dr+lcD9N2YuzX9j3V64Jnvs90G+cNfc9fr1ntG6dYbW2n53yP09biHtWDRZt1x/0eONl9Pmq9+Az/WgLs7a8U/r2nYczfpkWc+t0F75G8/6JC85aV6KpDlAPpUHdZOxai3yqqPymqvYvWTDl/0ueLyNGbMj3ruuQ/1v/8N1IIFn6lIkYLq2HGg/fvKnX3gucyFF926DVL79k21ePHn6tfvWvXuPVh//bXMrX3guZKSktSt2yM6cSJCc+aM0dixL+jjjyfrxRdHu7UPPNvTT7+vCRN+0fjxQ/THHx9p374juvbax5SSkuLWPoBbmarxpux8jjfP+3m8++678vb2trcALg3WfAfyiODgQLulmzTpD4WHR6l//xsytS1cuIBbxrnvvv+pb99rFR+foKlT/[REDACTED]+9TMVoRFa/VTSupWpC/3TesUnE9sv2IXqxYTEX9fC7Z/HHp/PBaJ3uu/L5o3znbzHivu9P9Yf2bqF6fn7Rh50m1qFdSsXFJ+uCHDRr5UHN1vrKcbTPhpbaqcP13+vmf3erduaqjb6C/jwoXCLiIzwi5rWL5ovrlqwGO+2VLF9LD97TRgGcn2S9ozB+[REDACTED]+aJZaoP8Y+HSrSpbpogeeSDt/ahsmaLq36+jXnjl9MUYn3/zj266voX69Wlr719fpqgG3ttZ/[REDACTED]+0X4cVr9Li91h+8/rrX2jQoFvVq1dHe/+zz15SiRJdNGHCND35ZF+39YHneu+9b1WrViW98sqD9v6gQbfpjz+W2POkY8fmbusDz/XLL/O0ceMu/[REDACTED]+++/[REDACTED]//9t5o2bSp//[REDACTED]+ffpoxIgRWS4vf/z4cX344Yd64IEHdPvtt9u+hw4dOu9jbdq0SU8++aRuu+02DR8+XMeOHctx23SLFy/WM888o1tvvdXOxYyRmpp6znHXr1+vp556SjfffLN97ji38eOnqU2bxqpdu7LT/tjYeFWr1lOVKvVQjx6Pa9myDTkaZ/ToyTpwIExDhtzHjyEfyBh4TxednKJA73N/4lwYEacKAb6OwLvRsXCwklKlZZGZS5HDc8+[REDACTED]/[REDACTED]/vv0p1ZboP8o1unhjpxMkq//ZH2efL4iUhNmb5UN1zbzNEmPiFJgQF+Tv3M/fUb99m+[REDACTED]+[REDACTED]/zdlJM+AC5+8N3EhmbPnm3v//XXX3rrrbfsvozbO++[REDACTED]+xvjnft2jXTGh7mDdS8uTZq1CjTY3Xr1s0GvTP2+[REDACTED]/30k3x8fJzG7dChg32+Zv0R495771Xjxo1z9Bp6OvPlzJw5y/TFF8Oc9vv7+2ro0P669daujjUDW7e+V4sXf6GmTetkeZx167Zr+PBxWrToc/n68jaRH62KitOPxyL1drWS52xzMD5JJc/Ibi/h72O/[REDACTED]/a1fp65RpFR8WrTopqmf/WA49iBw6dUsnioU/vgYH+FBPvr4JHwLLdB/tG8STV9M+4R9b7nfSUlpSg+PlHXdm2szz48XWXh+mua6pW3pui+Ozvo6la1bdD9s4lpa+MePHRSRYs4n0/AuUQoSUHyUdqnoDSmbL3ZFyk+E+U3Zr1ko1SpYk77S5Ysqs2bd7utDzybuRC+VCnnqj0lSxZRdHSsrVx3tmp3OekDz3X28yHt/sGDYW7rA8917t9NRc5zDmW/D+BuXt5ednOlvycpWrSo9u07d/XKdOmxGgDuQVTtMvbCCy/YIHqvXr1soHvChAk2wP3QQw9p+vTp5+xnstCLFSumvn37qnbt2rZk69y5c/XVV1/ZvgsXLszUxwTTTVC9R48e9orojz/+WKtXr7bBcnMsu23NXE3gvVKlSurfv7+qV6+[REDACTED]+/32nfunXrlF98/[REDACTED]+RpXHi4uJ1662D9cYbg+zVqch/[REDACTED]+2O9aNfFGFSt0etkL7zP+oPH19VbGpJzRz17l+Hf5kiH6Yqi/[REDACTED]+l6oKvr4/TOZOVNsgf5i/cpL4DPtbrw/roxh7NdfDwSQ184jO7xvukzx+3bZ56pIfCI2J0Y993FBEZqzKlCuuh+7rqhf+dLk0PZNXZvqKjzFz+[REDACTED]+N+WkD+Au6Uu3u9Lf034XlC/Pd/zApUbw/TL2f//3f/rhhx8c903ZdpO1PmPGDB05ckSlSpU6a7+2bdtqx44dTut23HPPPTYg/+677+rw4cMqXbq0U59+/frpk08+[REDACTED]//fda+7DRB/Jdffln5kbmY4osvflXfvtcoKOh0EOtcmjWro3/+[REDACTED]/[REDACTED]+4SEJIVHxDqy3bPSBvnH+2NmqvWVNTVoQNqa7+[REDACTED]/TVh4t82+FWxvHO2DnA+IfJRrJKVqlSnkvUxSrbHkL+kZ4keO3bKaf/Royccx9zRB57NZIlmPh9OKiDA315A764+8FzmfNi6dW+m95S0Y0Xd1geeK/1nfvz4KZUuXdzpfaVVqwZu6wPg4ouLu/DyoOaimYCA09/RAXANF+NfxkzGeEZ+[REDACTED]/[REDACTED]+dvpk14s3xzZs3Zxr3vvuyvra4aWuC/Rm3sWPHKj/488+ltlz8/[REDACTED]+x97/Ae+PQQH1eu7R8L3CpZ7PQQO2KS9Sh+NPlVBdEpK152jT0wheGIP/wMSW/vLyUmGQuzZAtI+/[REDACTED]+3dxFaZ9nWjSunOU2yD9SUlLPsp67v+[REDACTED]+Y/6eKlGiiObPX+[REDACTED]++Pn5qkmT2m7rA8/VvHldmzGb8XeTKR2/ffu+c/[REDACTED]/cZwLY52Ky5evUqaMXX3xREydO1M8//[REDACTED]+ROTad+qVSunrX79+soPxo+[REDACTED]/[REDACTED]/eG305Y7uaFtJXtbKNRf/[REDACTED]+cH9vp2yXJ9/v1gnT6V9Nti+K8yWna9ZtaSaNaxo97VrVV2Nriinp4b/bNsdPhqhF1//[REDACTED]/cnj7ygPe0U/OVlg1YRoGqpCD9oTBFK8lmvJt/m8C7CcwjfzF/Tz3ySG998MH3Wrlys13W66WXxig+PlH33tvT0e6uu4bpmmsezVYf5B+DBt2qJUs2aPz4qbYK3a+/ztfUqf/oscf6ONpMnDjDVqcza7pntQ/yj5tu6mQzj01Fw6ioGO3YsV+vvjped955rYoUKegIippz6Jdf5ma5D/IPs277rbd20bBhY23yTkRElD03Klcuq//7v7aOdq1b36tHH30rW32Ai8os4+[REDACTED]+9Iz3kuWPHdmoCn9HhgYqIcfftgG4QsUKGD/mP/rr7/04YcfXvQ1dooUKWJL3pvy8mbd+qw6cz0gZGbKNk2bNlcfffTsWV+e3r276MUXR+vff9coKSlZtWpV0pQpb+nGGztkaxzkP58eCtfu+CQdT4pR5cU7HfsL+nprY/O0YKh55whPTlHCf28h/[REDACTED]+HttP1bSupbpXC+nOZn9oM+FWHjsfIz8dbVzUopX/GXKfKZQs4xhn1RCsblK9/[REDACTED]+[REDACTED]+kKffr26S+Ts9IG+cd9/Trq2IlIPfT0eN1y9/u2xHy7q+rol++etv82qlUppWMnIlSp/iOKjIpVs8ZVNWfaS2raqGpuTx+[REDACTED]/SO0j5HVVGwblJppzL0yD9efPFehYdHqW3b++3FPTVrVtSMGe+rbNnTy+uYgGlkZHS2+iD/[REDACTED]+HU9W+iD/CA4O1MyZo9S//6sqUqSDrX5ggqIffnj6eyBTDcicQyaBI6t9kL+MHfuCBg4cqZo1e9nzxSTx/PbbKJukk84E2GNi4rLVB7ioXFzz3dM+voeEhDgtIZxRbGysrr/+ei1ZssQuIwzAfbxSL3YkFtn2+uuva/[REDACTED]+[REDACTED]/[REDACTED]+8vN1fj+JT0i2675fqDS0KUd/vnYJicn5K+Be0TN/h2WFWaPd3//814aaUvTmrSY9MJ/[REDACTED]+79v4+KULB95ye+MYnLp/cyx/G5Y6rfK78zn5/j4BAUGZl4/[REDACTED]+MzlB+zf+OFRCgkJyvQ56Fx9kD+Z7xnN52V//8yfqc2FZOZcCQoKzHKf/GTRorW2OoD5Tt5UbsXFfK3TYgO/1yyrK0Ny/jtwaXScum89mG9+Ziae06ZNGxur+[REDACTED]/448/[REDACTED]/qzXrz+/bts2vXpwffkb1z4mx/WJ/[REDACTED]/LJwPWWmD/ON8gff0z89ZuRgR+Yd/FlZnC9TZ32cIuuPMz8/n+jvqXIHR8/VB/nSuc8UEtM4V1CLwjozOlXFs/8Y/x3dDZCnjzO8Zz/Vd47kSdc7XB7iYzHublwvfU+a36rzpiZ/mYgMA7kPw/TI2ZswYW0J+/vz5jjf+Rx555IKl3D/99FPdeOONNtBtNuOOO+7Qtddea28vhXr16mnu3LkaOHCgXWt+[REDACTED]//[REDACTED]/+[REDACTED]/Ms1y5ck7tzjcuAAAAAAAAAAAAsic+[REDACTED]+[REDACTED]+MjNT9999/[REDACTED]+PrkyN8CTEXwHAAAAAAAAAABA3uZlMt9d6+9JfH191bJly9yeBpDvEHy/[REDACTED]+90VHR+do/fbQ0FC9+uqrF2VOQH5E8B0AAAAAAAAAAAB5mpd32uZK/7wsNjZWo0aNyna/[REDACTED]+[REDACTED]+/e+Tr2fl67d++2m4+[REDACTED]+[REDACTED]+R7TjfT39O88MILNvD+1FNP2WD7yy+/[REDACTED]+hQ4c6HTPrvr/[REDACTED]///7b3rLeO+BeBN8BAAAAAAAAAACQp9m1271d2Dws+G7cdddd9vbOO+/Un3/+qfj4eEVHR+v777/X008/bY/dfffduTxLwLP45vYEAAAAAAAAAAAAALjX//[REDACTED]/1Ve/bskY+[REDACTED]++uvtBuDiI/[REDACTED]+++sqWnn/[REDACTED]++aW+ff/75TMeee+45pzYA3IOy8wAAAAAAAAAAAMjbTNl4F8rOu7Zg/[REDACTED]+A7AAAAAAAAAAAA4KKTJ09q1qxZCgsLU+XKldWlSxcb/M6uPXv2aP78+YqKilL9+vV11VVXZXsMs557SkqK4uPj7XbmPMLDw+[REDACTED]+UYMGDbKcrf7QQw/piy++UGpqqmN/s2bN9Pvvv6tYsWJZnk9AQIDNeN+8ebN+++039erVy+[REDACTED]+/3gbAs5IB37t3bxsUN4Hz7t27q2LFirZ0/Jw5c2w2fXaC78bDDz+sQYMG2Vs/[REDACTED]/t1337WB96FDh+rll1+2+0zJ91tvvVU//vijvv76a/Xv3/+8Y0yZMsUG3osXL66//vrLlptPt2LFCrs/u0xg3VwA8Pnnn9uLALy9ve28DPPvN954w5bGB+A+BN8BAAAAAAAAAACAHJo5c6aCg4P1/PPPO/aZ4Pbw4cNt8N2Ufb9Q8H38+[REDACTED]+/fpluRw+gKwj+[REDACTED]+PurTp4+2bNmiv//+W/7+/[REDACTED]+[REDACTED]+[REDACTED]+Byx3+[REDACTED]/[REDACTED]+ksWPHZlpz3WS+n4spK2+EhYWd9bjZX6xYsfM+[REDACTED]+rVy+n/[REDACTED]+6siIgIjR492mn/66+/bm+7du16wTG6d+9ub+fMmeO0f+[REDACTED]+qeXLl9v12ufPn6/ff/9dxYsXV79+/RxtTXb7rFmz1LZtW1155ZWO/Y888og++ugj3XXXXXad99q1a+[REDACTED]/t2F+kSBH9+OOPjnXhjSVLluiZZ57RyJEjnYLvFStW1Pfff6++ffvqm2++cRq/d+/eGjp0aLbm5O3tbQP3Zg4E34FLh+[REDACTED]+u8l8z6hBgwZ66qmn1KJFi0xjXH/[REDACTED]+[REDACTED]//[REDACTED]/+CDD+[REDACTED]+6tWrbLbmYoVK0bwHXAjgu8AAAAAAAAAAADI27z/21zp70GKFi2qffv2XbCdj4/PJZkPkF8QfAcAAAAAAAAAAAA8iLe3t8qXL5/[REDACTED]/TJJ5+oXLlyateunW677TYNHDhQqampql27tvz9/bV79+[REDACTED]//KK6/Y2++++0633HKL07GWLVva2z/++[REDACTED]+DeHunXU2QkpJy1uPh4eH2NjQ09JLOC/B0HnYdDwAAAAAAAAAAAJC/BQYGqmbNmnZd95UrV2Y6/u+//[REDACTED]++arPj09sAcA/[REDACTED]/[REDACTED]/[REDACTED]+PqpevbpuuukmNWjQ4FL+hIB8geA7AAAAAAAAAAAA8jYy3zOJjY21Jed//[REDACTED]+SkpKiL7/80v77m2++[REDACTED]//rsGDB9urocxaILj4Vq/bqwnfLlDYsQh9Nbq//PzO/Z/s6Al/[REDACTED]+6QqVesUqV2Kka+8dIUKqPIF+sBzLFe4titGV6qQqmb4ucfZcylSB+[REDACTED]/9qeTkVKd9/XrU0jVXVXTc33s4Ut/9vl1b94arbIlg9b2mpmpVdv48EhmdoIm/bdWqLcdUINhfXVuWV/fWp8eA54qJTdS30zdo+[REDACTED]/HyyPQ48317F2s9F5p3pepXKUp+titIWRds+5nNUbYVe9Hni8rV+/XZ98cWvOnbslJo2ra0HHuilgAB/t/eB5zp5MkKjR0/[REDACTED]+97//2QD9K6+8ktvTBDyKB76VAJ7hjgHjdPeg8Tp+IsoGvM8MSmQ0998temf0LNtuz/7jTscm/rBQnW96WwVCA1W3Vlk9O3yy7n/iy2w/VlbGQd51Uokar32KUJIqKsgGQL/VAf0j5/PpTL/qqGYpTMXlbwP2X2m/[REDACTED]+lHP5qvHar62KVmkFqKj87Vifa7+[REDACTED]/2g6fN2O9ocPRGrK/tNscH5VvVLq2CIn25/8U898c6/ufSscKmEHY9WvWvHaenag2pct5QKFwjU7U9M06P/+8Op3ewFu9Tyli+[REDACTED]+WmKDuvvM373If/499/[REDACTED]/[REDACTED]/9r7q9D+BW3l6ubx4kJiZGq1atUseOHfXhhx+qcePGGjRokAYMGKA6derot99+U48ePTRlyhS99NJLjm3kyJG5PXUgTyPzHbhMDX+2p2pUK6Uff1mu76YsOWe7Y8cjbeD88w/vVccb3nI6lpiYpKeH/[REDACTED]/DNVkmAL9Up9Rexc7axwRXVyhc/VTekYnsIy/7ZXX982QwI+8zme2TdVg3qpS+[REDACTED]/RY8CztmpQ5Z5Z68ytKaMPkW+Xnm3Ze3XdDHSUkJmvYJ8v0f20r230Fgv20+[REDACTED]+6R8WLnq6KUbNKUfV5fKpefKi1ShVPyz5+8rXZ6ndjA300rJu93/XqKqrbfZxm/L1d13WonuVx4Pl6qpSKyV+[REDACTED]+7M53nnrqfd14Y3uNG/eivX/99e1UtWpPG8C69daubusDz/X++98qOjpWv//+gYKCAvXAAzeqadM79fLLn+rzz4e5rQ881+LF6/[REDACTED]+d304ov3atiwB+y+Ro1qqnPnhzRo0K1q2LCmW/oAbmf+9Hfl738P++rABN9HjBjhuL9mzRq7ZTRp0qRM/YoVK2arIAPImcvuU9OsWbP0+[REDACTED]/58uX64osv7BU8ZgyzXrlZt9ysX+7OeRkbN27UN998o6+++uq8469du1Y//PCDvv/++/O2y+p45jnNmTPH8TyjoqIytTFrepjnvXjxYnt/06ZN+vrrrzV79mxHm/j4eP3zzz+OcU6cOHHOx0xKStIff/xh26aPeTbmcc3czGtnrp46duzYedeSN+OaOX322Wfat2+f8jMTDM+Kex/[REDACTED]/NxUQMgbejcLyk8nZirP/myZj4D39fDMXb4Sesf98jwXP8unPm3TP8L/08rjl2rb3lNOxMsVDHIH3dBVLh+pERLzjflCgr1Pg3dh9KFLlSgYTePdwwUF+[REDACTED]+2Z7lcZA/mMB7duy04fdU+/sqXR0VsLVcdvy3vAryj+PHT2nJkvW65ZbOjn2m/HfLlvU0Y8YCt/WBZ/vtt3/[REDACTED]+n0u6ljx+YqUaLIOd9XctIHwMVVtGhRG2fJ7rZu3Tp+[REDACTED]+drsA0geQ+ffro559/duyrWrWqLa3x4IMP2rIZjRo1csu8zL/79u3rFMg2rrnmGnuBQKFCaV/[REDACTED]/XqpS5duuiXX37RwIEDdejQIUef0NBQvffee+rfv7/TPA4cOKBbbrlF69evd+y79dZb7dwyrt8zffp0PfDAAzp8+LBjX1BQkN5++2099NBDmdaSr1y5sh5//HFt2bLF7jcXAFSoQEb1+bz/yWwdPxmlF5/oocTE5EzHd+w+am8rlivq2Gd+[REDACTED]/[REDACTED]+19IDanDbZH3/Wmdbfv5somIS9dWMrerconymY+9/u1aL1h7WzgORCvDz1i/vXXMJngEuNx9/vVwVyxZUrapp1Vt27D1pb82+jCqVK6Rd+05leRzgbMznHnMho7kALZ25byoLndTpi7WRP+zcecARPM+oUqUyjmPu6APPtmPHAV1/[REDACTED]/rAc5nzwch4TtjvAiuUOufvppz0AdyONd+dXw5vb5Uvn/m7EwD5LPieHji/7bbbbBD5uuuus0Fgf39//fXXX9q9e7dat26tatWqKSIiwu4zWdP16tXTww8/7Bjj+[REDACTED]/NXPmTHthgMlwN95//30beC9VqpTatWtn223evFlLly61Gfwm+[REDACTED]+/3796t9+/aqXr26mjVrpvnz59sgfHJysmrXrm0vSjDZ/Saj3QTGzwy+m/sm2H/[REDACTED]+zRa+//qsW/vyQfH++zBt/j4tPWRg4Jcc4EDA0JUPx/x7LCXePg8ldBQSokPx39r6T8FkWppYqctW2SUuV/Ri2m9FC8OQbPY84Ls6zA/aqQ5WUF/[REDACTED]+2+sq4ffmK+BI+fp+[REDACTED]+y5IPd9+NUy/[REDACTED]/iznQ9p9c06cLZCekz7wXGc/H9Kq1p37vSj7feC50n/mISGnqx0a5hy50O+z7PQB3M58h+BS2Xn+9gPgocH39ADsl19+[REDACTED]+mqBzTsuZn21eJphtAuUmq9xk1ZuyXoYJot9+++32+JtvvmkD6yYYbjK/TcC9cOHCTqXxTUDfMKXZszqeYTL+zZz8/[REDACTED]/yW1ex4ULF2Z6HcqWLWvHMEF/wwT7zQURv/[REDACTED]+jIyP0PzXDLKb6VQRo2brYIFgvTiiJ/s/ZSUtGDnh5/[REDACTED]+Wu6jqi+[REDACTED]/KXTy5KYn/cynVKYEnStnC/4+[REDACTED]+8p+vVoYrGTN6gvYejVKlMAafAe7+[REDACTED]/S99++[REDACTED]+GRPxQqlPb30okT4U77jx8PV+HCBdzWB57NnBMnTkRkOh/M9zUFC4a4rQ88lzkf9u07kul8MM73XpTdPvBc6b+bTp6MUNGihZyWSqlfv5rb+gAA4Ikuy+C7YcrCZwy8Gya726yxPm/[REDACTED]/a7HV3zSu9NLyZw6effurU1mSim/mZ4LoJlnfs2NFmqpsgtSldbwLxhsk+z8l4hgmym1Lx5iIDcyFCYmKibWOC9mvWrMk0/86dOzsF3s3ruWDBAjVu3FhPP/20U1uT2d+[REDACTED]/[REDACTED]+T/5luZo1qqx2rWvafQ2uSAuMr990QG1b17L/jo6O1849x/RI/[REDACTED]+jF4nqYqpCpyvoLdBMvLKlDVzthvAu9/6JjuUFnV0IW/7DMVF8xFG6eUlO3HgueJiE7MdMG5ucjs7uF/a96qQzbwXq386S9zzqVulSJKTZX2HYki+J4PfP7jGj08bJYmvnO9bsqwtrtRt3px+fh4af3WMDWoXdLuM5+[REDACTED]/rV+/[REDACTED]+e2PvBc5nz46ae/lJCQ6Pj5m/PBqFevmtv6wHOZ88Ew7ytt2zax/46OjrXl4wcNutVtfQC3o+w8gMvA/7N3H+BRVF0Yx98kpNB7772DCkjHjoiADUUERUUFREU/[REDACTED]/vecaQ2bmzk9lxZnbOPeeelsF3C0p7gsu+bAzxnj17auvW9MeYtjHV8+fPr23btrnfrdR5albuPCu3a/Pmwz1CLah/LJ7x4a+//[REDACTED]/[REDACTED]/HixS6DPz2pS8imt23HY/vPtxOBJ/PdyvKHimaNq7rJ48CBBPXo+76aN6mqtucd/jxrVS+tRg0ratC7P6p18xpuvw/+YKoLZlzR/vBNsD+[REDACTED]+B6ULHs9dQb759qksopRTR2tijHLJ/BeI53A+3YlaI8OqaJPEN0C61ZJwTPP3/dCzmfjs5coktsbTN+z76BeHjlPDWsUVYVS+[REDACTED]+[REDACTED]/dFdg9l179LVdK9bv/Op4gUVYUQGmJionXVVedryJAvdf317ZU7d4zGj5+hJUvW6OOPn/Iu9/[REDACTED]++ITrvOFPG4SOzp0v0EMPvaXhw8eqd+/[REDACTED]++qdq3frMw88CB3/hfl5xxXne5e6/f5CqVy+[REDACTED]/NeFgxOnanvUbPm4Uxhc/PNN7vJxqufN2+eGyvdxlj/8ssv1alTpwytb/jw4Xr33XddeX0r+26l6z3baJnhnv1xvL/B3s/24Zo1a/zeD+kFzlNnzHs6P1xwwQUB7d9jsaEHgn1M+Pc/nqEfpy/Sug073O89+r7nxht9qN+laljP/[REDACTED]+3RAia7kajcxFEEoW68DGq+tKqpI14HDJo+[REDACTED]+px95JWT3n0yPLRUdF6Mr7Jrn1lCqaR/+s3K6EQ0n67NkLVehIyXEEp2Wrt6vnw9+pfOkC+mrSv27yeKhXCzWsfTgY+taAi3XRjaNUp91QVSpXULP+Wq+XH7pAdaoXz9B6EPx+0XZtVLy26aAOKlmf6/B3yLYq5iq1mH+01wXcLfgeoTBdqVL6TBu0TgfcPVSsDuoalVYkQ/GEpNde+58uuqivate+WtWqldfMmfP1zDO3q0mTw53uzS+/zNOmTdtc8N3fNggd3bu3d8H1Zs1uVLNm9fXXX//prLNq6d57u3uXWb58nUaP/kHvvfeYC7770waho1y5kho6tL8LrlsnjM2bt2v//gOaPPkt7zL2ux1DFnS34Ls/[REDACTED]+iRYvcGORPPvmkHnvsMe/8+Ph4tWyZsgxbw4YNXfl5ywi/[REDACTED]+b9Cggfff9evXd9tmmeLWiaBVq1b6+OOP3Rj1FnzPyPp+++0393PBggWu7LuHzbf1+SNPnjxufVbK/[REDACTED]+[REDACTED]+uW3pYo7kKBmjaqkCZj7817+rAc5V0XlUS9V1CbFa68OuYfJVjreHh57WGD+KpVSOZ/g6OFsr9zuQbM9eLbAKQ+ZQ4sFFsr6VDooqFzqolLpLpv7yLi3+ZRLN6mcC0zY+O3W4cMqJtgRl5H3QnA4s1Yx/T7yKs1bsk0bY/fr+TubqU6Vwik6+53bqIxGPZPyHiW1RrWLu/[REDACTED]+t9wfhb9evcddq5+4BGvNDRBdozuh4Ev/KKcdcz62roy/[REDACTED]/[REDACTED]/77/VqlChlBo3PlqpxZx/fmN9+ukziomJ8rsNQkuPHh3Url1z/fbb38qTJ8ZlsFulDY+iRQu6Y8g6a/[REDACTED]/LKK/XFF1+4IHDXrl1dVvW4ceO844+fKHvbXz169NALL7yg3r17u+x16whggXUb/9yC4DNmzHDBZsti79evn9auXat27dq58dBt/[REDACTED]+j+f1wAMPqFu3bm67rr76ajf+u1UasPHnbex5248ZZePCd+7c2XU2sPHtLQveyr8uW7bMjXlvY8l/8MEHGV5vKLGx223yl33+117RNN3XcueO0kXn1g34vU60HuRsFjy3kt7He72+[REDACTED]+rOesWsXdhNBhJeWv7eDf/UlkZITObVox4PUg+[REDACTED]/fddddeuONN/Tss89651tZcwvk2nxfb775pv7++2/9+++/[REDACTED]+[REDACTED]/ffYMH7pUuXuqoCn332mZs8MlI23pcF3F9//XUX2LfS+[REDACTED]/[REDACTED]+[REDACTED]+0Mu6FChVy+[REDACTED]/[REDACTED]/+eYbF9yPiYlxGfAdOnRQyZIl/VovAAAAAAAAAAAAjs/iQH379k0z3+JIlsBZuXJlN/[REDACTED]/c8//[REDACTED]/QDS9/Af57NrELiCjKuIwDxZPeNDTwG+BiSPYocAAICQNmvWArVocbNmzpx5zKQ4ZG1s4Jf/naHmlQtmfj0rd6nVq/OC6jObPHmyOnbs6BIo33vvPe+QxTYcss235NVff/[REDACTED]/8ccfbjoey8bu0qXLKdtuAAAAAAAAAAAAZKJs/OFRe0Oy7Hx67rzzTpfp/[REDACTED]/lpo1axJ8BwAAAAAAAAAAOJ2FhR2eAmkfRPbt2+eGLLYhgW0Y49TKlSvnflq1aABZJ2iD7zbG+/Lly9144//[REDACTED]+KyIiwlV2/vDDD9W9e3eNGDHCJaUmJSXphx9+[REDACTED]++yzlTt3biUmJrpx4I0F5e+9995T/[REDACTED]+A4AAAAAAAAAAICcjbLzxxQXF6fff/[REDACTED]+[REDACTED]+fPipQoIDeeecd7/ywsDDddtttSkhI0NChQ7N1G4FgQ/[REDACTED]//79Wrp0qaKjo72Bdl8VK1Z0P20ceABZh+A7AAAAAAAAAAAAEETCww+[REDACTED]//rrr+5nkyZNsmHrgOBF8B0AAAAAAAAAAAA5WkBxd8+w70HmzjvvdD979+6tFStWeOcvXrxYTz/[REDACTED]+/[REDACTED]+[REDACTED]+P1+[REDACTED]/eXKNGjXK/JyUluaD7yJEjNX78eHXu3Fm//PJLdm8mEFQIvgMAAAAAAAAAACBnC8uCKcgMGTLE/ezTp4/[REDACTED]//jjDz300EPq2bOnnnrqKa1YsSLT61q9erWuv/56de/eXYsXL85w+4MHD7r3z507typVquTmTZ061WW+58uXT1deeaWb9/[REDACTED]/LIIy6b3Hfe6NGjXcA7o2655RYXLE9MTHT/[REDACTED]+[REDACTED]+XL3s1q1apl+DwBpEXwHAAAAAAAAAABAEGS+B1J6PvNv/[REDACTED]/vwYPHqySJUtmfqMk9evXz/20bHcLxDdt2lRVq1Z18yZOnOh+tm/[REDACTED]/umnn/xeV69evVxAvHPnzgrUXXfd5QL/11xzjVuvlcA3Vhp/[REDACTED]+bNOu+88xQeHp6mXfHixbV06VK/9u3IkSP1119/6e+//86yz6JHjx5uSj0e/[REDACTED]+7plxG/btu2Eb28B/HvuuccF4AsXLpzBjQdwuiD4jqAzvP3H+[REDACTED]+mky2I/Fk+2emJiY7us2P1euE4fjbr/9dl111VW65JJLlBn79u3TI488onz58unpp5/2/[REDACTED]/YcOGNK/Z2OqbNm1SxYoVj7uO7777Tl999ZUuu+wyde/e3Tt//vz57uczzzyj9957T6+//[REDACTED]+9ueff2rv3r2qW7fucdfhGRN+7Nix6b7+448/up8WJD9W8N3m2/jzNp677+8n4lkeQNYg+A4AAAAAAAAAAICcLYvKzmfGpZde6rLSrcz7m2++6ebFx8erf//+7t8dO3Y8bvt27dqlG1T/4osvXEDe1lO7dm0VL178hCXkj/c7gJOP4DsAAAAAAAAAAAByuADLzgcQff/f//7nysK/9dZbmj59umrVqqU5c+[REDACTED]+++/Lvh+0UUX6dxzz8309gE4dQi+[REDACTED]+MjPQuu2zZMn3yySeqV6+eN/ieFfbt2+[REDACTED]+uqrXUa8lZw/[REDACTED]/mjYsKGb/GFjxu/Zs0cZlbpzAIDAEHwHAAAAAAAAAABAEGS+BxBIDoIYtJWQB5C9wrP5/[REDACTED]+fPn1+DBg7Nt+4BgQ/AdAAAAAAAAAAAAOZsF3gMqOx98wffY2Fi1a9dOf/75pxvbPTk52c33/Ds6OtqNFU/[REDACTED]/hAUzBlflume1ff/21+/crr7ziyst7lChRQgMHDtQHH3ygF198MRu3Egg+BN8BAAAAAAAAAACQs1nwPDyAKciC73v37tW+ffuUJ08elS1bVrlyHR6J+tChQ+5ngwYN3M/[REDACTED]/z37du3Z8/nBQQpMt8BAAAAAAAAAACAINO6dWsXZP/jjz8UERGhxo0bKykpSRMnTtSECRPcMtWrV8/uzQSCCsF3AAAAAAAAAAAA5GwBjfd+ZAoyd911l/Lmzat33nnH/[REDACTED]+[REDACTED]+zZo22bt2q5OTkFK9FRkaqZcuW2bZtQLAh+A4AAAAAAAAAAICcjTHf09i2bZvuu+8+ffLJJ0pISEh3txUtWlSxsbEn//MBQgTBdwAAAAAAAAAAACDIXH/99fr+++9VtWpV9ezZU6VKlVJYqvL6MTEx2bZ9QDAi+[REDACTED]/[REDACTED]+[REDACTED]+[REDACTED]+/[REDACTED]+vTR77//[REDACTED]//CYqWDDfSWmD4LV3735NmfK79u6NU/Pm9VW5ctmT0gbBKykpSb/8Mk+rV29U9eoV1KxZ/[REDACTED]/[REDACTED]/[REDACTED]/2lvivX8ou16U6vc+1nQf4TWarQ2uEA8gsNHH41XzZpX6cMPv9Pzz3+gatUu1x9//JPlbRC8/[REDACTED]+rtWs3ZXkbBK8ffpitKlUu09tvj9HQoV+5f3/33S9Z3gbBa/36LWrQ4Frdc8+r+[REDACTED]/64zjuvt/[REDACTED]+061bt+zeHCBkhCVbt3wgCMyaNUstWrRQT5VX+[REDACTED]+7o4uZ17drffcn+++8xWdYGwa1Fi5tVrFhBjR37qitf9cEH3+rWW5/Wf/99qSpVymVZGwSvJ58cpiFDvtT8+Z+qePHCWr58nRo27KrXXvufbr31iixrg+A1Z87fLmD1ww9v68ILm+rgwQS1bn2LypUroS+/[REDACTED]+5w9zd2b/PEE72yrA2Cl2WvWyfnd999RDfe2NFVZbnssv9p8+bt+u23D7OsDYKbdQqrU6eyPvvsOfe7dZS///[REDACTED]+[REDACTED]/3792v9+vUnzNaKj4/X2rVrtWvXrnRfT71e285Vq1a5Nr7zU7O/[REDACTED]+grtV3yq8vL+LGO//66dLjjvCbzrSFl5C7ybjTrg/l1NRy+[REDACTED]+dl3nl33tlFixat0IIFS7OsDYKXPSy2L5V9+17jHTeqe/dLVKBAPpe9lVVtENw+/XSSunS5yAXRjT04bt++[REDACTED]/Mcff8uyNgheVpHF7pNvu+[REDACTED]+/nKK8eXO771fGvm9Zp/k5cxa5zqpZ1QbBa9Gi5S65wvf+xp7/RESE6+[REDACTED]+64w/v7kCFD3LJ///[REDACTED]+2333bzP/nkkzTrtuB3w4YN3Xb4jvluyy9cuDBD+8DYOPEtW7Z0712xYkX3t1k7a+/[REDACTED]+LdBuV5rel40Bb6XjY3W0Q4ZltZstR0rYW/[REDACTED]+9zt8/dl1ybPsZJVbRC87HiwTPWKFUt755UtW0KFCuU/7vUso20QvOy8YRU0MnJtykwbBDf73NM7HpYtW+uqbWRVGwQvOx7se5V9v/Lw3O9YgDSr2iB4Hf2+fvS8Ys9/Klcu48d3fP/bACdtzPdApiBiCY4Wpzn//[REDACTED]+qXX35xN6IWeLbM87/++[REDACTED]/7W9a4lVQ555xzXADegtip1/vzzz+7gHb58uXdSdaC3R999FGKILuZMGGCe98ePXoEvA+sM4FtU1xcnCIiIlS8eHGX8f/111+7ZefNm+e26Xjban97KLtExV2GuifzfLw260tt1F2qrOgj/WZOtEycDldQ+[REDACTED]+twK14Ej7U0+5VKykrVGcYpSuPbpkAoqn8KCbBycULV79z4VLpw/xbyCBfO5/[REDACTED]+9x9A6Ce4+Hwa3uzrA2C1+H7m5TXpRNfzzLeBsHL85mnd3+[REDACTED]+5dSZMfV453j1RRtsAWc8zdnsA7YMs+[REDACTED]/++UdTp07V9u3bXZn2Dz/80AWw+vfv7y1Bbz2QLPD++OOPu+U87z98+[REDACTED]/[REDACTED]+3Lmj3QOZ1OUv7fzjm9keaBsEL89nnvqYsN/[REDACTED]+0bkoo20QvI5em/Zl4nrmfxsEt/SvTYePj+OfizLWBsHL7mHSO6ccfi06y9ogeHk+[REDACTED]/txGdZXV999ZXOPPNMN3/z5s0uQG1jyFtAu1WrVvrpp5+Ou14Py2y3ns8ff/yxd96OHTs0fvx4l7meOiM9o/vAAm8//PCDqlSposGDB7uy9May5K2MvXUq+P777/3a1mN5//33Xbl936lXr14KZpalbjzZ7P4sU0SHe7ZX1+[REDACTED]/[REDACTED]+[REDACTED]/[REDACTED]++qkrqW6BZMsgf/HFF93vgbJy8qnZCdFYzyPLdPeUd7fS8qknGx/dyrr7s17LWq9WrZorPe8xevRoN0b9iUrO+7MPbFutnEnTpk1TjBNl7ERu47mnzro/1rYeS8+ePV0Gvu80dOhQBQvLXo934e6j/tYed+0vqxi/l7HguE2eMdyNjQEfq4OuBL3Hbp/[REDACTED]/2ziU7733jZYuXeN3G4QOGx+5cuWy+[REDACTED]/3LL39yY217Mia+/XZGiuNh7tx/NXLkdxlqg9Bhn/vvv//jxrf1vTY1b95AxYoVcr9v3brDXc/sp79tEDouuOBsl5n12WeTvfNGj/5BuXJFqG3bo99X7Dxk56OMtEFosJLNLVs2THF/s3z5Os2ZsyjFtemnn+Zo/PgZGWqD0GGf+/jxv3izkO0+5/PPf1THjm28y/[REDACTED]/wB1Dnk4b/[REDACTED]/N9//7ky63PmzNFvv/3mgtlXXnmlK/[REDACTED]/+lGPseFhmvWWa//7772rSpIkLxJcqVcqVpQ90H3gC7p7tT+/vsr/J321Nj40Jb1OwsvHUx2ijy1i3wLeVibfA+gUqpoJHgt3+LGMuVQl9eiR3vbAi9Y/2ugB9cx19mDxJWxWjCDcW/ErFuXHhux0pPW/[REDACTED]+1+r66wforru6uC9G77zzuUaOfFKRkZ7/pw/o1luf1ogRA1S9egW/2iB02PXvzTfv1xVX3Oce9JUtW1xvv/25brqpY4rOGM8+O0KVKpXWeec19rsNQsdjj92is8/uoUsuuUsXX9xMX3zxkxu7tF+/rik6cLz++qe6/vpL/W6D0NGp0zm65JIWuvjiO3TrrVdo4cJl+v77mZoyZUiKgJZdz+rVq6rixQv71Qahw4Kgzz13h+6993WXpRUREe7OOU8+[REDACTED]/0KZN27zBCH/aIHTcdde1GjVqki64oI+uvvpCTZ48233fevzxW7zLzJgxz13Prr22rfLly+VXG4SORo1q65ZbLtc11zysO+64Whs2xGrYsK/15Zcvuu9hxiq22DH0+efPq1KlMn61Qeiw57tvvHG/uy5ZB2frlPrGG5/pjjuucR3pPR5/fIiaNauvVq3O8LsNcFKFhUvh4YG1DyL2/+[REDACTED]+TUvv766zTzvvnmG/[REDACTED]/NjY2RXvLUN+[REDACTED]++[REDACTED]+Mi48cr7XXrtXw4c/[REDACTED]+//0jFSqUX5s3b9egQffp/fcfT7HMZZedo/PPb5KhNggdZcoU119/faKLLjrblSrs2vVi/[REDACTED]/9T90DQo0SJwu56Zj/9bYPQYp13vv9+[REDACTED]+We3+tEHoyJ8/r2bPHqFu3S5xZb+twsa8eaNUrlxJ7zK1alVy1zNPx2d/[REDACTED]+[REDACTED]/9dRT+[REDACTED]/IsvvnDrfP755/Xwww+7Hkj33nuve83KgAwZMsSVdz/77LNdZrmx97Fs9fPOO099+[REDACTED]/Lz5893AXVfth32XpYh37hxY7/3Qb9+/fTGG2+oYcOGevLJJ1WxYkXNnTvXbZONV2+Bek+Je3+21R+[REDACTED]+uZv0ktb/wyaD4zG/O9VatWrvLyihUrXMdOS/IsWDBlNVtLqJwx4/CQSAACR13gDLBS6XaCevDBB9O8ZoHwdu3auX/[REDACTED]//vhD48aN09SpU9Os47bbbsvIn+OC39bb6ZVXXnHbmzrwHsg+eOKJJ/Tjjz+[REDACTED]/S7QKCHcH3DLDs7aVLl+[REDACTED]+[REDACTED]/ns6dO+ull15yY9Hb+6fHekDZeux9MrIPChUq5P72119/XZMmTdKOHTtcjyp7T8u09y2d58+[REDACTED]/9tWvXz+[REDACTED]/baa8qXL59efvllzZ07V7Nnz3bDIVsw/s4779T333/PjgeyEJnv2axXr15uAgAAAAAAAAAAQCaFhR+eAmkfZAYNGuR+jhgxQldddZV3ftOmTZU3b149+[REDACTED]+C7wAAAAAAAAAAAEAQiYiIcD+TkpKUmJiY5vX4+[REDACTED]+6deumvn37av78+[REDACTED]/yw3n77bTd5lC5dWkOHDtXZZ5+[REDACTED]/[REDACTED]+SOXLl0/t27fP7s0AQgLBdwAAAAAAAAAAAARB8D2AMd+DNPielJSkmTNnavHixdq/f7+[REDACTED]//[REDACTED]+[REDACTED]/[REDACTED]+du7cqbZt2yo+[REDACTED]/X1q1bValSJd1yyy3q2LGjX+337dunL7/[REDACTED]/vjjj0z8JQACQfAdAAAAAAAAAAAAOVs2l52/9tprXeDdY8GCBRo3bpyef/[REDACTED]/[REDACTED]/99xz3b8bNmzoAueWsf7BBx/omWeeOe46/v77bzc+[REDACTED]/vDbx7dO/eXWFhYZo5c+YJ15E68O5RvXp199PWD+D0R+[REDACTED]/bu3et+FihQIN3Xbf6WLVsyvG/[REDACTED]+W6Oho9zM+Pj7d1w8cOHDMkvLHsnXrVnXo0EHbt2/X9OnTVbx48Qy1B5B9CL4j6PSc/[REDACTED]/[REDACTED]/vfff2vt2rUpXpsyZYoOHjyoM8880691/[REDACTED]/799VXX33CdXz77bc6//[REDACTED]/vytQ3bdrULeM7TZgwIaD9A+DUYMx3AAAAAAAAAAAA5HBZM+Z7ZuTPn99lq/fu3Vs//PCDVq5c6cZsv/766zVo0KAUy+7cuVP//feftm3blmJ+YmKiN2M+Pbt378709gE4dQi+AwAAAAAAAAAAAAGoXLmyJk2a5MrOb9++3WXA586dO81yVoK+VatWKlGiRIr5liV/[REDACTED]/[REDACTED]+[REDACTED]/[REDACTED]/[REDACTED]+CVlJSkrVt36NChQye1DYLb9u27tH//[REDACTED]+CEuLl597xqkfEUuVfW616t42Sv12qDPj7n8mC+mqWzla3TOhfdkeD2///GvOl7RX4VLdlK5Kl1UvmoXjfjwez6nILYx/[REDACTED]/[REDACTED]+t1QO9qtV7Qcrc+W3a2dpyyvxGnzviJf+rSa15Q6Zq91ardgHSX+ezLmarc4E6Vq9tXJar3Uq0m/9PEH+d5X/9h6gI1u+ixFFPd5vepfN2+Wr5y8yn8a3A6sODV+8O/[REDACTED]+kzr3fXpHa3yq411RvtAa/[REDACTED]//G5UocZEqV+6kIkUu0NNPv3dS2iB4/fnnYtWrd43KlWuvQoXOVefOD2jPnn1Z3gbBa+[REDACTED]+72rcdzM1b8672rF5nKZMekVPPjvSBdlTW7lyo/73wDu66oo2mVrPN+N+VZ/bOil2w9faHTtezz99q27p/YomTf79pP+[REDACTED]/[REDACTED]+FfylOhQ9GTVefmy/Ug/[REDACTED]/VZcKbTu0ba90/[REDACTED]+aO0e/d09ex5mQtErFmzKUvbIHj9/PNc9er1nN5++0Ht3TtDY8e+omeeGaGPP56QpW0QvCxg3qHD3Wrd+kzt3DlNq1eP16JFK9Snz/NZ2gbBrWfPJ7Vq1UatX/+9du6cqoYNq+vSS+9WXNyBLG0DnJyy84FMABAYgu9ADjF2/K+6ucclql69nPv9jIbVdM1V5+qNt79KkzHR9Yan9eTjN6la1TKZWs8zT/ZU+0uaKTo6yv3ereuFqlunkiZOnnOS/0pkl64lCui2MoVUKFeE+71u3mhdUzy/[REDACTED]/ergQt1eFjzkrZW6nfWsqnyCO3K3WUz/3LlkNw+eKj/6lDu0YKD0//S+[REDACTED]+b/Jdu7XH+[REDACTED]+eLNKLTZdoGKKVriiFK4LVUybFK+14kFzqLFhvYYM+Up33tlFNWtWUkREhPr3v0n58+[REDACTED]/[REDACTED]+/nqaHn/[REDACTED]+/fvV61atVS9enVt3brVO9/+[REDACTED]+Pq+eefV9OmTXXGGWeoX79+Kd4no2PI2/u89tpratWqlds+2x4zd+5c3XzzzTrzzDPVoEEDde/[REDACTED]+/6tm3b5v6+Sy65RPXq1dP555+vN998M83YXlYy3va9Lbtq1Srdcsstbn/ccccd3i/7I0aMUIcOHbzree6557RvX/qBt2+//VZt27Z1y3bu3FkLFy5Ms4xtw/vvv++2rW7dumrRooWefPJJ7dlztDxx6uPi66+/1sUXX+yOiZ9/5qbMV+6YaO3dG5di3p69+/X7H/+[REDACTED]/PH3viVTkmUiWjcnnntSiY2+V3/bkn/hRtJU41y1r/Wpt0uUopRsc+[REDACTED]/KlYFFamayncS/jKczlo2q6lGZ1TRo0+P1qLFazV/4Wo9+cKXandhQ9Wqkbajmfnw0+mKjIxQt6tbnfLtRc70/[REDACTED]/UhwPpnXrMzR37r/H/N6emTYIXnbuqFu3igoVyu+[REDACTED]+AEAAE6GjE5BSxQa2OG//TTT6pSpYqb98svv+i///5z/546daquueYa77+XLVvmAuweGzZs0DnnnOPmeyxevNitzwK1H3/8cZr3tCDzhx9+6P19/vz5mjBhgguCFy5cOMNjyNv6LEjtG2D+6KOPXKDc98uMBaM///xzjRs3zgWTzcyZM3XuuecqIeFoxt6ff/6pTz75xO2Hli1bunn+rs/Ur1/fbZvHokWL3L6z9Y0ePdo739Zl+/7vv/92HRG2bNni5tvnYGO4X3rppfrxxx/TrGfBggX69NNPU+[REDACTED]/r111+VN2/eFGPJv/XWW65jg8fevXv9/nxCQY/rL9azL3yixo1qqNGZNTTt5/kaN36mDh5M0K5d+1yZ1Mk//K5Px0zR/N+HBbSe1B54eKiSk6Ue3Y8eewhu47ftdZntY+qkH9QysQmHVCQyZfC1SK5w9/[REDACTED]+HT12LBt+jDa4cXOtbfiRbETLpkdoiY6O1JDXeuqq61/TF+N+c1nwlSuW0Def3Osy4dMz/[REDACTED]/[REDACTED]/y5cu7wLzvfAv85sqVy2W4e/Tq1csF3i0L3ALFFuy1DGwLJlsA+7vvvkvxfpaV/s0337hM8L/++su9bttg6xg4cGCGt9/[REDACTED]/y2T/7LPPUgTk16xZ4/f6TLFixVyGuu07C9B/+eWXatSokcaMGZNu5vioUaNUtWpVjR8/Xv/++6/eeecdV0nA9meFChVcFYE//vjD7X/bTnvP1CxA/[REDACTED]+nR16dLFdYDwDd57WPD9wQcfdJ0UbN/afjmWtWvXuvf2ndLLvg8mD953rV545ja9PWSs2l/2sH6aOldPD7zZvRYZmUu7d+/TDT2f11MDbtL+/[REDACTED]+/[REDACTED]+ZRLX2mTxmqTaiufK1lvoQuToCQXdC+iKDcmvE0dVNKNC7+KMd9Dzn9LN6hN+yd0z+3ttWfdB9q7/kNdfmljtWg7QFu27kqz/IyZi7Vk2Ubd2uOCbNle5DwffjTB3Qdd1/VwqV4gI+zKlV4dtiQlM85bCAoPP/yYxb6HpR4ezLLZs6oNgpsNxZO6oqEdD+[REDACTED]+MjHTl2i2w6zFlyhRX4tyCzZaR7ju/[REDACTED]+tzLpll1u5eAt6Dxo0KEPbb+uzEume7Hzz9NNPKz4+3m2blcD3sPeKiYlR7969XQDd3tf+fsv2fuKJJ7w3HA0bNnQBac8XJMt693d9nsx5W6+HdWKwfVyqVClNmjQpRecFY/MtKO7Zr2b48OHKnz+/C9ZXrFjRO9+C36m/uJn+/fvr8ccf9/5unQqsE4Bti4cF4m0/W1A/KurwuOHGgvFWQcA+q6eeeirFeq0EfnpB+fRYOXvbj6HEbmBv732Zmzwe7P+uSpcuqvz582jVqk3KlStCjw4c7iaze/d+VzK+WZu++vC9h3TB+WedcD2+Xn/[REDACTED]+XIF/[REDACTED]/DSrnzZivq/yaqR1aoN0uex6h4/NvZit/vty6+/b27veIiDANfOhqvfTGeH37/Z/qeUPKcd3fHzlVtWuWdeXqAX8M/+A7dbnmAhUocOxOZ8CxFFAuxSlRh5TsHVrFAu/7laT8p/[REDACTED]/ny5TnmtSozbRC87LySunKGHQ+mbNkSWdYGwcv32lSxYukUx8RFFzXNsjYAAASjU/4kwALtEydOdFnrlvFuWd133XWXC75bRrllflvG+5IlS1zmtYeVP/[REDACTED]+2yYLmNN29Z4Japb+Ok25jvNg56njx53N+[REDACTED]+7l69Wo333fYAA8reW+l7lNL/VkdT8+ePVOU3zeW+W77LVglJSV5e5Aay2T/7PMp6tL5cIWASpVKad2KMSnaPPTIu/pm3K/6d+GHfq/HY9CbX+rhx97TV6OfULuLzz6JfxlOF3N2x+[REDACTED]/Nrt+m//[REDACTED]+O3pZwMevc4t0l43r86R8dw9bTxjwXvY7+mtD8EtX94YHYg/6DImPFVarMqLZVTky5fyfGNVXz4f+5uefuRoZ0ngeH79dYH+/Xe1hg/rz46C33brkKIUphhFuKFYrDPaSu1XdR0OcNm/E5Xs9zAtCB7ly5dS5cpl9cMPv+nii5u7efv3H9CMGX/puefu8C5nY7zbdax48cJ+t0HoaNPmTHc8+Jo4cZYbw93zrMiOETuOLChq8/[REDACTED]//[REDACTED]+uo1RP3bsWFeC3cY+t/HSr7vuOlfK3fZBRtZn5fOtOoAF0I+3nK+SJUum+N2zDzzjr/vDsuRTs8/OgrrG8zfYmO0ZGbc99bYdjwX7bQolP/z4pyb/+[REDACTED]/[REDACTED]/[REDACTED]+3Wdh1UPfl/vUDOsDV2t+LjE7R7T5wLRKxbfzhrq3Spwq7EpZWYf/[REDACTED]/unXc0DVl9R+EnvXrt7qOY3a/YwGKdeu2uCpBpUqlrOzy/ojxqlevipo3r5dt24rTi4XNbfgT6/BlQXXPMCs2XIpneJS3tUrNVEjnqZgbIqW+8muCtqiTSrouYvZvG1KlhNIO44Xg99hjPdWnz/Nq0KCaGjSorqeees+Nt33TTUc789922zMuM/CXX973uw1Cx//+100jR07Q//73qm66qZO+++4X/[REDACTED]+fVufOFfrVB6ChQIJ/69btW/fu/rTJlirlx2++662U1a1Y/RRb7BRf0cfPee+8xv9sAJx+[REDACTED]+[REDACTED]/[REDACTED]/WkcCK6n/wQcfBLw+HNb2osZaumydbr7tRReguOiCRvr4g/4qVOhoJYPUChbMl2acdn/WM37CbNdu4NMfusnj0nbNNPSd//GRBKGfduxXvohwTdm5300eBXKF6/ezDp+X7EFymahcyhtx+AbWsic+q11GT67eptuWbFJ0WJhuL1NI/ytXONv+DmRPqV3L/PPYqoPaeyTY/qHWpVj2OpVxQXVzjorqJ8W6ydZhwQorK+9hQfrrVU4/a5sLYFgQpKiiXBn6cmQRBp1edw/TnLnLvb83u+gx9/OPqc+qVMlCqlSxhGZMGKjnXvtG1/Z8QxHh4TqrYSXN+H6gihZJ2Slw4o/z1aNrmzTzEXpatumdYtzSZi1vc8Ps/D77cKDLHDgQr5mzFuqefl2yaStxOpqkrVqhw/dDNvTJe0eGW+mhciqmw5277doVraOdDe06Nk3b9J22uN9rKJ/O0/GH8EHwssCneeutMdq2bZcaNaqt6dOHKn/+[REDACTED]/rRB6LAkme+/f8MFQa+77lEXPO/f/ybdd9/[REDACTED]+idd95x8x9++GF9+[REDACTED]+OJWqt7GUrfxyi3IbSXOv/nmG7+[REDACTED]+uuqqq9zf7plfvHhx3XvvvXr55ZdT/[REDACTED]+rVspyU/a7jfv+yy+/uN979OihkSNH6umnn9btt9/uLe+/e/[REDACTED]+[REDACTED]+khs4Kfn1bxpADGG3/5Viwse4jMDEJBsGcDCyslbEPuff/5JUVre/m2B9FWrVqWYb6x33Hvvveey2bt27eoyq8uVK+fGcLcg/kMPPaRNmzalaGPLWLvq1aurVKlS3uxyy+5+8smsebDdunVrN874zz//7DLYbXusHLqVp7ex3S0A7enfYBdZG+vdtsO22YLhdtG1v8nz92ZkfTZ+u7GLiv19tk4r3W5Bet9x3U/[REDACTED]+OwAAAAAAAAAAABZF/IKdAKAHBp8NxYYP++[REDACTED]+LDvcst+[REDACTED]/[REDACTED]/j7rfGBZ9ePGjXN/u78qVKjgSvHb/rOqA1u3bnVVAqwqwf3335+pfVK6dGnNmTPHZcBblv+[REDACTED]+4p4e7LAtFxcXHe9W/fvt2NhW4Z4pmRen3HYu+zf/9+F3w+VgDcdrmtz7a7QIECWbI+C+bbujwZ7ytXrnTZ8p6/18rIr1ixwgW/[REDACTED]+WlwMvOn38/[REDACTED]+Bu0t/c50XtZFrsF07NyfVZy3lfqTgLWkeFY+[REDACTED]+[REDACTED]+[REDACTED]/1oAAAAAAAAAAAAEQcgr0Cnzdu7cqT59+[REDACTED]/ut8tY33NmjV6/[REDACTED]///ddlqv/yyy8qU6aMRowYodmzZ5+[REDACTED]/8sWrWrKmwsDC1bNlSgwYNcvM/+[REDACTED]//PHHSV8HgNMDY74DAAAAAAAAAAAgR1v49/[REDACTED]+[REDACTED]+[REDACTED]+X4sFhg3+/btS/d1m+9Z5mSuA8DpgeA7AAAAAAAAAAAAcqT8+fOrefPm2fb+RYoUcYHxJUuWpBs0X79+[REDACTED]+[REDACTED]/[REDACTED]+[REDACTED]/+[REDACTED]+[REDACTED]+3PRZg0es0AL/otVkYLR6nhuVd3WuZ4iIyO8yyQnJ+vtT+dr9MQlijtwSOeeXU6P926qAvmi011nn6d+0rQ56/TK/W3Uvk3lDL2XP8sgZ9uy44CGf79cY6auUdUy+fT5E61P2GbP/[REDACTED]+5YZRUepdIL9K5zp6SxGfnKwJ+/dr1J592pyYqG9Ll1TB8LT9/dYeOqS3du3W/IMHVSIiQn0LFFDTmOgMvRdyptXar9+1Sxt1QG1VXDWVL8XrH2uddighTbvKyqMOKun+naRk/aldWqy92q9ElVS0zlVRFVakd/lDStZf2qV/jyxTVFFqqkIqr9yn4K/[REDACTED]/hIRDevHFDzVu3M/ufvvSS1vpoYduVHR0VJa2QXD7/[REDACTED]+++/[REDACTED]+[REDACTED]+npqjFGWX09qPn6aYr6urZYXPU5+kpKZZ7YvBsPf7WLN1xXUO98L9WmvLbWl1+17fprnPE14s0958t+m/VDu3edzBD7+Xv9iDnOpiQqEa3fa/tuw+qWtl8WrVpn1/trnp8hn74Y6Oe73Wm+nWupSc+XKgBHyw46duL7NNr6zYVjYjQgMKFdF/Bgvo3IUFXbt6iuKQk7zK9t8bqh/[REDACTED]+HhhO1VdO1TY1UUB3d48Rwva812qdE7zI/aqsL4rdUERe0z69c+kDrtE5xp+[REDACTED]+fZ7TkCFf6bHHbtETT/[REDACTED]//[REDACTED]/XiCW+oo6+[REDACTED]/[REDACTED]/cf1Esj/tTL97VWl3Y13XIfPnOxGl71sabOWavzzi7vbf/fyu169M2Z+um9q1Tnso8y/F7+LIOcLTJXuJaP6qSoyAjd/dafWrnxxMH3n+dv0Y9/btL899urfpVCbl7srnjd+85c3d+ljgrkPZp9iuAxumRxRYYdrWxQPCJC52/c5ALjZ0YfDowOKV5M0WFhmhp37ABn/+07VDcqUoOKHQ1qNY+OTvEox5/[REDACTED]+[REDACTED]++FD16dNZt99+tft99OjnVKJEW3344Xg3P6vaIHi9+uonKlWqqIYO7a+wsDA1b95As2f/rWeeGa6xY1/NsjYIPperVIr7X7snWqjdrjpQkSP3N+[REDACTED]/uIz2rGgDAEAwIvM9yErD27jsf/75Z4r5L774opv/zz//pJj/xBNPuNc8Jk2a5JbbvHmz1q9fr5deekl33HGHW2/qMd8//PBDff755+7fzzzzjHvNpnHjxqV4j+XLl+uVV15Rv3799Pjjj+[REDACTED]/eEhdH/hez9/TSpXKFsjUe/mzDHI2ezhjgfeMmDpvs8oUy+0NvJtLm5XRgYOJmv0PFTGClW8w3M4Bk+PiVDg8XFUijwZLLfB+[REDACTED]+YK4V6uPNF4pEuPGuOlJ+3+[REDACTED]/s6wNgtf69Vu0dOkatWvX3Dsvf/[REDACTED]+CT+v53qfZ5O6Fm5H489XoYWC70/Pbb365svO+1qX79aipfvuQxr02ZaQMAQDAiXTWIlChRQu+++[REDACTED]/XX3+[REDACTED]/jiC+86ihUrpk6dOrl/P/fcc3rssceUmHi0/Ku956233uq205/3rVu37kneaznD/rgEvfD+H+rQprI3y3ztpj3uZ+nihzO8PEoVy6N1mw+/Zu59aYZqVS6s6zvW1oH4Q5l6r8wsg+C3dst+lS6SMnO0VJHDX+jXbU05Xi6Cy+i9e/X2rj3alpSk/GFh+rxk8XTHdD+WZYcOj+WdLzxMt26N1eqEQ6oYmUu35M+fYsz3rHgv5HyrtF/[REDACTED]+[REDACTED]+aNcsF3mvXrq2ffvpJjz76qJs/ffp0FxQ///zz06zHAuA1a9ZUx44dvev0ZLx79OjRQ/v373fZ74888ogL7BtP0P/LL79U//79VbhwYV133XWqVq2atm/fro8//[REDACTED]+r/[REDACTED]/[REDACTED]/[REDACTED]+fz1MfE4ePhUJa1QXA7fF5J+cguOvrw8XH8c1HG2iA4lVa0u/+1jqd2L233zDervLuvyYzp2qb/[REDACTED]/zzTddoLtIkSIuEF+[REDACTED]/fdd+71YznvvPM0f/58F3zv3LmzzjjjjBSvP//88+79586dq4oVj45xaNvQsGFDl/meOvjuz/t6vP/++65sfrCzL8/dH/pef/[REDACTED]+/cXkpdq7P0HNu412v3vCofe9/LO+/GGpPn+1g1/[REDACTED]+yaYqGHy4VfnP+fLoi7+HzSIPoKP0af0Cf7t2XIvge6HshZ7OA+T/aqwuOjOHuyx4e9lQFt8wBJblMnK+0yY1H6cvGiveM311eubVZB/[REDACTED]+BVtGgh7+[REDACTED]+TkpI0bdo097sF3y1QfsEFFyg+Pt475rrNt4C5Zaanduedd/oVAD8WC/Bb0D1//vyu9LxnPHibHnzwQeXKlSvdLPWMvG/Pnj1d2XvfyUrXBxMLdF//[REDACTED]+jrQR3dNObl9m7+/25opJfva+P3e/m7DEJLk5pFtWLDXm3decA7b+aire5n45pFs3HLcCrlDgtTVFiY9iTbCNz+[REDACTED]+kKKdCU1l2u/[REDACTED]/uudt3DhMu3du/+YD40z0wbBq1q1cipUKL9mzz76nde+[REDACTED]+YQrzDsmTUTO13ZWbt8A7wzaFHs/1x/[REDACTED]+3bp99++80F5GvVqqUyZcq4+[REDACTED]/cG9L7ly5dX8+bNU0z169dXsLDM4R79J+nXvza6DPMq5dMGusuVyq9L21TWM+/O0Z59h7ONH3trpooXzq3Lz6/qHQ++VpUi3qlGpcOdLcqUyKuKZQr4/V7+LIPgt2d/gmrfMF5fz1jrfu/YoqxKFonRo+8vcJ0z7PVnRi5Su7NLq2IpMiuC0X8HE/Thnr2KPxIgP5icrJd27daB5GRdkNv/LIiYsDB1zZdXH+/dpx1HytL9FR+vXw7E6/[REDACTED]+vQkQfLNtbpKsV5M+F3KUG/aLs3GG8VE8Zrs3IrXNWPHA/+LIPgd/bZdXXmmTX12GODFR9/UAkJh9y/69Spotatz/RZ7ga99dboDLVBaLAgZ8+el+mtt8Zo7dpNbt7rr49yWYA33dTRu1y/fi+rW7dHM9QGoaNXryv1889/6bvvfnG///77In3xxU/q3ftK7zJffPGjatW6Svv3H/[REDACTED]+96zX7m+KFy+kyy8/[REDACTED]+wsJRlOT0sm94eHtiY7b169fJ72/1931AweeZqjZrwn0oUyaNLb/[REDACTED]/LmiczS9/[REDACTED]/1u7Wrn0Jbr7N++bpNur29EwVu+xLHTiYqOZ1i2nEg82y+S/ByVIuV4RW7zukM9etV/[REDACTED]/twcL1/4UK6f9t2nb1+o8uA35WUpD4F8qvrkXLy/r4Xcp61inPjTnr8oK36WdvceO3n+[REDACTED]+wSRS4eqiMi5Q/qKWK1oR7qFzMxVSIx3uMJj3SBb8a1rhlt+nRJVTjHqovPeY8WcZBD/7jvPFFy+oS5f+Klr0Ave7ZSV//[REDACTED]+jlVqVLOu8z69Vu0adO2DLVB6LjwwqZ65ZW7de21/ZUnT4x27dqru+/uqp49L/[REDACTED]/NfapEiFuXtk68gap0RN0lZXvn6CtqR4D7tft/t2hIYRIwa4c0rx4hcpd+5oN7zF2LGvKG/[REDACTED]/xIgRuvXWW9WlSxeNGTNGO3bsUL58+VKM0/7www9r8eLFLlPe15AhQ9SnTx/9/vvvaty4sZtnWexWSn7SpElq27ZtiuUtsP/HH3/ohx9+[REDACTED]/dvl9x8YdUvlT+Y3aKMPa/+38rd6hsyXzKnzfK7/fK6PbkaLEpv1iGkpUb9yo+4XAPeV81yxdwx5VVQFiybrdKF8mtgvlSjum+dss+[REDACTED]/T79Qe+[REDACTED]+[REDACTED]+27Fy6FCiKlQo5XcbhJ4DB+[REDACTED]+[REDACTED]/[REDACTED]+PBW8cAT/[REDACTED]+OeE8PAw1aqQ/[REDACTED]+AQc4IHwtaRo6COXz3Dn2UQGsqUSb/yhqlevUKG2yD02DjuNmXkWDleG4SemJjoY1Y/[REDACTED]+I9q0aaOWLVvq119/1QcffODmFStWzAXfLbg/[REDACTED]+[REDACTED]+ffp0V9reAvo2vryNJ+[REDACTED]+D1DXXXJPu/[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+ffvcz7+[REDACTED]+PGqUqWK8ubNy05NZeHCherVq5eGDh2q+vXrs3+QYRxDyAocR+[REDACTED]+[REDACTED]/[REDACTED]+[REDACTED]+AAAAAAAAgKBA8B0AAACn3KZNm1S/fn3dcccd3nn//[REDACTED]/9dd1yyy1au3YtexGZsn37dh06dIi9B7+VKlVKF154oT7++[REDACTED]+[REDACTED]+jRRx9V//[REDACTED]/Z4/f369/fbbfEFHGgcOHFBMTEy6e2bo0KG69957tW/fPvf7ypUr9eOPPyosLIw9Cb/8/vvv6tWrl/[REDACTED]//[REDACTED]+6a5n1onDzJo1ywXAoqOj2Yvwix1DN954o/bu3esNftnvDRs2ZA/[REDACTED]/24cePYg/Db7NmzXYfohQsXug7TPXr0UM+ePRUeTg4fAAD+[REDACTED]+6wLvp0KGD7r77bpcxWLx4cfYk/LJ06VKdccYZ7pxkrNOG3VZY8P35559nL+KEfv75Z11xxRWuckJERIS++OILXX755ew5+[REDACTED]/[REDACTED]/evC4If8MNN7jv+[REDACTED]/[REDACTED]+[REDACTED]+/[REDACTED]+++aY++ugj97DZjjELWngqKgB2jEyfPl0vv/[REDACTED]/TeAdGWZVWyzwbuceu/9+6aWXVL9+fQLv8NumTZtcxx+7t7bv/[REDACTED]+[REDACTED]+fHl304zQY1+MLAjqYWMoV65c2ZUq9A1q2b+tHP3555/vSjwba2dl6C0LtX379q78PEKX9XD/999/vZkTHp7jpkuXLpo/f76uvfZa1zveskzLlCmjsWPHuk4fjC+IY9m6daurmGCdNkqWLOkeMP/3338uUGFVE6xzB+CP77//[REDACTED]+NTjHNr17MmTZrosccec9cvD7v/[REDACTED]+[REDACTED]+BXt27d3INoC45ZYMx+[REDACTED]//[REDACTED]/[REDACTED]+[REDACTED]/IlSuXG0fZfto9s+c+2TqyWql5K0lv1RMsc9mGK3j//fddBRgLXNh9NQEL+[REDACTED]+cg+35mwS9bBjiWs846y1V5sfG6LXhqHRHtO90PP/zgMuBt/[REDACTED]/frzL+[REDACTED]/hFpwvWLCgfvvtN9eT+X//+[REDACTED]+[REDACTED]//[REDACTED]++knXXXedO37sXsm+i7Vr107Lly9399g2DrxVe/EM6QPYd3QLjFoHH+s87dG4cWPXqcM6dFjnRAu0r1mzRu+8847LfrfKUjbsk2+VM4Qmu6exoePsvGOTHU82Lzo62l2/rOOYnX/[REDACTED]/sueO1hmIADwAAH5IBnBa+uyzz5IjIiIsTdk7Pfnkk8dts2fPnuQrrrjCLVu/fv1Ttq04fdgxUKVKleSCBQsmr1692jv/4MGDyY0aNUqOjo5Onj9//[REDACTED]+eXLZs2eQiRYokb9iwIU27/fv3J9eqVSs5b968yevXrz/FW43TRVJSUvKPP/6Y7muTJ09ODgsLS77kkktSLN+2bVt3/qlRo0ZyeHi4+3fdunWT9+7dewq3HKeTX3/9Nfmqq65KbtGihbsXiouLc/N3796dnD9//uQKFSokHzhwIEWb+[REDACTED]/pXitffv27vzzww8/HHcdCxYscMeRHUPffvvtSd5inO4OHTqU3Lx58+RcuXK5++[REDACTED]/t/[REDACTED]//+O6XbjNPLzp07k++44w7vMx/f54z9+vVLcVxdd911yTt27HCv/f3338llypRx87/77rts/AsAAMgZCL4DpyELlBYtWtQFHeym+N13302uV6+[REDACTED]/0Md67hx7rnnuuPDY/[REDACTED]//3h0TnTp1SjHfghb2AKddu3bptvvjjz+SP/jgg1O0lTgdPfvss+7Y+eabb9J9/a677nKvv/[REDACTED]+[REDACTED]/44IOurR1HHTt2dAEwYPny5cn58uVLc+3yZZ3FLKDao0cP7/nrnHPOcZ2CELrs8/[REDACTED]+OMM7ydVD///HP3Hf7NN9908y644IIU3//N0qVLk3v27Ok9F913333Ztv3IfnbPY/[REDACTED]+[REDACTED]+PHjUzyQbtWqVbpf3hFaLBMnvUy/t956y83/3//+5523ceNGl73jOYbsi7l9KU/9xR2hrW/fvmnOS7694+3YAlKzDBzLkLDMLjvXpGbBUuswZg+f//33X+[REDACTED]+[REDACTED]/7551P8F+[REDACTED]/vvv++Oj4svvjjd1z3nKZss0/TOO++kExmS58yZ444Jy2L3+OWXX1xlMstk9u0gNmrUKO+1zJMhb9/[REDACTED]+8cee4yOZCHO7p/[REDACTED]/AdOA1YKeerr77aZfhVrFjRPaCxzPfUwU/7cp5eRrOVMHziiSfc64CxL0SNGzd2D/[REDACTED]/4G95eV/nn3++[REDACTED]/[REDACTED]+bJsQDs2PvroI++[REDACTED]+6dXnvtNYbeCQF2L2PHwNdff51i/qpVq7z/tnsdO1ZsmDhj90meLGWrqmCBd8tc9rAKLhaYv//++[REDACTED]/zxx6dsWwEACAYE34HTqHSY72QZ7ukFITwZzS+[REDACTED]/vjzzz/dF/ZmzZp5S9MZ6+BhQa+[REDACTED]+YMCAU7zVyE724M+ODXsY6MuuU9YJ0a5hdr1K3RnRKiJYNpdluvs+ZLZKC/[REDACTED]+[REDACTED]+[REDACTED]/[REDACTED]+88dzNsD5wvuugiN++dd95J085ufhs1auQCXfPnz8+[REDACTED]/+[REDACTED]/[REDACTED]+czv32E8LXvgaO3asOxYsmJE6w9kqMLRp04Yhd+Ay++w4sfPLvffe60qFf/vtt64suM1//PHHvXvJhsKweR07dmTPwXtPZMPm/PDDD+[REDACTED]+/8+fO7+eb777/3jtXtuUfyVOWweyG7l7b5HTp0yOa/BKcD+/7la9++[REDACTED]/u/[REDACTED]+64w682lvFuJejs2Pvtt99O+jbi9Ne3b1/vOJP2sM+[REDACTED]+[REDACTED]+[REDACTED]/dZ0+bFxvhG6w1HMOssm+c/mWi7f7ZUvE8AzX5BnWwoYx9AzJY9/rfM9RCD12P+35LmbDw1mHVQ97/mjzUw9vYMdWt27d3GtvvPFGNmw1AADBh+A7kE2sN6mn9/[REDACTED]/fr1f7S2j1B4s2viBCG1///[REDACTED]+[REDACTED]/ccda/f3/[REDACTED]+Hp+eeff07BVuJ0NW7cOO89sl3XbBi59I4Ruy+yjhw33HBDcpcuXdz3Ms/QhQxdENos8J562BS7plk1DmMdM+x4se9udj6y3+2+[REDACTED]/m1lNPPZUt24fTk5VRtS/W9iXK02PZgqkvvfSSm2fHTI8ePVK0seVsvn05B+[REDACTED]+/XXX+kABK+[REDACTED]/L7Hiy8rypWbnw9MrM03EDvgYMGOCOk/bt26fZMXYusqpT6VUlQ2iyY+KFF15IHjJkiPcZ0Pvvv+[REDACTED]+Jff/2V3X8KAABBg+[REDACTED]+[REDACTED]++[REDACTED]/+ZNm1aip3yv//9zx0vb775Zor5Dz/8sJtvD6eB9O6V+/Xr537fs2dPcteuXb33RDVr1nQ/[REDACTED]+fvHFF9O0e+[REDACTED]/559/chyFOAuY2/nGKrhYkoYNT+[REDACTED]/XXX3+[REDACTED]///6rSpUqqXTp0m7e3LlzVb9+[REDACTED]/rvv/9Uq1YtNW/eXDNnzkzzuh1L8+bN0++//67GjRuzN0OcnWM6d+7s7n08HnnkET399NPu33b+adKkibum2XXOji2TkJCgZs2a6e+//9aff/6pevXqZdvfgOy1d+9e/fPPPypevLgqV67svVe261Xu3Ll1/vnna/bs2cqfP7+7rp177rmqWLGiu4e281CDBg1cG+[REDACTED]+CU2Djxo06dOiQypcvn6F2S5cudfdA1s6uZ3Z+8jVmzBi9//777riy73AIbXY+WbBggTs3eSQmJrrv9HZNmzFjhrvXNu+++66qVKmiCy+[REDACTED]+A0h2vZWt/LNl7qRXVgyhybKQLVM9d+7crte7lZZLnbXuye6yknQ2trt5+umnkxs2bOjKz7Vt2zZFqVWEHss4/[REDACTED]/fee2+2bjdyjiuvvNIdM55qHB5WPtMz/mRcXFy2bR+yn127Dhw44Epe2jFx2WWXuYyuWrVqud+tvKqHjdFu41CeddZZbux2D8tQvf/++916EJrHkJVy9pSStyo/qbPWPRUS7LX//vvPzfv444/d71ZetV69ehw/Ie7JJ590w1jY0F+33367dwie1PfKv/zyixv73V4vVaqU99xlU9++fbNt+3FqWcnmkiVLphiiYv78+a7yge/16UTVgexYA47n+[REDACTED]+fLu+LChvVKz72J16tRxz5bsnhoAAJx8BN+[REDACTED]/LLL/c+LLaHyPbQxsPKYL7zzjvJP//8c4qHzhaEt+V79OiRTVuOnMY6bZQuXdodNx06dHAl6C+++GLvsec7DjNCz9ixY5OrV6/uhrmw48HOMR5WbtcTGPUdp/Tll192y1owFbBrVOfOnd0xYR3HrPOGdfax+21fZ5xxRnJUVFTyqlWr3O/Tp093pZ2vueYad/[REDACTED]/mzZt7r2UVKlRIfu+997Jl23Fq2PnBxtL25RmGwL6r2znEzjGpr2XHY/dFtvyECRNO0lYjJ/nxxx+[REDACTED]+/vnvX4dsKw8d2tg9n555+f7v2Olae3c5gl/XA/BADAyUfwHchC9qXJHvx5vhhZT/kRI0b41dZ607dq1cplVuzcuZPPJcR5OmNY7+VFixYdczk73iwAP3jw4OSrr77atbEv5/PmzTul24vTj4355nnIbFUTLPhuQYtjPayxL+D2Rd7zUPH7778/5duM04eN+WfBCXuw48+YyJZB4Qli+Hb4SD12N0KPZ5xJy9qqUqVKmod91hHIMk+tgoun+o8tYw8O7QGidWZEaPvoo4/cOcUC6ellc3lYhzO7B7LOirfeeqs3WDF+/PhTur04fdi5xLLdbXx3y1i369K0adPSnH+OV31sy5YtyatXryZQEQLsvJE/[REDACTED]/[REDACTED]+/3h0L9evX95YvtPOLfTm30oWerEB7KG1f1t9++21XjtdzHFnAFaHLOvPYw2ffh8z+[REDACTED]/NGrUKHYevJU0TnQ8WGdF34fS1nnjueeeYw+GOM8QTRUrVkzu3bt3mtdtuKbU5x+[REDACTED]/vucc85xHYEQuhnt9gzxhx9+SPd1m+/pVGhDC37yySeuGosl/FgCj33X93wfa9CggXtGlLqSBwAAOLXC7D/[REDACTED]//[REDACTED]+/eCBQv06aefKjo6WjfccIOqVKlyircWp4vvv/9e7du31znnnOPOOf/[REDACTED]/27Ztq759+[REDACTED]++eUXNW3alL0NrzPOOEPz589399v58+c/7j3RihUr9NFH/2/vTqBtqv//[REDACTED]//vstc+55+[REDACTED]+vWrXPdunVzvXv3jnud8w/Cfv/9d3uO37Vrl8ufP7/[REDACTED]+vfvb8//[REDACTED]+/ex7rbH+/ftbRU5WLVcRDeqIoPOOvjRDENgTn3/+eaxFixaxEiVKWJXgZZddFjc2xc+ZVPtetfFNtGbNGvtZzeZG+tq+fXusVatW1jo1u/xYnazupdVufvTo0f/gp0S6Uctmjb+oXLlyXKvn8PlH903ly5ePm5+[REDACTED]+StX78+1qRJE3tdz/aDBw+[REDACTED]/32W/Az6r6p10aMGLHP/x4AAOD/I/gO7AXd2IaDVIMGDbIb2zlz5sS++[REDACTED]+[REDACTED]++yz/6VPjLxCSYRq56zkZ40faN++fVwSa6dOnWytKMCVjBJ/[REDACTED]/0vKX28hr9pe/VDjzxXkcjm9Q6XHtHeg/jUqJNiaxaB+FRghrFpGO33XabjcKoUKGCfa/W8prtruQgJW0omcPTseeeey7bIxEAAMA/j+A7sIcUQFdFl2baepr9ppvfpk2b2jxl/[REDACTED]/[REDACTED]++yyuYid//[REDACTED]+agKlcBTwGHYsWK2bVJ55RPP/[REDACTED]/MpZdeamtMAY1p06bFpk+fHmvevHkw233u3Ln/6mdG7jZs2DBbB77zjwITWmPHHXecdaASVQT+3RzccEAV0ZbVs5t/7ldXM91j61qm9aaqeIJc0aUCDN1DKwH6448/tjVSo0aN2IYNG+[REDACTED]+[REDACTED]++[REDACTED]/OJnOEafNYAa7EdVG4cGFL0vC6d+9ux3v37p30/[REDACTED]+lLpHl26J9baGD58eLbe/+[REDACTED]/[REDACTED]+/tREGuj+65ZZbMl2/+[REDACTED]+[REDACTED]/L6JJGzKlSpWyr+xuzqhFuFrQq+JLc+[REDACTED]/rrjjjt2+0vSWBW1ztSGj6/CAMRXculalUibx+[REDACTED]/c/[REDACTED]+[REDACTED]/cXtf+E9LL7u513n33Xesw5p/L9Pzu/[REDACTED]+ohZMPoCujfezYsVZh4+e6KzvZ0wzTxICGvtRWk+[REDACTED]+Ji3LhxmX5OiWSqgPdBjLvuuislnx+[REDACTED]+iOtc57/[REDACTED]+6XU6uqQXjazMauSJ7n+OPvpo+[REDACTED]/Y8TR7ECtG80SBHy7uKzmRM6fPz/IeFf1cTjArsCpqkp95Y2Sg3766afY+[REDACTED]+1pA4fINXmUJUqVYIZur7FIfNMo0lBLW0cagPQb/apvaqfkawkH202+[REDACTED]+ODWpMnT457P89u2BPa/[REDACTED]/mGseUmMyj7nVaExoH5keq+[REDACTED]/[REDACTED]/OLyviND9bwSmNqUikoKheGz9+vH2/YMGCoMJUbcL9Bo1mC/qgqSom1D4zHCRVtSqibfr06bZWNOv2+uuvz/S61pbWmtaSD0o0a9YsVqlSJbsOZjWbEtGgtpY+CUPrQuspXMnu2zirHaYCXQrWa/NZHRZ0vEWLFin9/EgtBR+mTp1qrZmHDRtmXaU8nW/q169v5x+[REDACTED]+xXKxYsdhXX30VvJ9nN+ypW2+91daSukvpHKWke3VR1DG1F1dnqURDhw61+[REDACTED]/[REDACTED]+[REDACTED]/pPtqPt1CFsqhCUIke6vTCcxp0/xy+DikRqG7dusH60Ugdn9CqsQW+ajkcJNOz23nnnRdbt24dv1BkK9BauXLlYP67v/[REDACTED]/rvDR79ux9+GkBAEBOEXwH/o9mKb/11ls2EzfxBlk3uqrKSaS2vbpRPvPMM+1h6uWXX+[REDACTED]/[REDACTED]+[REDACTED]/hNpmIFs0t9UGH4447zq5p6qSh4LuuV88//[REDACTED]+3/Fzla+[REDACTED]+wyO+fMmDEj7v0a7XT44YfbvZN+[REDACTED]/[REDACTED]++GCf/12QuzzyyCO2RhTI8urVqxdr3rx53Pu0bs4//[REDACTED]/OmRW/lxF40aNbJ28zfeeKPd8+h7/VnnHZ2rstsdBtFxxRVX2NpRi+dw8HPJkiV2bipRooRtLCe+/[REDACTED]+[REDACTED]+Kdt3Q6oFKmzRqH6/Aqto++Y1CtcD07QwVPPUP4/r+v//9r71HWaj6Xhs/SG96GNLDkWZIJrbS1TFt+KlCXuvn7rvvtsCEb2P42Wefxf2MKnVUKd+6desU/E2QmyhY1aBBA1svStjQ+lEr+iFDhmR6r19bvqLQt8d89913U/[REDACTED]//7iOCrrP1vUMAPZW4kzlQYMG2fnGB9g9BVJ1XEF4+eSTT6xLh85d6hCk652e6RBNCnj6Ag3t/ej6pD9rL8jP787OWlTRBqJLRRgXXnhh3DE/qincrW7OnDkWfE8c36QCH3XrAAAAeQ/Bd0Ra586d7YZWmfDKchc9SCnwruN33HFH8F4FTK+66qogkKqvCy64wDYKRRXMvgoe6W/ChAn27601EaaWl6pG1uxuH/TSQ3uPHj3soUkb0ApgaMyBpyzmxE0iRJPmSGo+qR7SFQDT+hk3blyWFRZaU5qVG+[REDACTED]/QQw+llSoyURBL6yPZ6AHd+/[REDACTED]+6Rek8pEDYzTffHHQO6t69O/8AEac28T7wrq5k/lnrnnvusWMkziO7Lr30UuuaEA6gb9++PVa2bFl77tfzv6dCDZ2PVNChPSPtV+5JpwUAAJC7EHxHWlMW+8yZM+OO+SxlBTsVKNW8pW+++[REDACTED]+Paozz77bNwxdVFQxbJP7Hj//fftNT20+8SOMWPGpPCTI7dI1prZn098K3l/[REDACTED]+fVNGlrhuaz001RbSpY4Y2BbVOdF+[REDACTED]+8EtdBCgD+Cf5ZXs9jw4YNC46rI5A6RoUrlpXo47vg+S/NVua+KDqJh3ruSjb+zc/gHj58eLB3pIRWzXD3ayXZtQ1IpPNQss4bSpxWYY/[REDACTED]+fOD0+[REDACTED]+99trYaaedZgFTvaZuG+HWz0g/[REDACTED]/e//PLLdo/[REDACTED]/tjovNW5cqVd5vgAQB7Q/fUeqb3o3jUWl4df3RPpe/VvSxM1z0d07lo4cKF/NIjknR40kknxSVdaPRgeJ72/[REDACTED]+iH4jrSmgINuZs8///y4CsChQ4fGvW/JkiXBDPfrr7/ebpy3bNkSBOObNm2a6f+tY/7/pwxotacjYzW9aRPZz3rTg7cqBLWprO/PPvvs4N+/a9eudqxGjRoWqG/evHmQJX/iiSfykB5hOreEz0XhL82C8w/[REDACTED]++fPB9v3797L316tUL1tTFF18czOFW+1Wdt3Q+[REDACTED]/6+eKLL+IqvlRxqpbP+tKfdaxixYoW1ACAvaFkeN3/+[REDACTED]/[REDACTED]+I+2dd955wcagHphU7Z7IVww+8MADQVsxVZ5qc/mmm26ymUu+[REDACTED]+AAGosm3Bi9ZsmRs6tSptmmotaR2czp+9913B+[REDACTED]/2gBUcoa/bqmiWV039GeNVPE4H0E0h1RrQ4liajkvClLo/kfHtQGt+2kZMmRIXHW8bzefeG8NAHtC3Vj0jKXzUPg+Sc9mZ511lv1Z4+KKFStmlc6avax7axLHomnlypXB87m6/[REDACTED]+wKpWc2nauSzW/XulRHO7+/BAAA0gfBd0Siost/[REDACTED]/[REDACTED]+5lnnmktNWfOnBm7/[REDACTED]/Hjx6fgUyNVlAC2uw4r5cqVs3WxYMGCTK+1bNnSXlOSmbdx48bYk08+GRs8eHCW9+[REDACTED]/NlOzsdejQwe61E/mEsilTptj3Gl+[REDACTED]+[REDACTED]+fHHH4NzSzLKkNfr2uTxtKmj7h1qGY7oUrBKa+Ouu+[REDACTED]+4Rn2+[REDACTED]+/+uqr9+nnBhBNH3/8sQXXdZ3T/[REDACTED]+K4K/[REDACTED]/[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]+[REDACTED]/[REDACTED]//PHgdXXh0PFkFTfNmjWz1+6///59/[REDACTED]/[REDACTED]/b1UiRIl7JwGAACigeA70oKCowpG+[REDACTED]+UQVz//[REDACTED]+3bt7cNaES3/a5PMjzzzDPtfLN06VL7XlXKGo/iK+[REDACTED]++X/dNPkCmrxtuuIF/AOyW7o20VsLXLD2P6fmMQCnCz/F6Vtez14cffmjHtO+jkQX+[REDACTED]++GHH+IqmxWgCAcr1JqOOd3R5scSKDlDAYcvv/[REDACTED]/V84DN8fdKXEn7Cm82aL6jjzz33XFCto8QyVaQ+9NBDNhf++++/T+[REDACTED]/KP1o2QNNpeRaPHixVbFpVFOOi/Nnj0703t+/PFH6/[REDACTED]+/vpr/[REDACTED]/88ccHCfS6z1byc7LnfwAAEE0E35EWFMzSTa/[REDACTED]/[REDACTED]+LanCVBWAWk8XXXRR0l+[REDACTED]/[REDACTED]+Noo1CHdN/[REDACTED]/[REDACTED]+6T1LQVM9u/mfUZYruiPAWLlxo60Jdo5SUoXGW+l4dpdS5THr27Bk7//zz+aUBAABD8B1p4+[REDACTED]/a6wq4A9nVoUMHWzcjRoyIO+6DXoCnhA0/P/C9996LS+bwIwnUncPT2BRd71RxmmzECqJF82yVyDN27FhbK+G5uH4ut76OOOKI2MyZM4PXFHDXxrSSy/a0ohDRovtpraGmTZvGHddoFc5BAP4NOt/[REDACTED]+[REDACTED]+++/23s2b96c6o+JXKho0aKuRIkS7qeffnJ//PFHptfLli1r//[REDACTED]/[REDACTED]+dOO16vXj3XuXNnN3/+fLveIdqOP/54V6BAAXf77bfbmrn//vuD1xo3buyaNGlif9Z/[REDACTED]/PHH7b66T58+7qSTTrLvAeCf9r///c+VLl3azjfcNyO7hg4d6l577TV73vroo4/cU0895bp06eLOOOMMe9Zv2rSp+/[REDACTED]/vzzz9dkSJF3Ny5c+35bv/993ePPPKIu+SSS+[REDACTED]++[REDACTED]/[REDACTED]+[REDACTED]+rZhw4ZUfzQAedhbb73lrr/+ekvy0b3Nli1b7Pghhxzixo4da0lld999d6o/JvKIDz74wP3nP/+x+5yKFSu6ZcuWuVNPPdU999xzLn/+/O7TTz+1BFbvqKOOsmc0BVaVOK17cx0DktG5SM/1SuR48MEHLTHxuOOOs2R73RMpMVH7kQAAAJJP5e/[REDACTED]+[REDACTED]/+8rafffvvNgl0PP/ywa926dao/Fvahr776yipEFSRVcpgqcuTee+91ffv2devXr7dgvDolqNpGG81h+[REDACTED]/9tSVv6H5IwQoFKlQlCAB7StWjN910kyVGh+le+dVXXw3ud5Twow4bw4cPt+scsDtK3njllVdcmzZtbP/[REDACTED]+2wPuFF17ILxEAAAQIviMtq5v14PTDDz/Y9w0bNnSDBw92J554Yqo/GlJEFe3lypWzRAy1nDvssMMsCKFA2OLFi60rgq+80AOTquJViaoW9PpSW15t+miDCNgbCq5+/vnnrlatWlYRj+i55ZZbLCHMbywryUdBLO+[REDACTED]/dV5G4ASAn1BGof//+liSvThqqfP/yyy8tYVXPXkryUdt5Ja+[REDACTED]+[REDACTED]/[REDACTED]+RaV4xNQU4ocUjdyQi8AwCArFD5DiAtq/8UyHrnnXdchQoVbDPnqaeech9//HHc+1RhqvcpE15VqWFqy/vXX38RLAXwj1A7cG0CPvLII7ZxrGqbww8/[REDACTED]+2Pys5/txzz7URKRqVoor2Fi1a2DzuggUL2s/p2UzJZMWLF7ef0ft69Ohho+Xq1KnDPyh2S/fbag2u+2+NSdH90OzZs21Uyty5c61duNYaAAAA8G8h+A4grSioVb9+fatgDzvzzDPd22+/nSnArnmCageuDaLKlSvv408LIGpmzZrlGjVqZF+q8EqkThwKvi9fvtyC8+edd54rUqRISj4r8iZVvNerV899+[REDACTED]+wyq3Y/++yz7bgC7N27d7fK9ipVqthcblWT6phmcU+ePNn+n0qK1jNbxYoVU/3XQx7w3Xff2SjCb7/[REDACTED]+OOPrkuXLjaTa9WqVe7YY4+N+zlVnyoAr/cvXLjQFShQIGV/[REDACTED]/9thj1kZeFPBU4DN//[REDACTED]+XLZy3BH3roIWsPPmPGDAvS6//39ddfu6JFi/[REDACTED]+80AJXTZo0ca+99pr9+[REDACTED]/P/nkk65du3Yp+XsBAAAAQE4QfAeQFl5++[REDACTED]+h0A9oWVK1e6M844w23bts2+V9XXzTffbBvRhQoV4h8BAADkCbp3UQD+sMMOC1p+ly9f3u3YscO+[REDACTED]/fXXBxUS+m+Y2hqqvbzaz2kOLpWlAHJDAF6twdViVZvSp59+eqo/[REDACTED]+r/[REDACTED]+7Rp04LjCxYssAr32rVru7fffjvT+C/54YcfbATPoYce6o499lj+[REDACTED]/fee90777zj+vXrFxxXJzI/E/6QQw5xNWvWJPAOAAAAIG1Q+[REDACTED]+7WrVvnli5danPfZdeuXa5u3bpu0aJFNh9+/fr17vHHH7dE6XfffZexOwAAAADSDsF3AGnHb/[REDACTED]++unu1FNPdfPnz3f58+e3419++aW1nt+0aZN9r/bzHTt2tGRpRoEBAAAASDe0nQeQdrTJo/bzBQsWdK1bt3axWCzVHwkAAAAA8rQ5c+a4Y445xtWrV8+VLVvWtW3b1kZ+[REDACTED]+Q4gbU2ePNmVK1fOnXbaaan+KAAAAACQZ6ld/PHHH2+V70cffbT7888/3caNG13Tpk3dlClTgvepnXz9+vUtAK+28prnDgAAAABRQuU7gLTVvHlzAu8AAAAAkEPPP/+8Bd5V0a428l999ZVr2bKlmzp1qhs2bFjwPrWUf/rpp12hQoXs9Z9//pnfPQAAAIBIofIdAAAAAAAAgT/++MNNnDjRrVy50hKalyxZ4j744AP3+uuvB+/ZuXOnvfb555/bvPdKlSoFrz311FOuTZs2btCgQe7OO+/kNwsAAAAgMgi+AwAAAAAAwPz222/u3HPPdfPnzw9+IwceeKC74YYb3ODBg+N+[REDACTED]/e/Zsm+kedtJJJ7nevXtb5bveG3bJJZcQeAcAAAAQOVS+AwAAAAAARMDcuXNdw4YNXatWrdy4ceOC47///rtr1KiRK168uNu1a5dbvXq1BeAPOeQQe/3mm292w4cPdwMHDnSdOnXKFLRv0KCBvf+zzz6zoD0AAAAARBXBdwAAAAAAgIi4/fbb3TnnnGMt4cOuu+46N3r0aFesWDGb1d6uXbu4+[REDACTED]+3dvKHH364ff/TTz+[REDACTED]/[REDACTED]/bff3/3xBNPZJrvXqVKFde3b1/30Ucfua5du+7TvwcAAAAA5BUE3wEAAAAAANJQ8+bN3RVXXOHGjBnjXnrppeD4QQcdZK/NmTPHDRkyJDheu3ZtC6wvWrTI9e/fP9P/[REDACTED]++++/u1q1arlPP/[REDACTED]//Of/7h8+fKl5O8DAAAAALkZle8AAAAAAABpqnjx4m7cuHHu+++/d23btg2OFyxY0E2YMMH+3KJFCwvGS/78+e14gQIFrC39r7/+Gvf/[REDACTED]+PDguKrd+/XrZ23k77///[REDACTED]//PF2PBaLuXPPPde98cYb9lW/[REDACTED]+[REDACTED]/yyCPdiBEj3Ndff+06d+6c0s8IAAAAAHkZle8AAAAAAAAR8ddff1kb+fnz57t58+a5OnXqBK89/PDD1ma+[REDACTED]/ZEAAAAAIC3Qdh4AAAAAACBCVNk+bNgwt3btWjdgwIBUfxwAAAAASBv5U/0BAAAAAAAAsG+1aNHC/fnnn6558+[REDACTED]+[REDACTED]+[REDACTED]/wHBz3kxTnpicgAAAABJRU5ErkJggg=="
+}

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Athena - multi-agent research assistant</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header id="top">
+    <h1>Athena - multi-agent research assistant</h1>
+    <p id="subtitle">Google ADK + CrewAI + A2A + MCP + Blackboard</p>
+    <ul id="status-strip">
+      <li id="status-crew">crew server: checking</li>
+      <li id="status-model">model: -</li>
+      <li id="status-host">provider: -</li>
+      <li id="status-mode">mode: live</li>
+    </ul>
+  </header>
+
+  <main>
+    <section id="ask-panel">
+      <h2>Ask</h2>
+      <label for="question">Question</label>
+      <textarea id="question" rows="3" placeholder="Ask about NASA systems engineering"></textarea>
+      <label for="demo-question">Demo questions</label>
+      <select id="demo-question"><option value="">choose one...</option></select>
+      <label for="pattern">Pattern</label>
+      <select id="pattern">
+        <option value="sequential">sequential - one agent after another</option>
+        <option value="parallel">parallel - researchers at the same time</option>
+        <option value="hierarchical">hierarchical - supervisor plans and revises</option>
+        <option value="p2p">p2p - context travels in A2A messages</option>
+      </select>
+      <div class="buttons">
+        <button id="run-button" type="button">Run</button>
+        <button id="compare-all" type="button">Compare all four patterns</button>
+      </div>
+      <label for="replay-select">Replay a recorded run</label>
+      <select id="replay-select"><option value="">none</option></select>
+      <label for="replay-speed">Replay speed</label>
+      <select id="replay-speed">
+        <option value="1">1x</option>
+        <option value="4">4x</option>
+        <option value="0">instant</option>
+      </select>
+    </section>
+
+    <section id="architecture-panel">
+      <h2>Architecture</h2>
+      <svg id="architecture" viewBox="0 0 760 380" role="img" aria-label="Agent architecture">
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 z" fill="#8b97a8" />
+          </marker>
+        </defs>
+        <g class="edges">
+          <line class="edge" id="e-user-supervisor" x1="90" y1="60" x2="200" y2="60" marker-end="url(#arrow)" />
+          <line class="edge" id="e-supervisor-planner" x1="300" y1="60" x2="410" y2="60" marker-end="url(#arrow)" />
+          <line class="edge" id="e-planner-researcher" x1="470" y1="90" x2="470" y2="150" marker-end="url(#arrow)" />
+          <line class="edge" id="e-researcher-mcp" x1="560" y1="190" x2="660" y2="190" marker-end="url(#arrow)" />
+          <line class="edge" id="e-supervisor-blackboard" x1="250" y1="90" x2="250" y2="250" marker-end="url(#arrow)" />
+          <line class="edge" id="e-crew-blackboard" x1="400" y1="290" x2="330" y2="290" marker-end="url(#arrow)" />
+          <line class="edge" id="e-supervisor-crew" x1="300" y1="75" x2="400" y2="245" marker-end="url(#arrow)" />
+        </g>
+        <g class="nodes">
+          <g class="node" id="n-user"><rect x="20" y="40" width="70" height="40" rx="8" /><text x="55" y="65">User</text></g>
+          <g class="node" id="n-supervisor"><rect x="200" y="40" width="100" height="40" rx="8" /><text x="250" y="58">Supervisor</text><text class="badge" x="250" y="72">ADK</text></g>
+          <g class="node" id="n-planner"><rect x="410" y="40" width="90" height="40" rx="8" /><text x="455" y="58">Planner</text><text class="badge" x="455" y="72">ADK</text></g>
+          <g class="node" id="n-researcher"><rect x="400" y="150" width="150" height="60" rx="8" /><text x="475" y="170">Researchers</text><text class="badge" x="475" y="186">ADK</text><text class="small" x="475" y="200">3 MCP tools</text></g>
+          <g class="node" id="n-mcp"><rect x="660" y="160" width="90" height="60" rx="8" /><text x="705" y="182">MCP</text><text class="small" x="705" y="198">rag/web/calc</text></g>
+          <g class="node" id="n-crew"><rect x="400" y="245" width="200" height="60" rx="8" /><text x="500" y="265">Analyst Writer Critic</text><text class="badge" x="500" y="281">CrewAI</text><text class="small" x="500" y="296">via A2A :9001</text></g>
+          <g class="node" id="n-blackboard"><rect x="150" y="250" width="160" height="70" rx="8" /><text x="230" y="272">Blackboard</text><text class="small" x="230" y="290">read / write</text><text class="small" x="230" y="306">sections + history</text></g>
+        </g>
+      </svg>
+    </section>
+
+    <section id="timeline-panel">
+      <h2>Live timeline</h2>
+      <table id="timeline">
+        <thead><tr><th>agent</th><th>framework</th><th>status</th><th>ms</th><th>tokens in/out</th></tr></thead>
+        <tbody id="timeline-body"></tbody>
+      </table>
+      <h3>Event log</h3>
+      <ol id="event-log"></ol>
+    </section>
+
+    <section id="blackboard-panel">
+      <h2>Blackboard</h2>
+      <div id="blackboard-sections"></div>
+    </section>
+
+    <section id="report-panel">
+      <h2>Report</h2>
+      <div id="report"></div>
+      <button id="copy-markdown" type="button">Copy Markdown</button>
+    </section>
+
+    <section id="metrics-panel">
+      <h2>Metrics</h2>
+      <img id="heatmap" alt="per-agent heatmap" />
+      <table id="compare-table">
+        <thead><tr><th>pattern</th><th>wall s</th><th>tokens</th><th>A2A out/in</th><th>evidence</th><th>tools</th><th>revisions</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
+        <tbody id="compare-body"></tbody>
+      </table>
+      <p id="p2p-note" class="small"></p>
+    </section>
+  </main>
+
+  <footer>
+    <span id="footer-run">run: -</span>
+    <a id="link-json" href="#">raw JSON</a>
+    <a id="link-log" href="#">log</a>
+  </footer>
+
+  <p id="banner" class="hidden"></p>
+  <script src="/app.js"></script>
+</body>
+</html>
