@@ -228,7 +228,7 @@
   const PATTERN_EDGES = {
     sequential: [
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
-      ["planner", "rag_researcher", ""], ["planner", "blackboard", "read/write"],
+      ["planner", "rag_researcher", ""],
       ["rag_researcher", "blackboard", "read/write"], ["supervisor", "analyst", "A2A"],
       ["analyst", "blackboard", "read/write"], ["supervisor", "writer", "A2A"],
       ["writer", "blackboard", "read/write"], ["supervisor", "critic", "A2A"],
@@ -237,7 +237,7 @@
     parallel: [
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
       ["planner", "rag_researcher", ""], ["planner", "web_researcher", ""],
-      ["planner", "calc_researcher", ""], ["rag_researcher", "blackboard", "read/write"],
+      ["planner", "calc_researcher", ""],
       ["analyst", "blackboard", "read/write"], ["supervisor", "analyst", "A2A"],
       ["supervisor", "writer", "A2A"], ["supervisor", "critic", "A2A"],
       ["rag_researcher", "rag_tool", "MCP"], ["web_researcher", "web_tool", "MCP"],
@@ -247,15 +247,14 @@
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
       ["supervisor", "rag_researcher", ""], ["supervisor", "analyst", "A2A"],
       ["supervisor", "writer", "A2A"], ["supervisor", "critic", "A2A"],
-      ["writer", "critic", "revision"], ["analyst", "blackboard", "read/write"],
-      ["rag_researcher", "blackboard", "read/write"],
+      ["writer", "critic", "revision"],
       ["rag_researcher", "rag_tool", "MCP"],
     ],
     p2p: [
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
       ["planner", "rag_researcher", ""], ["rag_researcher", "analyst", "A2A"],
       ["analyst", "writer", "A2A"], ["writer", "critic", "A2A"],
-      ["rag_researcher", "rag_tool", "MCP"], ["analyst", "blackboard", "audit"],
+      ["rag_researcher", "rag_tool", "MCP"],, ["analyst", "blackboard", ""],
     ],
   };
 

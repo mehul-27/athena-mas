@@ -10,8 +10,6 @@ Two defences, both cheap and both tested:
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-import json
-
 from pydantic import BaseModel, Field
 
 from athena.settings import profiles as store
@@ -132,8 +130,9 @@ def activate_profile(payload: ActivateIn, request: Request) -> dict:
 
 
 @router.post("/profiles/{profile_id}/test")
-def test_profile(profile_id: str, request: Request) -> dict:
+async def test_profile_endpoint(profile_id: str, request: Request) -> dict:
     _guard(request)
+    from athena.api import probe
     from athena.api.activation import profile_env
     from athena.settings.profiles import ProfileError
 
@@ -143,32 +142,14 @@ def test_profile(profile_id: str, request: Request) -> dict:
         env = profile_env(profile_id)
     except ProfileError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"results": run_preflight(env)}
-
-
-def run_preflight(env: dict[str, str], timeout: int = 120) -> list[dict]:
-    """One subprocess call; returns the per-path JSON, never the environment."""
-    import os
-    import subprocess
-    import sys
-
-    child_env = dict(os.environ)
-    child_env.update(env)
     try:
-        completed = subprocess.run(
-            [sys.executable, "scripts/preflight.py", "--live", "--json"],
-            capture_output=True, text=True, timeout=timeout, check=False,
-            env=child_env,
-        )
-    except subprocess.TimeoutExpired:
-        return [{"path": "preflight", "ok": False, "error_type": "TimeoutExpired",
-                 "error": f"preflight did not finish within {timeout}s"}]
-    try:
-        parsed = json.loads(completed.stdout)
-    except ValueError:
-        return [{"path": "preflight", "ok": False, "error_type": "InvalidJson",
-                 "error": (completed.stderr or completed.stdout or "")[:200]}]
-    return parsed if isinstance(parsed, list) else [parsed]
+        return await probe.test_profile(profile_id, env)
+    except probe.Busy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - always answer with JSON
+        probe.log.warning("test endpoint failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=500,
+                            detail=f"test failed: {type(exc).__name__}") from exc
 
 class AboutMeIn(BaseModel):
     about_me: str = Field(default="", max_length=800)

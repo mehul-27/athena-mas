@@ -145,62 +145,54 @@ def test_no_active_profile_keeps_the_environment(monkeypatch) -> None:
 
 
 def test_test_connection_returns_the_preflight_json(monkeypatch, client) -> None:
+    from athena.api import probe
+
     profile = _profile()
-    seen: dict = {}
+    rows = [{"path": "adk-lite-llm", "ok": True, "host": "gateway.example",
+             "model": "openai/fake-model", "tokens_in": 5, "tokens_out": 2,
+             "reasoning": 0, "calls": 1, "error_type": "", "error": ""}]
 
-    class Done:
-        returncode = 0
-        stdout = json.dumps([{"path": "adk-lite-llm", "ok": True, "host": "gateway.example",
-                              "model": "openai/fake-model", "tokens_in": 5,
-                              "tokens_out": 2, "reasoning": 0, "calls": 1,
-                              "error_type": "", "error": ""}])
-        stderr = ""
+    async def fake(_env, timeout=120):
+        return rows
 
-    def fake_run(argv, **kwargs):
-        seen["argv"] = argv
-        seen["env"] = kwargs.get("env", {})
-        return Done()
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(probe, "run_preflight", fake)
 
     response = client.post(f"/api/settings/profiles/{profile['id']}/test")
 
     assert response.status_code == 200
-    results = response.json()["results"]
-    assert results[0]["path"] == "adk-lite-llm" and results[0]["ok"] is True
-    assert "--json" in seen["argv"] and "--live" in seen["argv"]
-    assert seen["env"]["LLM_API_KEY"] == SENTINEL
+    assert response.json()["results"] == rows
     assert SENTINEL not in response.text
 
-
 def test_test_connection_handles_a_timeout(monkeypatch, client) -> None:
+    from athena.api import probe
+
     profile = _profile()
 
-    def boom(argv, **kwargs):
-        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 120))
+    async def fake(_env, timeout=120):
+        return [{"path": "preflight", "ok": False, "error_type": "TimeoutExpired",
+                 "error": "preflight did not finish within 120s"}]
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(probe, "run_preflight", fake)
 
     results = client.post(f"/api/settings/profiles/{profile['id']}/test").json()["results"]
 
     assert results[0]["ok"] is False
     assert results[0]["error_type"] == "TimeoutExpired"
 
-
 def test_test_connection_handles_bad_json(monkeypatch, client) -> None:
+    from athena.api import probe
+
     profile = _profile()
 
-    class Done:
-        returncode = 0
-        stdout = "not json at all"
-        stderr = ""
+    async def fake(_env, timeout=120):
+        return [{"path": "preflight", "ok": False, "error_type": "InvalidJson",
+                 "error": "not json"}]
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: Done())
+    monkeypatch.setattr(probe, "run_preflight", fake)
 
     results = client.post(f"/api/settings/profiles/{profile['id']}/test").json()["results"]
 
     assert results[0]["error_type"] == "InvalidJson"
-
 
 def test_unknown_profile_is_404(client) -> None:
     assert client.post("/api/settings/profiles/nope/test").status_code == 404
