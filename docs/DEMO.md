@@ -58,3 +58,25 @@ python scripts\demo.py --replay-only
 | Four orchestration patterns, one registry | Authentication / multi-user |
 | Per-agent metrics and heatmap | Cost accounting per run |
 | Callback-based monitoring and an event log | Live streaming of partial model output |
+
+## Search provider
+
+The default is keyless DuckDuckGo HTML scraping (`SEARCH_PROVIDER=duckduckgo`).
+Nothing to configure, but it can be throttled: the tool retries twice (0.5 s,
+then 1.5 s) and then reports `ok=false` with "search provider throttled" rather
+than pretending it found nothing. A run that hits this is degraded, not wrong.
+
+More reliable alternatives, both configured by environment only:
+
+```bat
+:: self-hosted SearXNG (docker), then:
+set SEARCH_PROVIDER=searxng
+set SEARXNG_INSTANCE=http://127.0.0.1:8888
+```
+```bat
+docker run -d --name searxng -p 8888:8080 searxng/searxng
+```
+
+A keyed provider (Brave, Tavily) uses `BRAVE_API_KEY` / `TAVILY_API_KEY`; see
+`scripts/check_env.py` for what is set (it prints names and statuses only, never
+values). Keys are never written to logs, events or bundles.

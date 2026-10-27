@@ -20,7 +20,9 @@ COMPLETION_TOKENS = 45
 REASONING_TOKENS = 7
 
 
-def _value_for(spec: dict):
+def _value_for(spec: dict, overrides: dict | None = None, name: str = ""):
+    if overrides and name in overrides:
+        return overrides[name]
     kind = spec.get("type")
     if kind == "string":
         return "OK"
@@ -38,9 +40,12 @@ def _value_for(spec: dict):
     return "OK"
 
 
-def _object_for(schema: dict) -> dict:
+def _object_for(schema: dict, overrides: dict | None = None) -> dict:
     properties = schema.get("properties", {})
-    return {name: _value_for(spec) for name, spec in properties.items()}
+    return {
+        name: _value_for(spec, overrides, name)
+        for name, spec in properties.items()
+    }
 
 
 def _completion(model: str, message: dict) -> dict:
@@ -62,8 +67,9 @@ def _completion(model: str, message: dict) -> dict:
 class FakeProvider:
     """Records every request; returns a fixed usage block."""
 
-    def __init__(self) -> None:
+    def __init__(self, answer: str = "OK", key_points: list | None = None) -> None:
         self.requests: list[dict] = []
+        self.overrides = {"answer": answer, "key_points": key_points or [answer]}
         provider = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -84,7 +90,7 @@ class FakeProvider:
 
                 if body.get("tools"):
                     function = body["tools"][0].get("function", {})
-                    arguments = _object_for(function.get("parameters") or {})
+                    arguments = _object_for(function.get("parameters") or {}, provider.overrides)
                     message = {
                         "role": "assistant",
                         "content": None,
@@ -96,10 +102,9 @@ class FakeProvider:
                         }],
                     }
                 elif body.get("response_format"):
-                    message = {"role": "assistant",
-                               "content": json.dumps({"text": "OK"})}
+                    message = {"role": "assistant", "content": json.dumps(provider.overrides)}
                 else:
-                    message = {"role": "assistant", "content": "OK"}
+                    message = {"role": "assistant", "content": provider.overrides["answer"]}
 
                 payload = json.dumps(_completion(body.get("model", ""), message)).encode()
                 self.send_response(200)

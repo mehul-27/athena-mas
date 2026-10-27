@@ -116,3 +116,21 @@ the browser, and Ctrl+C stops everything it started. Without a key:
 `python scripts\demo.py --replay-only` plays the recorded runs in
 `data/demo/replay/`. See `docs/DEMO.md` for the walkthrough and the honest list
 of what is not implemented yet.
+
+### Re-record the demo
+
+The bundles in `data/demo/replay/` are recordings. To refresh them after a
+change (four real runs, about 4-5 minutes):
+
+```bat
+call .venv\Scripts\activate.bat
+set /p LLM_API_KEY=Key: 
+cls
+set LLM_API_BASE=http://your-gateway.example/v1
+set LLM_MODEL=openai/deepseek/deepseek-v4.1-flash
+python scripts\record_demo.py --overwrite
+```
+
+Without `--overwrite` the new bundles are written as `<pattern>-new.json`, so the
+shipped ones stay untouched until you have looked at them. Runs that are
+degraded or below 0.5 confidence are not exported unless you pass `--keep-bad`.

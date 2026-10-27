@@ -71,6 +71,9 @@ class WebResult(ToolResult):
     results: list[WebHit] = Field(
         default_factory=list, description="Results, in provider order."
     )
+    note: str | None = Field(
+        default=None, description="Set when the search ran but found nothing."
+    )
 
 
 class CalcResult(ToolResult):

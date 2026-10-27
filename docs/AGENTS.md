@@ -171,3 +171,17 @@ Rules:
 - When a whole path is stubbed for speed, keep at least one test that runs the
   real functions end to end against a fake provider
   (`tests/fake_provider.py`).
+
+## Critic calibration limits (Step 8b)
+
+`athena/agents/critique_rules.py` post-processes the critic's verdict: a report
+with confidence below 0.5, or one that says in so many words that the evidence
+does not answer the core question, is rejected with at least medium severity.
+
+The phrase rule is deliberately narrow - it needs a hedge phrase ("does not
+state", "not found in the evidence", ...) *and* a core word ("question",
+"answer", "definition", "evidence", "handbook") in the same sentence, so a
+caveat about a detail does not trip it. It still cannot read context: a sentence
+that happens to combine both is a false positive. That is acceptable because the
+revision loop only reacts to severity "high", so a false positive costs a
+medium-severity note, not another expensive revision.

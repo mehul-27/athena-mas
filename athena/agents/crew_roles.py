@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Callable
 
 from athena.agents import bb_io
+from athena.agents.critique_rules import calibrate
 from athena.blackboard import (
     Analysis,
     Blackboard,
@@ -186,7 +187,10 @@ def critique(
         "- severity is 'high' ONLY for unsupported claims, contradictions with "
         "the evidence, or a truncated answer. Style and brevity are not 'high'.\n"
         "- severity 'low' or 'medium' for everything else, with approved=true if "
-        "the answer is still usable."
+        "the answer is still usable.\n"
+        "- If the answer says the evidence does not cover the question, or its "
+        "confidence is below 0.5, approved MUST be false with severity at least "
+        "'medium'."
     )
     generate = generate or _generate_critique
     # Same rule as the analyst: a failed critic writes nothing and reports
@@ -194,6 +198,9 @@ def critique(
     result, stats = unpack_result(generate(prompt))
     if not isinstance(result, Critique):
         result = Critique.model_validate(result)
+    # A report that admits it cannot answer must not be approved.
+    report = blackboard.read("final_report")
+    result = calibrate(result, report[0] if report else None)
     version = blackboard.write("critique", result, author="critic")
     return {"section": "critique", "version": version, **stats}
 

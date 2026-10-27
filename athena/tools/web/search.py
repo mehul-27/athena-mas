@@ -63,16 +63,58 @@ def is_ad_url(url: str) -> bool:
     return any(marker in lowered for marker in _AD_URL_MARKERS)
 
 
+THROTTLE_STATUS = (202, 403, 429)
+RETRY_DELAYS = (0.5, 1.5)
+THROTTLE_MARKERS = (
+    "captcha", "anomaly", "unusual traffic", "are you a robot",
+    "too many requests", "blocked", "rate limit",
+)
+
+
+class SearchThrottled(RuntimeError):
+    """The provider refused to answer; retrying did not help."""
+
+
+def _fetch(url: str, **kwargs):
+    """The HTTP call, isolated so tests can inject canned responses."""
+    return httpx.get(url, **kwargs)
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def looks_throttled(status: int, text: str) -> bool:
+    if status in THROTTLE_STATUS:
+        return True
+    lowered = (text or "").lower()
+    return any(marker in lowered for marker in THROTTLE_MARKERS)
+
+
+def fetch_with_retry(url: str, **kwargs):
+    """Retry a throttled search twice, then give up loudly."""
+    delays = list(RETRY_DELAYS) + [None]
+    for delay in delays:
+        response = _fetch(url, **kwargs)
+        status = getattr(response, "status_code", 200)
+        text = getattr(response, "text", "") or ""
+        if not looks_throttled(status, text):
+            response.raise_for_status()
+            return response
+        if delay is not None:
+            _sleep(delay)
+    raise SearchThrottled("search provider throttled")
+
+
 def duckduckgo(query: str, count: int) -> list[WebHit]:
     """Scrape the HTML endpoint. No API key, no quota to configure."""
-    response = httpx.get(
+    response = fetch_with_retry(
         "https://html.duckduckgo.com/html/",
         params={"q": query},
         headers={"User-Agent": settings.user_agent()},
         timeout=settings.search_timeout(),
         follow_redirects=True,
     )
-    response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
     hits: list[WebHit] = []
@@ -102,13 +144,12 @@ def searxng(query: str, count: int) -> list[WebHit]:
     if not instance:
         raise ValueError("SEARCH_PROVIDER=searxng requires SEARXNG_INSTANCE")
 
-    response = httpx.get(
+    response = fetch_with_retry(
         f"{instance}/search",
         params={"q": query, "format": "json", "language": "en"},
         headers={"User-Agent": settings.user_agent()},
         timeout=settings.search_timeout(),
     )
-    response.raise_for_status()
     hits: list[WebHit] = []
     for item in response.json().get("results", []):
         if len(hits) >= count:
@@ -154,6 +195,11 @@ def web_search(query: str, max_results: int = 5) -> WebResult:
         )
 
     try:
-        return result(results=caller(query, limit))
+        hits = caller(query, limit)
+    except SearchThrottled:
+        return result(ok=False, error="search provider throttled")
     except Exception as exc:  # noqa: BLE001 - network failure is a result, not a crash
         return result(ok=False, error=f"{type(exc).__name__}: {exc}")
+    if not hits:
+        return result(results=[], note="no results for this query")
+    return result(results=hits)
