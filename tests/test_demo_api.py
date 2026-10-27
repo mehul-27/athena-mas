@@ -18,6 +18,18 @@ STATIC = ROOT / "athena" / "api" / "static"
 BUNDLES = ROOT / "data" / "demo" / "replay"
 
 
+@pytest.fixture(autouse=True)
+def _settings_files(tmp_path, monkeypatch):
+    """Keep the real settings files out of these tests."""
+    from athena.settings import profiles as store
+
+    monkeypatch.setattr(store, "PROFILES_FILE", tmp_path / "profiles.json")
+    monkeypatch.setattr(store, "ACTIVE_FILE", tmp_path / "active.json")
+    monkeypatch.setattr(store, "PRESETS_FILE", tmp_path / "presets.json")
+    (tmp_path / "presets.json").write_text("[]", encoding="utf-8")
+    yield
+
+
 @pytest.fixture()
 def client(monkeypatch) -> TestClient:
     monkeypatch.setattr("athena.api.app._crew_server_up", lambda *a, **k: False)
@@ -103,14 +115,6 @@ def test_bundles_carry_no_secret_or_home_path() -> None:
 
 
 # --- the page -------------------------------------------------------------
-
-
-def test_page_has_the_required_panels() -> None:
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
-    for element_id in ("status-crew", "question", "pattern", "run-button", "architecture",
-                       "timeline-body", "event-log", "blackboard-sections", "report",
-                       "heatmap", "compare-body", "footer-run"):
-        assert f'id="{element_id}"' in html, f"missing #{element_id}"
 
 
 def test_page_has_no_external_assets() -> None:

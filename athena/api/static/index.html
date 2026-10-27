@@ -1,215 +1,238 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Athena - multi-agent research assistant</title>
+  <link rel="icon" href="/assets/favicon.svg" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <header id="top">
-    <div class="title-row">
-      <h1>Athena - multi-agent research assistant</h1>
-      <p id="subtitle">Google ADK + CrewAI + A2A + MCP + Blackboard</p>
+  <header class="appbar">
+    <button class="icon-button" id="sidebar-toggle" type="button" aria-label="Toggle sidebar">&#9776;</button>
+    <div class="brand">
+      <img class="brand-logo" src="/assets/athenalogo.svg" alt="" />
+      <span class="brand-word">ATHENA</span>
+      <span class="brand-sub">multi-agent research assistant</span>
     </div>
-    <ul id="status-strip">
-      <li id="status-crew">crew server: checking</li>
-      <li id="status-model">model: -</li>
-      <li id="status-host">provider: -</li>
-      <li id="status-mode">mode: live</li>
-    </ul>
+    <div class="status-pill" id="status-pill" title="crew server, mode, model, provider host">
+      <span class="dot" id="status-crew-dot"></span>
+      <span id="status-crew">crew: checking</span>
+      <span class="sep">·</span>
+      <span id="status-mode">mode: live</span>
+      <span class="sep">·</span>
+      <span id="status-model">model: -</span>
+      <span class="sep">·</span>
+      <span id="status-host">provider: -</span>
+    </div>
+    <div class="appbar-actions">
+      <button class="icon-button" id="theme-toggle" type="button" title="Light / dark">&#9681;</button>
+      <button class="chip-button" id="presentation-toggle" type="button" title="Larger type for a projector">Presentation size</button>
+    </div>
   </header>
 
-  <p id="banner" class="hidden" role="status"></p>
+  <p id="banner" class="banner hidden" role="status"></p>
 
-  <nav id="tabs">
-    <button type="button" class="tab active" data-tab="run">Run</button>
-    <button type="button" class="tab" data-tab="history">History</button>
-    <button type="button" class="tab" data-tab="documents">Documents</button>
-    <button type="button" class="tab" data-tab="tools">Tools</button>
-    <button type="button" class="tab" data-tab="settings">Settings</button>
-  </nav>
-
-  <main>
-    <section id="ask-panel">
-      <h2>Ask</h2>
-      <label for="question">Question</label>
-      <textarea id="question" rows="3" placeholder="Ask about NASA systems engineering"></textarea>
-      <label for="demo-question">Demo questions</label>
-      <select id="demo-question"><option value="">choose one...</option></select>
-      <label for="pattern">Pattern</label>
-      <select id="pattern">
-        <option value="sequential">sequential - one agent after another</option>
-        <option value="parallel">parallel - researchers at the same time</option>
-        <option value="hierarchical">hierarchical - supervisor plans and revises</option>
-        <option value="p2p">p2p - context travels in A2A messages</option>
-      </select>
-      <div class="buttons">
-        <button id="run-button" type="button">Run</button>
-        <button id="compare-all" type="button">Compare all four</button>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar" aria-label="Runs and views">
+      <div class="sidebar-group">
+        <div class="sidebar-label">History <button class="link-button" id="history-refresh" type="button">refresh</button></div>
+        <ul class="sidebar-list" id="history-list"><li class="sidebar-empty">no runs yet</li></ul>
       </div>
-      <label for="replay-select">Replay a recorded run</label>
-      <select id="replay-select"><option value="">none</option></select>
-      <label for="replay-speed">Replay speed</label>
-      <select id="replay-speed">
-        <option value="1">1x</option>
-        <option value="4">4x</option>
-        <option value="0">instant</option>
-      </select>
-    </section>
+      <div class="sidebar-group">
+        <div class="sidebar-label">Demo recordings</div>
+        <ul class="sidebar-list" id="replay-list"><li class="sidebar-empty">loading...</li></ul>
+      </div>
+      <nav class="sidebar-group sidebar-nav">
+        <button class="nav-item" data-view="run" type="button" id="nav-run">Run</button>
+        <button class="nav-item" data-view="how" type="button" id="nav-how">How it works</button>
+        <button class="nav-item" data-view="documents" type="button" id="nav-documents">Documents</button>
+        <button class="nav-item" data-view="settings" type="button" id="nav-settings">Settings</button>
+      </nav>
+    </aside>
 
-    <div class="column">
-      <section id="architecture-panel">
-        <h2>Architecture</h2>
-        <svg id="architecture" viewBox="0 0 760 380" role="img" aria-label="Agent architecture">
-          <defs>
-            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6 z" fill="#a9b6c7" />
-            </marker>
-          </defs>
-          <g class="edges">
-            <line class="edge" id="e-user-supervisor" x1="90" y1="60" x2="200" y2="60" marker-end="url(#arrow)" />
-            <line class="edge" id="e-supervisor-planner" x1="300" y1="60" x2="410" y2="60" marker-end="url(#arrow)" />
-            <line class="edge" id="e-planner-researcher" x1="470" y1="90" x2="470" y2="150" marker-end="url(#arrow)" />
-            <line class="edge" id="e-researcher-mcp" x1="560" y1="190" x2="660" y2="190" marker-end="url(#arrow)" />
-            <line class="edge" id="e-supervisor-blackboard" x1="250" y1="90" x2="250" y2="250" marker-end="url(#arrow)" />
-            <line class="edge" id="e-crew-blackboard" x1="400" y1="290" x2="330" y2="290" marker-end="url(#arrow)" />
-            <line class="edge" id="e-supervisor-crew" x1="300" y1="75" x2="400" y2="245" marker-end="url(#arrow)" />
-          </g>
-          <g class="nodes">
-            <g class="node" id="n-user"><rect x="20" y="40" width="70" height="40" rx="8" /><text x="55" y="65">User</text></g>
-            <g class="node" id="n-supervisor"><rect x="200" y="40" width="100" height="40" rx="8" /><text x="250" y="58">Supervisor</text><text class="badge" x="250" y="72">ADK</text></g>
-            <g class="node" id="n-planner"><rect x="410" y="40" width="90" height="40" rx="8" /><text x="455" y="58">Planner</text><text class="badge" x="455" y="72">ADK</text></g>
-            <g class="node" id="n-researcher"><rect x="400" y="150" width="150" height="60" rx="8" /><text x="475" y="170">Researchers</text><text class="badge" x="475" y="186">ADK</text><text class="small" x="475" y="200">3 MCP tools</text></g>
-            <g class="node" id="n-mcp"><rect x="660" y="160" width="90" height="60" rx="8" /><text x="705" y="182">MCP</text><text class="small" x="705" y="198">rag/web/calc</text></g>
-            <g class="node" id="n-crew"><rect x="400" y="245" width="200" height="60" rx="8" /><text x="500" y="265">Analyst Writer Critic</text><text class="badge" x="500" y="281">CrewAI</text><text class="small" x="500" y="296">via A2A :9001</text></g>
-            <g class="node" id="n-blackboard"><rect x="150" y="250" width="160" height="70" rx="8" /><text x="230" y="272">Blackboard</text><text class="small" x="230" y="290">read / write</text><text class="small" x="230" y="306">sections + history</text></g>
-          </g>
-        </svg>
-      </section>
-
-      <section id="timeline-panel">
-        <h2>Live timeline</h2>
-        <table id="timeline">
-          <thead><tr><th>agent</th><th>framework</th><th>status</th><th>duration</th><th>tokens in/out</th><th>stop reason</th></tr></thead>
-          <tbody id="timeline-body"></tbody>
-        </table>
-        <h3>Event log</h3>
-        <ol id="event-log"></ol>
-      </section>
-
-      <section id="blackboard-panel">
-        <h2>Blackboard
-          <button id="toggle-raw" type="button" class="small-button">raw JSON</button>
-        </h2>
-        <div id="blackboard-sections"></div>
-      </section>
-
-      <section id="report-panel">
-        <h2>Report</h2>
-        <div id="report"></div>
-        <button id="copy-markdown" type="button">Copy Markdown</button>
-      </section>
-
-      <section id="metrics-panel">
-        <h2>Metrics</h2>
-        <img id="heatmap" alt="per-agent heatmap" />
-        <table id="compare-table">
-          <thead><tr><th>pattern</th><th>wall s</th><th>tokens</th><th>A2A out/in</th><th>evidence</th><th>tools</th><th>revisions</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
-          <tbody id="compare-body"></tbody>
-        </table>
-        <p id="p2p-note" class="small">p2p carries the context in A2A messages, so its byte count is far higher than the blackboard patterns.</p>
-      </section>
-
-      <section id="history-panel" class="tab-panel" data-tab="history">
-        <h2>History <button id="tab-history" type="button" class="small-button">load</button></h2>
-        <table id="history-table">
-          <thead><tr><th>question</th><th>pattern</th><th>when</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
-          <tbody id="history-body"></tbody>
-        </table>
-      </section>
-
-      <section id="tools-panel" class="tab-panel" data-tab="tools">
-        <h2>Tools <button id="tab-tools" type="button" class="small-button">load</button></h2>
-        <p class="small">Three MCP servers expose tools over stdio; the agents call them through the Model Context Protocol.</p>
-        <div id="tools-list"></div>
-      </section>
-
-      <section id="documents-panel" class="tab-panel" data-tab="documents">
-        <h2>My documents</h2>
-        <p class="small">Documents stay on this computer.</p>
-        <div id="docs-drop" class="dropzone">
-          <input id="docs-input" type="file" accept=".pdf,.txt,.md" multiple />
-          <p class="small">Drop a PDF, TXT or MD here (up to 30 MB), or choose a file.</p>
+    <main class="main" id="main">
+      <section class="view" id="view-run">
+        <div class="composer">
+          <label class="sr-only" for="question">Question</label>
+          <textarea id="question" rows="2" placeholder="Ask about NASA systems engineering"></textarea>
+          <div class="composer-row">
+            <div class="chips" id="pattern-chips" role="group" aria-label="Pattern">
+              <button class="chip selected" data-pattern="sequential" type="button">sequential</button>
+              <button class="chip" data-pattern="parallel" type="button">parallel</button>
+              <button class="chip" data-pattern="hierarchical" type="button">hierarchical</button>
+              <button class="chip" data-pattern="p2p" type="button">p2p</button>
+            </div>
+            <select id="demo-question" class="select" aria-label="Demo questions">
+              <option value="">demo questions...</option>
+            </select>
+            <button class="primary" id="run-button" type="button">Run</button>
+            <button class="ghost" id="compare-all" type="button">Compare all four</button>
+          </div>
+          <div class="composer-row replay-row">
+            <select id="replay-select" class="select" aria-label="Replay a recorded run">
+              <option value="">replay a recording...</option>
+            </select>
+            <select id="replay-speed" class="select" aria-label="Replay speed">
+              <option value="1">1x</option>
+              <option value="4">4x</option>
+              <option value="0">instant</option>
+            </select>
+            <span class="hint" id="run-hint">run id: -</span>
+          </div>
         </div>
-        <p id="docs-status" class="small"></p>
-        <table id="docs-table">
-          <thead><tr><th>name</th><th>pages</th><th>chunks</th><th>size</th><th>enabled</th><th></th></tr></thead>
-          <tbody id="docs-body"></tbody>
-        </table>
+
+        <section class="card result-card hidden" id="result-card">
+          <div class="card-head">
+            <h2 id="result-title">Result</h2>
+            <div class="card-head-actions">
+              <span class="badge hidden" id="replay-badge">REPLAY</span>
+              <button class="ghost" id="copy-markdown" type="button">Copy Markdown</button>
+            </div>
+          </div>
+          <p class="answer" id="report-answer"></p>
+          <ul class="points" id="report-points"></ul>
+          <div class="meta-row" id="report-meta"></div>
+          <div class="citations" id="report-citations"></div>
+          <div class="sources">
+            <div class="sidebar-label">Sources</div>
+            <ol id="sources-list"></ol>
+          </div>
+        </section>
+
+        <section class="card activity-card" id="activity-card">
+          <div class="card-head">
+            <h2>Agent activity</h2>
+            <div class="card-head-actions">
+              <span class="hint" id="activity-summary"></span>
+              <button class="ghost" id="activity-toggle" type="button">collapse</button>
+            </div>
+          </div>
+          <div id="activity-body">
+            <div class="live-map" id="live-map"></div>
+            <table class="table" id="timeline-table">
+              <thead><tr><th>agent</th><th>framework</th><th>status</th><th>duration</th><th>tokens</th><th>stop</th></tr></thead>
+              <tbody id="timeline-body"></tbody>
+            </table>
+            <div class="log-wrap">
+              <div class="sidebar-label">Event log</div>
+              <ol class="event-log" id="event-log"></ol>
+            </div>
+            <div class="board-wrap">
+              <div class="sidebar-label">Blackboard <button class="link-button" id="toggle-raw" type="button">raw JSON</button></div>
+              <div class="board-cards" id="blackboard-sections"></div>
+            </div>
+            <div class="metrics-wrap">
+              <div class="sidebar-label">Per-agent metrics</div>
+              <img id="heatmap" class="heatmap" alt="per-agent heatmap" />
+              <table class="table" id="compare-table">
+                <thead><tr><th>run</th><th>wall</th><th>tokens</th><th>A2A out/in</th><th>evidence</th><th>tools</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
+                <tbody id="compare-body"></tbody>
+              </table>
+              <p class="hint">p2p carries the context in A2A messages, so its byte count is far higher than the blackboard patterns.</p>
+            </div>
+          </div>
+        </section>
       </section>
 
-      <section id="settings-panel" class="tab-panel" data-tab="settings">
-        <h2>Settings</h2>
-        <p id="settings-state" class="small"></p>
-        <table id="profiles-table">
-          <thead><tr><th>name</th><th>model</th><th>host</th><th>key</th><th>active</th><th></th></tr></thead>
-          <tbody id="profiles-body"></tbody>
-        </table>
+      <section class="view hidden" id="view-how">
+        <section class="card">
+          <div class="card-head"><h2>How it works</h2></div>
+          <p class="hint">One supervisor in Google ADK plans, three researchers call MCP tools, and the
+            analyst, writer and critic live in a separate CrewAI process reached over A2A. They share a
+            blackboard, and every step is recorded as an event.</p>
+          <div class="diagram-full" id="how-diagram"></div>
+          <ul class="legend" id="diagram-legend"></ul>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>Tools (read-only)</h2><button class="ghost" id="tools-refresh" type="button">load</button></div>
+          <p class="hint">Three MCP servers expose tools over stdio; the agents call them through the Model Context Protocol.</p>
+          <div id="tools-list" class="tools-list"></div>
+        </section>
+      </section>
 
-        <h3 id="profile-form-title">Add a provider</h3>
-        <label for="profile-name">Name</label>
-        <input id="profile-name" type="text" maxlength="80" />
-        <label for="profile-preset">Preset</label>
-        <select id="profile-preset"></select>
-        <label for="profile-api-base">API base URL</label>
-        <input id="profile-api-base" type="text" placeholder="https://..." />
-        <label for="profile-model">Model (LiteLLM string)</label>
-        <input id="profile-model" type="text" placeholder="openai/provider/model" />
-        <label for="profile-key">API key</label>
-        <input id="profile-key" type="password" autocomplete="new-password" spellcheck="false" />
-        <label for="profile-reasoning">Reasoning effort</label>
-        <select id="profile-reasoning">
-          <option value="">(send nothing)</option>
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high">high</option>
-        </select>
-        <label for="profile-search">Search provider</label>
-        <select id="profile-search">
-          <option value="duckduckgo">DuckDuckGo (keyless, default)</option>
-          <option value="searxng">SearXNG (self-hosted)</option>
-          <option value="brave">Brave (key)</option>
-          <option value="tavily">Tavily (key)</option>
-        </select>
-        <label for="profile-search-endpoint">SearXNG endpoint</label>
-        <input id="profile-search-endpoint" type="text" placeholder="http://localhost:8888" />
-        <p id="profile-errors" class="small error-text"></p>
-        <div class="buttons">
-          <button id="profile-save" type="button">Save</button>
-          <button id="profile-test" type="button">Test connection</button>
-          <button id="profile-activate" type="button">Activate</button>
-          <button id="profile-delete" type="button" class="danger">Delete</button>
-        </div>
-        <table id="test-table">
-          <thead><tr><th>path</th><th>ok</th><th>host</th><th>tokens</th><th>error</th></tr></thead>
-          <tbody id="test-body"></tbody>
-        </table>
+      <section class="view hidden" id="view-settings">
+        <section class="card">
+          <div class="card-head"><h2>Providers</h2><span class="hint" id="settings-state"></span></div>
+          <table class="table" id="profiles-table">
+            <thead><tr><th>name</th><th>model</th><th>host</th><th>key</th><th>status</th><th></th></tr></thead>
+            <tbody id="profiles-body"></tbody>
+          </table>
 
-        <h3>About me</h3>
-        <p class="small">A standing instruction for the planner and the writer (up to 800 characters).</p>
-        <textarea id="about-me" rows="4" maxlength="800"></textarea>
-        <div class="buttons"><button id="about-save" type="button">Save about me</button></div>
-      </section>    </div>
-  </main>
+          <h3 id="profile-form-title">Add a provider</h3>
+          <div class="form-grid">
+            <label for="profile-name">Name<input id="profile-name" type="text" maxlength="80" /></label>
+            <label for="profile-preset">Preset<select id="profile-preset"></select></label>
+            <label for="profile-api-base" class="wide">API base URL<input id="profile-api-base" type="text" placeholder="https://api.example.com/v1" /></label>
+            <label for="profile-model" class="wide">Model<input id="profile-model" type="text" placeholder="openai/provider/model" /></label>
+            <label for="profile-key" class="wide">API key<input id="profile-key" type="password" autocomplete="new-password" spellcheck="false" /></label>
+            <label for="profile-reasoning">Reasoning effort
+              <select id="profile-reasoning">
+                <option value="" selected>Default (don't send)</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+            <label for="profile-search">Search provider
+              <select id="profile-search">
+                <option value="duckduckgo" selected>DuckDuckGo (keyless)</option>
+                <option value="searxng">SearXNG (self-hosted)</option>
+                <option value="brave">Brave (key)</option>
+                <option value="tavily">Tavily (key)</option>
+              </select>
+            </label>
+            <label for="profile-search-endpoint" class="wide">SearXNG endpoint<input id="profile-search-endpoint" type="text" placeholder="http://localhost:8888" /></label>
+          </div>
+          <p class="error-text" id="profile-errors"></p>
+          <div class="actions">
+            <button class="primary" id="profile-save" type="button">Save</button>
+            <button class="ghost" id="profile-test" type="button">Test connection</button>
+            <button class="ghost" id="profile-activate" type="button">Activate</button>
+            <button class="danger" id="profile-delete" type="button">Delete</button>
+            <span class="hint" id="profile-status"></span>
+          </div>
+          <div class="test-result" id="test-result"></div>
+        </section>
 
-  <footer>
+        <section class="card">
+          <div class="card-head"><h2>About me</h2></div>
+          <p class="hint">A standing instruction for the planner and the writer (up to 800 characters).</p>
+          <textarea id="about-me" rows="3" maxlength="800"></textarea>
+          <div class="actions"><button class="primary" id="about-save" type="button">Save about me</button><span class="hint" id="about-status"></span></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Search</h2></div>
+          <p class="hint">The search provider belongs to a provider profile. The default is keyless DuckDuckGo
+            scraping, which can be throttled; point SearXNG at a local instance for a steadier source.</p>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>About</h2></div>
+          <p class="hint">Athena rebuild: Google ADK + CrewAI + A2A + MCP + shared blackboard. Guardrails, tracing,
+            evaluation and cloud deployment are not implemented.</p>
+        </section>
+      </section>
+
+      <section class="view hidden" id="view-documents">
+        <section class="card">
+          <div class="card-head"><h2>My documents</h2></div>
+          <p class="hint">Documents stay on this computer.</p>
+          <p class="empty-state">Upload and personal RAG come in a later step; the NASA handbook is the built-in document.</p>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <footer class="footer">
     <span id="footer-run">run: -</span>
     <a id="link-json" href="#">raw JSON</a>
     <a id="link-log" href="#">log</a>
   </footer>
 
   <script src="/logic.js"></script>
+  <script src="/diagram.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -1,7 +1,6 @@
-/* Pure view-model helpers for the demo page. No DOM access: testable with node.
- *
- * Loaded as a classic script by the page (globalThis.AthenaLogic) and as a
- * CommonJS module by tests (`module.exports` when `module` exists).
+/* Pure view-model helpers for the demo UI. No DOM access; tested with node.
+ * Loaded as a classic script (globalThis.AthenaLogic) and by tests
+ * (`module.exports` when `module` exists).
  */
 "use strict";
 
@@ -12,18 +11,17 @@
     analyst: "crewai", writer: "crewai", critic: "crewai",
   };
 
-  function frameworkOf(event) {
-    return event.framework || FRAMEWORK[event.agent] || "adk";
-  }
+  const frameworkOf = (event) => event.framework || FRAMEWORK[event.agent] || "adk";
 
-  /* One row per agent, derived only from recorded events. */
+  /* ---------------------------------------------------------------- timeline */
+
   function reduceTimeline(events) {
     const rows = new Map();
     const ensure = (agent) => {
       if (!rows.has(agent)) {
         rows.set(agent, {
-          agent, framework: "adk", status: "waiting",
-          ms: null, model_in: 0, model_out: 0, stage_in: 0, stage_out: 0,
+          agent, framework: "adk", status: "waiting", ms: null,
+          model_in: 0, model_out: 0, stage_in: 0, stage_out: 0,
           reasoning: 0, stop_reason: "",
         });
       }
@@ -35,7 +33,6 @@
       if (event.kind === "stage_end") {
         row.status = event.ok === false ? "failed" : "done";
         row.ms = event.duration_ms == null ? null : Math.round(event.duration_ms);
-        // A stage_end carries the stage total, so it replaces the per-call sum.
         if (event.tokens_in || event.tokens_out) {
           row.stage_in = event.tokens_in || 0;
           row.stage_out = event.tokens_out || 0;
@@ -44,9 +41,7 @@
       } else if (event.kind === "model_call") {
         row.model_in += event.tokens_in || 0;
         row.model_out += event.tokens_out || 0;
-        if (event.extra && event.extra.reasoning_tokens) {
-          row.reasoning += event.extra.reasoning_tokens;
-        }
+        if (event.extra && event.extra.reasoning_tokens) row.reasoning += event.extra.reasoning_tokens;
         if (row.status === "waiting") row.status = "running";
       } else if (event.kind === "stage_start" && row.status !== "done") {
         row.status = "running";
@@ -56,8 +51,7 @@
     });
     return Array.from(rows.values()).map((row) => ({
       agent: row.agent, framework: row.framework, status: row.status, ms: row.ms,
-      tokens_in: row.stage_in || row.model_in,
-      tokens_out: row.stage_out || row.model_out,
+      tokens_in: row.stage_in || row.model_in, tokens_out: row.stage_out || row.model_out,
       reasoning: row.reasoning, stop_reason: row.stop_reason,
     }));
   }
@@ -66,16 +60,29 @@
     return (events || []).reduce((total, event) => {
       if (event.kind !== "a2a_call") return total;
       const extra = event.extra || {};
-      return {
-        out: total.out + (extra.request_bytes || 0),
-        in: total.in + (extra.response_bytes || 0),
-      };
+      return { out: total.out + (extra.request_bytes || 0),
+               in: total.in + (extra.response_bytes || 0) };
     }, { out: 0, in: 0 });
+  }
+
+  /* ------------------------------------------------------------- formatting */
+
+  function duration(ms) {
+    if (ms == null) return "";
+    return ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s";
+  }
+
+  function bytes(total) {
+    const value = Number(total) || 0;
+    return value < 1024 ? value + " B" : (value / 1024).toFixed(1) + " kB";
+  }
+
+  function tokens(inCount, outCount) {
+    return (inCount || 0) + " in / " + (outCount || 0) + " out";
   }
 
   const VERDICT_WORD = { true: "approved", false: "rejected" };
 
-  /* "critic approved (low)" | "critic rejected (high)" | "critic unknown" */
   function verdictLabel(approved, severity) {
     if (approved === null || approved === undefined) return "critic unknown";
     const word = VERDICT_WORD[String(approved)];
@@ -88,27 +95,29 @@
     return { approved: Boolean(value.approved), severity: value.severity || null };
   }
 
-  /* Citation rows the table can render; the quote is never empty by design. */
   function citationRows(report) {
-    const citations = (report && report.citations) || [];
-    return citations.map((citation, index) => ({
+    return ((report && report.citations) || []).map((citation, index) => ({
       index: index + 1,
       source_ref: citation.source_ref || "(no source)",
       quote: citation.quote || citation.text || "(quote not recorded)",
     }));
   }
 
-  function statusStrip(health, replaying) {
+  function statusPill(health, replaying) {
     const mode = replaying || !health || !health.provider_configured ? "replay" : "live";
+    const active = (health && health.active_profile) || null;
     return {
-      crew: health && health.crew_server ? health.crew_server : "unknown",
-      model: mode === "replay" ? "n/a (replay)" : (health.model || "not set"),
-      host: mode === "replay" ? "n/a (replay)" : (health.api_host || "default"),
+      crew: (health && health.crew_server) || "unknown",
+      model: mode === "replay" ? "n/a (replay)"
+        : (health.model || (active && active.model) || "not set"),
+      host: mode === "replay" ? "n/a (replay)"
+        : (health.api_host || (active && active.api_host) || "default"),
       mode,
     };
   }
 
-  /* Readable card views for the blackboard, not raw JSON. */
+  /* ------------------------------------------------------------- blackboard */
+
   function blackboardCards(snapshot) {
     const cards = [];
     const value = (name) => (snapshot[name] ? snapshot[name].value : null);
@@ -152,23 +161,28 @@
     return cards;
   }
 
-  /* Settings: form validation and the activation flow, both DOM-free. */
+  /* --------------------------------------------------------------- settings */
+
   function validateProfile(form) {
     const errors = {};
     const name = String(form.name || "").trim();
     const model = String(form.model || "").trim();
     const base = String(form.api_base || "").trim();
+
     if (!name) errors.name = "name is required";
-    if (!model) errors.model = "model is required";
+    if (!model) errors.model = "model string is required";
+    if (form.needs_key && !String(form.llm_key || "").trim()) {
+      errors.llm_key = "an API key is required for a new provider";
+    }
     if (base) {
-      if (!/^https?:\/\//i.test(base)) errors.api_base = "must start with https://";
+      if (!/^https?:\/\//i.test(base)) errors.api_base = "base URL must start with https://";
       else if (!/^https:/i.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(base)) {
         errors.api_base = "http is only allowed for localhost";
       }
-      if (/^https?:\/\/[^/]*@/i.test(base)) errors.api_base = "must not contain credentials";
+      if (/^https?:\/\/[^/]*@/i.test(base)) errors.api_base = "the URL must not contain credentials";
     }
     if (form.search_provider === "searxng" && !String(form.search_endpoint || "").trim()) {
-      errors.search_endpoint = "searxng needs an endpoint";
+      errors.search_endpoint = "SearXNG needs an endpoint";
     }
     return { ok: Object.keys(errors).length === 0, errors };
   }
@@ -179,33 +193,137 @@
     return { api_base: preset.api_base || "", model: preset.model || "" };
   }
 
-  /* idle -> saving -> saved -> activating -> active | failed */
-  function activationReducer(state, action) {
-    const current = state || { status: "idle", message: "" };
+  /* One request at a time: idle -> running -> ok | error | timeout. */
+  function requestState(state, action) {
+    const current = state || { status: "idle", message: "", rows: [] };
     switch (action.type) {
-      case "save":
-        return { status: "saving", message: "saving..." };
-      case "saved":
-        return { status: "saved", message: "saved", id: action.id };
-      case "activate":
-        return { status: "activating", message: "restarting crew server...", id: action.id };
-      case "activated":
-        return action.ok
-          ? { status: "active", message: "crew server restarted", id: action.id }
-          : { status: "failed", message: action.message || "activation failed", id: action.id };
-      case "failed":
-        return { status: "failed", message: action.message || "request failed" };
+      case "start":
+        return { status: "running", message: action.message || "working...", rows: [] };
+      case "ok":
+        return { status: "ok",
+                 message: action.message || ((action.rows || []).length + " path(s) checked"),
+                 rows: action.rows || [] };
+      case "error":
+        return { status: "error", message: action.message || "request failed", rows: [] };
+      case "timeout":
+        return { status: "timeout",
+                 message: "taking too long; check the crew server", rows: [] };
       case "reset":
-        return { status: "idle", message: "" };
+        return { status: "idle", message: "", rows: [] };
       default:
         return current;
     }
   }
 
+  function isBusy(state) {
+    return (state || {}).status === "running";
+  }
+
+  /* ---------------------------------------------------------------- diagram */
+
+  const NODES = ["user", "supervisor", "planner", "rag_researcher", "web_researcher",
+                 "calc_researcher", "analyst", "writer", "critic", "blackboard",
+                 "rag_tool", "web_tool", "calc_tool"];
+
+  const PATTERN_EDGES = {
+    sequential: [
+      ["user", "supervisor", ""], ["supervisor", "planner", ""],
+      ["planner", "rag_researcher", ""], ["planner", "blackboard", "read/write"],
+      ["rag_researcher", "blackboard", "read/write"], ["supervisor", "analyst", "A2A"],
+      ["analyst", "blackboard", "read/write"], ["supervisor", "writer", "A2A"],
+      ["writer", "blackboard", "read/write"], ["supervisor", "critic", "A2A"],
+      ["rag_researcher", "rag_tool", "MCP"],
+    ],
+    parallel: [
+      ["user", "supervisor", ""], ["supervisor", "planner", ""],
+      ["planner", "rag_researcher", ""], ["planner", "web_researcher", ""],
+      ["planner", "calc_researcher", ""], ["rag_researcher", "blackboard", "read/write"],
+      ["analyst", "blackboard", "read/write"], ["supervisor", "analyst", "A2A"],
+      ["supervisor", "writer", "A2A"], ["supervisor", "critic", "A2A"],
+      ["rag_researcher", "rag_tool", "MCP"], ["web_researcher", "web_tool", "MCP"],
+      ["calc_researcher", "calc_tool", "MCP"],
+    ],
+    hierarchical: [
+      ["user", "supervisor", ""], ["supervisor", "planner", ""],
+      ["supervisor", "rag_researcher", ""], ["supervisor", "analyst", "A2A"],
+      ["supervisor", "writer", "A2A"], ["supervisor", "critic", "A2A"],
+      ["writer", "critic", "revision"], ["analyst", "blackboard", "read/write"],
+      ["rag_researcher", "blackboard", "read/write"],
+      ["rag_researcher", "rag_tool", "MCP"],
+    ],
+    p2p: [
+      ["user", "supervisor", ""], ["supervisor", "planner", ""],
+      ["planner", "rag_researcher", ""], ["rag_researcher", "analyst", "A2A"],
+      ["analyst", "writer", "A2A"], ["writer", "critic", "A2A"],
+      ["rag_researcher", "rag_tool", "MCP"], ["analyst", "blackboard", "audit"],
+    ],
+  };
+
+  function diagramFor(pattern) {
+    const key = PATTERN_EDGES[pattern] ? pattern : "sequential";
+    return {
+      pattern: key,
+      nodes: NODES.slice(),
+      edges: PATTERN_EDGES[key].map(([from, to, label]) => ({ from, to, label })),
+      blackboardAuditOnly: key === "p2p",
+    };
+  }
+
+  function diagramState(events, pattern) {
+    const nodes = {};
+    NODES.forEach((id) => { nodes[id] = { state: "idle", label: "", bytes: "", calls: 0 }; });
+
+    const toolOf = {
+      rag_researcher: "rag_tool", web_researcher: "web_tool", calc_researcher: "calc_tool",
+    };
+    const edges = {};
+    const spec = diagramFor(pattern);
+    spec.edges.forEach((edge) => {
+      edges[edge.from + "->" + edge.to] = { from: edge.from, to: edge.to,
+        label: edge.label, bytes: "", active: false };
+    });
+
+    (events || []).forEach((event) => {
+      const agent = event.agent || "";
+      const node = nodes[agent];
+      if (event.kind === "stage_start" && node) node.state = "running";
+      if (event.kind === "stage_end" && node) {
+        node.state = event.ok === false ? "failed" : "done";
+        node.label = duration(event.duration_ms);
+      }
+      if (event.kind === "tool_call" && toolOf[agent]) {
+        const tool = nodes[toolOf[agent]];
+        tool.calls += 1;
+        tool.state = "running";
+      }
+      if (event.kind === "a2a_call") {
+        const extra = event.extra || {};
+        const label = bytes(extra.request_bytes || 0) + " out / "
+          + bytes(extra.response_bytes || 0) + " in";
+        if (node) node.bytes = label;
+        Object.keys(edges).forEach((key) => { edges[key].active = false; });
+        const key = "supervisor->" + agent;
+        if (edges[key]) {
+          edges[key].bytes = label;
+          edges[key].active = true;
+        } else if (edges[agent + "->" + "writer"]) {
+          edges[agent + "->writer"].bytes = label;
+          edges[agent + "->writer"].active = true;
+        }
+      }
+      if (event.kind === "blackboard_write") {
+        nodes.blackboard.state = "running";
+      }
+    });
+
+    return { nodes, edges, a2a: a2aBytes(events), pattern: spec.pattern };
+  }
+
   const api = {
-    frameworkOf, reduceTimeline, a2aBytes, verdictLabel, verdictFromCritique,
-    citationRows, statusStrip, blackboardCards, validateProfile, presetFill,
-    activationReducer,
+    frameworkOf, reduceTimeline, a2aBytes, duration, bytes, tokens,
+    verdictLabel, verdictFromCritique, citationRows, statusPill, blackboardCards,
+    validateProfile, presetFill, requestState, isBusy,
+    diagramFor, diagramState, NODES, PATTERN_EDGES,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AthenaLogic = api;

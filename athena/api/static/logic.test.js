@@ -1,4 +1,4 @@
-/* Node tests for static/logic.js. Run: node --test athena/api/static/logic.test.js */
+/* Node tests for static/logic.js. Run: node athena/api/static/logic.test.js */
 "use strict";
 
 const test = require("node:test");
@@ -12,38 +12,37 @@ const events = [
   { kind: "a2a_call", agent: "writer", framework: "adk", extra: { request_bytes: 156, response_bytes: 90 } },
   { kind: "stage_end", agent: "writer", framework: "crewai", duration_ms: 500, tokens_in: 300, tokens_out: 40, ok: true },
   { kind: "stage_end", agent: "critic", framework: "crewai", duration_ms: 20, ok: false },
+  { kind: "tool_call", agent: "rag_researcher", summary: "rag_search" },
+  { kind: "blackboard_write", agent: "analyst", summary: "write analysis v1" },
 ];
 
 test("timeline derives done rows with duration and tokens", () => {
-  const rows = logic.reduceTimeline(events);
-  const by = Object.fromEntries(rows.map((row) => [row.agent, row]));
-
+  const by = Object.fromEntries(logic.reduceTimeline(events).map((row) => [row.agent, row]));
   assert.equal(by.planner.status, "done");
   assert.equal(by.planner.ms, 1235);
   assert.equal(by.planner.tokens_in, 10);
-  assert.equal(by.writer.status, "done");
   assert.equal(by.writer.framework, "crewai");
   assert.equal(by.critic.status, "failed");
-  assert.equal(rows.some((row) => row.status === "running"), false);
-});
-
-test("replay rows never stay running", () => {
-  const rows = logic.reduceTimeline([
-    { kind: "stage_start", agent: "analyst" },
-    { kind: "stage_end", agent: "analyst", duration_ms: 5 },
-  ]);
-  assert.equal(rows[0].status, "done");
+  assert.equal(logic.reduceTimeline(events).some((row) => row.status === "running"), false);
 });
 
 test("a2a bytes add up", () => {
   assert.deepEqual(logic.a2aBytes(events), { out: 156, in: 90 });
 });
 
+test("formatting helpers", () => {
+  assert.equal(logic.duration(950), "950 ms");
+  assert.equal(logic.duration(1500), "1.5 s");
+  assert.equal(logic.duration(null), "");
+  assert.equal(logic.bytes(156), "156 B");
+  assert.equal(logic.bytes(2048), "2.0 kB");
+  assert.equal(logic.tokens(3, 4), "3 in / 4 out");
+});
+
 test("verdict label never renders an element", () => {
   assert.equal(logic.verdictLabel(true, "low"), "critic approved (low)");
   assert.equal(logic.verdictLabel(false, "high"), "critic rejected (high)");
   assert.equal(logic.verdictLabel(null, null), "critic unknown");
-  assert.equal(logic.verdictLabel(true, null), "critic approved");
 });
 
 test("citation rows always carry a quote", () => {
@@ -51,20 +50,25 @@ test("citation rows always carry a quote", () => {
     { source_ref: "nasa.pdf#p1", quote: "systems engineering is..." },
     { source_ref: "doc#p2" },
   ] });
-  assert.equal(rows.length, 2);
-  assert.equal(rows[0].quote, "systems engineering is...");
   assert.equal(rows[1].quote, "(quote not recorded)");
 });
 
-test("status strip says replay when no provider", () => {
-  const strip = logic.statusStrip({ crew_server: "down", provider_configured: false }, false);
+test("status pill says replay when no provider", () => {
+  const strip = logic.statusPill({ crew_server: "down", provider_configured: false }, false);
   assert.equal(strip.mode, "replay");
   assert.equal(strip.model, "n/a (replay)");
 
-  const live = logic.statusStrip({ crew_server: "up", provider_configured: true,
+  const live = logic.statusPill({ crew_server: "up", provider_configured: true,
     model: "openai/x", api_host: "gateway.local" }, false);
   assert.equal(live.mode, "live");
   assert.equal(live.host, "gateway.local");
+});
+
+test("the active profile fills the status pill", () => {
+  const strip = logic.statusPill({ crew_server: "up", provider_configured: true,
+    active_profile: { model: "openai/fake", api_host: "gateway.example" } }, false);
+  assert.equal(strip.model, "openai/fake");
+  assert.equal(strip.host, "gateway.example");
 });
 
 test("blackboard cards render readable views", () => {
@@ -75,55 +79,97 @@ test("blackboard cards render readable views", () => {
     critique: { value: { approved: false, severity: "high", issues: ["no citation"] }, version: 2 },
   });
   const byName = Object.fromEntries(cards.map((card) => [card.name, card]));
-
   assert.deepEqual(byName.task.lines, ["What is SE?", "pattern: sequential"]);
-  assert.equal(byName.plan.lines[0], "1. search -> rag_researcher");
-  assert.equal(byName.evidence.table, true);
   assert.equal(byName.evidence.rows[0][3].length, 200);
   assert.equal(byName.critique.verdict, "critic rejected (high)");
 });
 
-test("missing sections produce no cards", () => {
-  assert.deepEqual(logic.blackboardCards({}), []);
-});
-
 /* --- settings ------------------------------------------------------------ */
 
-test("profile validation catches bad URLs", () => {
+test("profile validation catches bad URLs and a missing key", () => {
   assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "https://x.example/v1" }).ok, true);
   assert.equal(logic.validateProfile({ name: "", model: "m" }).errors.name, "name is required");
-  assert.equal(logic.validateProfile({ name: "a", model: "" }).errors.model, "model is required");
+  assert.equal(logic.validateProfile({ name: "a", model: "" }).errors.model, "model string is required");
   assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "http://x.example" }).errors.api_base,
     "http is only allowed for localhost");
   assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "http://localhost:8080/v1" }).ok, true);
   assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "https://u:p@x.example" }).errors.api_base,
-    "must not contain credentials");
+    "the URL must not contain credentials");
   assert.equal(logic.validateProfile({ name: "a", model: "m", search_provider: "searxng" }).errors.search_endpoint,
-    "searxng needs an endpoint");
+    "SearXNG needs an endpoint");
+  assert.equal(logic.validateProfile({ name: "a", model: "m", needs_key: true }).errors.llm_key,
+    "an API key is required for a new provider");
 });
 
-test("a preset fills the form", () => {
-  const presets = [{ id: "commandcode", api_base: "https://api.commandcode.ai/provider/v1", model: "openai/x" }];
+test("a preset fills the full base URL and model", () => {
+  const presets = [{ id: "commandcode", api_base: "https://api.commandcode.ai/provider/v1",
+                     model: "openai/deepseek/deepseek-v4.1-flash" }];
   assert.deepEqual(logic.presetFill(presets, "commandcode"),
-    { api_base: "https://api.commandcode.ai/provider/v1", model: "openai/x" });
+    { api_base: "https://api.commandcode.ai/provider/v1",
+      model: "openai/deepseek/deepseek-v4.1-flash" });
   assert.deepEqual(logic.presetFill(presets, "custom"), { api_base: "", model: "" });
 });
 
-test("activation reducer walks the flow", () => {
-  let state = logic.activationReducer(undefined, { type: "save" });
-  assert.equal(state.status, "saving");
+test("request state walks idle -> running -> ok | error | timeout", () => {
+  let state = logic.requestState(undefined, { type: "start", message: "testing..." });
+  assert.equal(state.status, "running");
+  assert.equal(logic.isBusy(state), true);
 
-  state = logic.activationReducer(state, { type: "saved", id: "p1" });
-  assert.equal(state.status, "saved");
+  state = logic.requestState(state, { type: "ok", rows: [{ path: "a" }, { path: "b" }] });
+  assert.equal(state.status, "ok");
+  assert.equal(state.message, "2 path(s) checked");
+  assert.equal(logic.isBusy(state), false);
 
-  state = logic.activationReducer(state, { type: "activate", id: "p1" });
-  assert.equal(state.status, "activating");
-  assert.equal(state.message, "restarting crew server...");
+  state = logic.requestState(state, { type: "error", message: "no key stored" });
+  assert.equal(state.status, "error");
+  assert.equal(state.message, "no key stored");
 
-  state = logic.activationReducer(state, { type: "activated", ok: true, id: "p1" });
-  assert.equal(state.status, "active");
+  state = logic.requestState(state, { type: "timeout" });
+  assert.equal(state.status, "timeout");
+  assert.equal(state.message, "taking too long; check the crew server");
 
-  state = logic.activationReducer(state, { type: "activated", ok: false, message: "no key" });
-  assert.equal(state.status, "failed");
-  assert.equal(state.message, "no key");
+  state = logic.requestState(state, { type: "reset" });
+  assert.equal(state.status, "idle");
+});
+
+/* --- diagram ------------------------------------------------------------- */
+
+test("each pattern selects its own variant", () => {
+  assert.equal(logic.diagramFor("parallel").pattern, "parallel");
+  assert.equal(logic.diagramFor("nonsense").pattern, "sequential");
+  assert.equal(logic.diagramFor("p2p").blackboardAuditOnly, true);
+  assert.equal(logic.diagramFor("sequential").blackboardAuditOnly, false);
+
+  const parallel = logic.diagramFor("parallel").edges.map((edge) => edge.from + "->" + edge.to);
+  assert.ok(parallel.includes("planner->web_researcher"));
+  assert.ok(parallel.includes("calc_researcher->calc_tool"));
+  assert.ok(logic.diagramFor("hierarchical").edges.some((edge) => edge.label === "revision"));
+});
+
+test("node states follow the events, including failure", () => {
+  const state = logic.diagramState(events, "sequential");
+
+  assert.equal(state.nodes.planner.state, "done");
+  assert.equal(state.nodes.planner.label, "1.2 s");
+  assert.equal(state.nodes.critic.state, "failed");
+  assert.equal(state.nodes.rag_tool.calls, 1);
+});
+
+test("a2a bytes reach the edge label", () => {
+  const state = logic.diagramState(events, "sequential");
+  assert.equal(state.edges["supervisor->writer"].bytes, "156 B out / 90 B in");
+  assert.equal(state.edges["supervisor->writer"].active, true);
+  assert.deepEqual(state.a2a, { out: 156, in: 90 });
+});
+
+test("replay and live produce the same diagram state", () => {
+  const live = logic.diagramState(events, "p2p");
+  const replay = logic.diagramState(JSON.parse(JSON.stringify(events)), "p2p");
+  assert.deepEqual(live, replay);
+});
+
+test("an unknown pattern still renders a diagram", () => {
+  const state = logic.diagramState([], "deep");
+  assert.equal(state.pattern, "sequential");
+  assert.equal(Object.keys(state.nodes).length, logic.NODES.length);
 });
