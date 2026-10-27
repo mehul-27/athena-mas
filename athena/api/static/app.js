@@ -1,14 +1,23 @@
-/* Athena demo page: vanilla JS, no dependencies, no external URLs. */
+/* Athena demo page. Rendering logic lives in logic.js; this file touches the DOM. */
 "use strict";
 
-const state = { runId: null, source: null, replaying: false, runs: [] };
+const L = window.AthenaLogic;
+const state = {
+  runId: null, source: null, replaying: false, retries: 0,
+  bundles: [], events: [], rawJson: false, runs: [],
+};
+const MAX_RETRIES = 5;
 
 const $ = (id) => document.getElementById(id);
 const text = (node, value) => { node.textContent = value == null ? "" : String(value); };
 
 async function api(path, options) {
   const response = await fetch(path, options);
-  if (!response.ok) throw new Error((await response.json()).detail || response.status);
+  if (!response.ok) {
+    let detail = response.status;
+    try { detail = (await response.json()).detail || detail; } catch (_) { /* keep code */ }
+    throw new Error(detail);
+  }
   return response.json();
 }
 
@@ -16,24 +25,28 @@ function banner(message, show) {
   const node = $("banner");
   text(node, message);
   node.classList.toggle("hidden", !show);
+  node.dataset.dismissed = "false";
 }
+
+/* ---------- header ---------- */
 
 async function refreshHealth() {
   try {
     const health = await api("/api/health");
-    text($("status-crew"), "crew server: " + health.crew_server);
-    text($("status-model"), "model: " + (health.model || "not set"));
-    text($("status-host"), "provider: " + (health.api_host || "default"));
-    text($("status-mode"), "mode: live");
-    if (!health.provider_configured) {
-      banner("No provider key configured - replay mode only.", true);
-    } else if (health.crew_server === "down") {
-      banner("CrewAI server is down. Start it with: python scripts/dev_up.py", true);
+    const strip = L.statusStrip(health, state.replaying);
+    text($("status-crew"), "crew server: " + strip.crew);
+    text($("status-model"), "model: " + strip.model);
+    text($("status-host"), "provider: " + strip.host);
+    text($("status-mode"), "mode: " + strip.mode);
+    if (!health.provider_configured && !state.replaying) {
+      banner("No provider key configured - pick a recorded run to replay.", true);
     }
   } catch (error) {
     banner("API unreachable: " + error.message, true);
   }
 }
+
+/* ---------- ask panel ---------- */
 
 async function loadQuestions() {
   const data = await api("/api/questions");
@@ -49,14 +62,37 @@ async function loadQuestions() {
 
 async function loadReplays() {
   const data = await api("/api/replay");
+  state.bundles = data.bundles;
   const select = $("replay-select");
+  select.replaceChildren(new Option("none", ""));
   data.bundles.forEach((bundle) => {
-    const option = document.createElement("option");
-    option.value = bundle.name;
-    text(option, bundle.name + " (" + bundle.pattern + ", " + bundle.events + " events)");
-    select.appendChild(option);
+    const label = bundle.name + " (" + bundle.pattern + ", " + bundle.events + " events)"
+      + (bundle.note ? " - " + bundle.note : "");
+    select.appendChild(new Option(label, bundle.name));
   });
   select.addEventListener("change", () => { if (select.value) playReplay(select.value); });
+  renderCompareFromBundles(data.bundles);
+}
+
+/* ---------- timeline ---------- */
+
+function renderTimeline(events) {
+  const rows = L.reduceTimeline(events);
+  const body = $("timeline-body");
+  body.replaceChildren();
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.className = row.status;
+    [row.agent, row.framework.toUpperCase(), row.status,
+     row.ms == null ? "" : row.ms + " ms",
+     row.tokens_in + "/" + row.tokens_out,
+     row.stop_reason || ""].forEach((value) => {
+      const cell = document.createElement("td");
+      text(cell, value);
+      tr.appendChild(cell);
+    });
+    body.appendChild(tr);
+  });
 }
 
 function addEventLine(kind, message, cssClass) {
@@ -67,69 +103,70 @@ function addEventLine(kind, message, cssClass) {
   $("event-log").scrollTop = $("event-log").scrollHeight;
 }
 
-function upsertTimeline(event) {
-  const body = $("timeline-body");
-  const id = "row-" + event.agent;
-  let row = document.getElementById(id);
-  if (!row) {
-    row = document.createElement("tr");
-    row.id = id;
-    for (let i = 0; i < 5; i += 1) row.appendChild(document.createElement("td"));
-    body.appendChild(row);
-  }
-  const cells = row.children;
-  text(cells[0], event.agent);
-  text(cells[1], event.framework || "");
-  text(cells[2], event.kind === "stage_end" ? (event.ok ? "done" : "failed") : "running");
-  text(cells[3], event.duration_ms ? Math.round(event.duration_ms) : "");
-  text(cells[4], (event.tokens_in || 0) + "/" + (event.tokens_out || 0));
-  row.className = event.ok === false ? "failed" : "";
-}
-
-function highlight(agent, framework) {
-  document.querySelectorAll(".node.active").forEach((node) => node.classList.remove("active"));
-  const node = $("n-" + (agent || "").replace(/_researcher$/, "researcher"));
-  if (node) node.classList.add("active");
-  if (framework === "crewai") $("e-supervisor-crew").classList.add("pulse");
-}
-
-function handleEvent(event) {
-  upsertTimeline(event);
-  highlight(event.agent, event.framework);
+function logEvent(event) {
   if (event.kind === "a2a_call") {
-    const bytes = (event.extra && event.extra.request_bytes) || 0;
-    const back = (event.extra && event.extra.response_bytes) || 0;
-    addEventLine("A2A", event.agent + " " + bytes + "B out / " + back + "B in", "a2a");
+    const extra = event.extra || {};
+    addEventLine("A2A", event.agent + " " + (extra.request_bytes || 0) + "B out / "
+      + (extra.response_bytes || 0) + "B in", "a2a");
   } else if (event.kind === "tool_call") {
     addEventLine("tool", event.summary || event.agent, "tool");
-    document.getElementById("e-researcher-mcp").classList.add("pulse");
   } else if (event.kind === "blackboard_write") {
     addEventLine("blackboard", event.summary || event.agent);
-    loadSnapshot(event.run_id);
   } else if (event.kind === "error") {
-    addEventLine("error", event.error_type + ": " + (event.error_message || ""), "error");
+    addEventLine("error", (event.error_type || "error") + ": " + (event.error_message || ""), "error");
   }
 }
+
+function highlight(agent) {
+  document.querySelectorAll(".node.active").forEach((node) => node.classList.remove("active"));
+  const key = (agent || "").replace(/_researcher$/, "researcher");
+  const node = $("n-" + key) || $("n-researcher");
+  if (node) node.classList.add("active");
+}
+
+/* ---------- live stream (never used for replay) ---------- */
 
 function openStream(runId) {
   closeStream();
+  state.retries = 0;
   const source = new EventSource("/api/runs/" + runId + "/stream");
   state.source = source;
-  source.onmessage = (message) => handleEvent(JSON.parse(message.data));
+  source.onmessage = (message) => {
+    const event = JSON.parse(message.data);
+    state.events.push(event);
+    renderTimeline(state.events);
+    highlight(event.agent);
+    logEvent(event);
+  };
   source.addEventListener("blackboard", () => loadSnapshot(runId));
   source.addEventListener("done", (message) => {
     const summary = JSON.parse(message.data).summary || {};
-    addEventLine("done", "degraded=" + summary.degraded + " verdict=" +
-      (summary.approved === false ? "rejected" : summary.approved === true ? "approved" : "unknown"));
+    addEventLine("done", "degraded=" + summary.degraded + " " + verdictOf(summary));
     closeStream();
     loadResult(runId);
   });
-  source.onerror = () => addEventLine("sse", "reconnecting...");
+  source.onerror = () => {
+    state.retries += 1;
+    if (state.retries > MAX_RETRIES) {
+      addEventLine("sse", "stream ended", "error");
+      closeStream();
+      loadResult(runId);
+      return;
+    }
+    addEventLine("sse", "reconnecting (" + state.retries + "/" + MAX_RETRIES + ")");
+  };
 }
 
 function closeStream() {
   if (state.source) { state.source.close(); state.source = null; }
 }
+
+function verdictOf(summary) {
+  if (summary.approved === undefined) return "critic unknown";
+  return L.verdictLabel(summary.approved, summary.severity);
+}
+
+/* ---------- runs ---------- */
 
 async function startRun() {
   const question = $("question").value.trim();
@@ -142,9 +179,9 @@ async function startRun() {
       body: JSON.stringify({ question, pattern }),
     });
     state.runId = data.run_id;
-    text($("footer-run"), "run: " + data.run_id);
-    $("link-json").href = "/api/runs/" + data.run_id;
-    $("link-log").href = "/api/runs/" + data.run_id + "/log";
+    state.events = [];
+    state.replaying = false;
+    showRunId(data.run_id);
     $("event-log").replaceChildren();
     $("timeline-body").replaceChildren();
     openStream(data.run_id);
@@ -153,49 +190,82 @@ async function startRun() {
   }
 }
 
+function showRunId(runId) {
+  text($("footer-run"), "run: " + runId);
+  $("link-json").href = "/api/runs/" + runId;
+  $("link-log").href = "/api/runs/" + runId + "/log";
+}
+
+async function loadResult(runId) {
+  await loadSnapshot(runId);
+  $("heatmap").src = "/api/runs/" + runId + "/heatmap.png?t=" + Date.now();
+}
+
+/* ---------- blackboard ---------- */
+
 async function loadSnapshot(runId) {
   const snapshot = await api("/api/runs/" + runId);
   renderBlackboard(snapshot);
-  if (snapshot.final_report) renderReport(snapshot.final_report.value, snapshot.critique);
+  if (snapshot.final_report) {
+    renderReport(snapshot.final_report.value, snapshot.critique);
+  }
 }
 
 function renderBlackboard(snapshot) {
   const host = $("blackboard-sections");
   host.replaceChildren();
-  const sections = ["task", "plan", "analysis", "draft", "critique", "final_report"];
-  sections.forEach((name) => {
-    const section = snapshot[name];
-    if (!section) return;
-    const card = document.createElement("div");
-    card.className = "card";
+  L.blackboardCards(snapshot).forEach((card) => {
+    const box = document.createElement("div");
+    box.className = "card";
     const title = document.createElement("h4");
-    text(title, name);
-    const caption = document.createElement("div");
-    caption.className = "caption";
-    text(caption, "version " + section.version);
-    const body = document.createElement("pre");
-    text(body, JSON.stringify(section.value, null, 1).slice(0, 1200));
-    card.append(title, caption, body);
-    host.appendChild(card);
+    text(title, card.name + (card.version ? "  v" + card.version : ""));
+    box.appendChild(title);
+    if (card.verdict) {
+      const badge = document.createElement("p");
+      badge.className = "verdict";
+      text(badge, card.verdict);
+      box.appendChild(badge);
+    }
+    if (card.table) {
+      const table = document.createElement("table");
+      const head = document.createElement("tr");
+      card.columns.forEach((label) => {
+        const th = document.createElement("th");
+        text(th, label);
+        head.appendChild(th);
+      });
+      table.appendChild(head);
+      card.rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        row.forEach((value) => {
+          const cell = document.createElement("td");
+          text(cell, value);
+          tr.appendChild(cell);
+        });
+        table.appendChild(tr);
+      });
+      box.appendChild(table);
+    } else {
+      const body = document.createElement("pre");
+      text(body, (card.lines || []).join("\n"));
+      box.appendChild(body);
+    }
+    host.appendChild(box);
   });
-  if (snapshot.evidence && snapshot.evidence.length) {
-    const card = document.createElement("div");
-    card.className = "card";
-    const title = document.createElement("h4");
-    text(title, "evidence (" + snapshot.evidence.length + ")");
-    const body = document.createElement("pre");
-    text(body, snapshot.evidence.map((item) =>
-      item.retrieved_by + " | " + item.source_ref + " | " + item.score + " | " +
-      item.text.slice(0, 120)).join("\n"));
-    card.append(title, body);
-    host.appendChild(card);
-  }
+  const raw = document.createElement("pre");
+  raw.className = state.rawJson ? "raw" : "raw hidden";
+  text(raw, JSON.stringify(snapshot, null, 1).slice(0, 8000));
+  host.appendChild(raw);
 }
+
+/* ---------- report ---------- */
 
 function renderReport(report, critique) {
   const host = $("report");
   host.replaceChildren();
+
   const answer = document.createElement("p");
+  answer.className = "answer";
   text(answer, report.answer || "(no answer)");
   host.appendChild(answer);
 
@@ -207,71 +277,112 @@ function renderReport(report, critique) {
   });
   host.appendChild(points);
 
-  const table = document.createElement("table");
-  const head = document.createElement("tr");
-  ["source", "quote"].forEach((label) => {
-    const th = document.createElement("th");
-    text(th, label);
-    head.appendChild(th);
-  });
-  table.appendChild(head);
-  (report.citations || []).forEach((citation) => {
-    const row = document.createElement("tr");
-    [citation.source_ref, citation.quote].forEach((value) => {
-      const cell = document.createElement("td");
-      text(cell, value);
-      row.appendChild(cell);
+  const rows = L.citationRows(report);
+  if (rows.length) {
+    const table = document.createElement("table");
+    const head = document.createElement("tr");
+    ["#", "source", "quote"].forEach((label) => {
+      const th = document.createElement("th");
+      text(th, label);
+      head.appendChild(th);
     });
-    table.appendChild(row);
-  });
-  host.appendChild(table);
-
-  const verdict = document.createElement("p");
-  const state_ = critique && critique.value
-    ? (critique.value.approved ? "approved" : "rejected") + " (" + critique.value.severity + ")"
-    : "no critique";
-  text(verdict, "confidence " + report.confidence + " | critic " + verdict);
-  host.appendChild(verdict);
-}
-
-async function loadResult(runId) {
-  await loadSnapshot(runId);
-  $("heatmap").src = "/api/runs/" + runId + "/heatmap.png?t=" + Date.now();
-  const metrics = await api("/api/runs/" + runId + "/metrics");
-  if ((metrics.rows || []).length) {
-    addEventLine("metrics", metrics.rows.length + " agents measured");
+    table.appendChild(head);
+    rows.forEach((row) => {
+      const tr = document.createElement("tr");
+      [String(row.index), row.source_ref, row.quote].forEach((value) => {
+        const cell = document.createElement("td");
+        text(cell, value);
+        tr.appendChild(cell);
+      });
+      table.appendChild(tr);
+    });
+    host.appendChild(table);
   }
+
+  const verdict = critique ? L.verdictFromCritique(critique) : { approved: null, severity: null };
+  const footer = document.createElement("p");
+  footer.className = "verdict";
+  text(footer, "confidence " + report.confidence + "  |  "
+    + L.verdictLabel(verdict.approved, verdict.severity));
+  host.appendChild(footer);
 }
+
+/* ---------- replay ---------- */
 
 async function playReplay(name) {
   const bundle = await api("/api/replay/" + name);
   state.replaying = true;
-  text($("status-mode"), "mode: REPLAY");
-  banner("REPLAY: recorded run, not live.", true);
+  state.runId = bundle.run_id;
+  state.events = [];
+  closeStream();  // replay never opens SSE
+  showRunId(bundle.run_id);
+  text($("status-mode"), "mode: replay");
+  banner("REPLAY - recorded run, not live.", true);
   $("event-log").replaceChildren();
   $("timeline-body").replaceChildren();
+
   const speed = Number($("replay-speed").value);
   const first = bundle.events.length ? Date.parse(bundle.events[0].ts) : 0;
-  let before = 0;
+  let previous = 0;
   for (const event of bundle.events) {
     if (speed > 0) {
       const when = Date.parse(event.ts) - first;
-      const wait = Math.max(0, (when - before) / speed);
-      before = when;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 800)));
+      const wait = Math.max(0, (when - previous) / speed);
+      previous = when;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 600)));
     }
-    handleEvent(event);
+    state.events.push(event);
+    logEvent(event);
   }
-  if (bundle.blackboard) renderBlackboard(bundle.blackboard);
-  const final = bundle.blackboard && bundle.blackboard.final_report;
-  if (final) renderReport(final.value, bundle.blackboard.critique);
-  addEventLine("replay", "finished " + name);
+  renderTimeline(state.events);
+  if (bundle.blackboard) {
+    renderBlackboard({ ...bundle.blackboard, evidence: bundle.evidence || [] });
+    const final = bundle.blackboard.final_report;
+    if (final) renderReport(final.value, bundle.blackboard.critique);
+  }
+  if (bundle.heatmap_png) {
+    $("heatmap").src = "data:image/png;base64," + bundle.heatmap_png;
+  }
+  addEventLine("replay", "finished " + name + " (" + bundle.events.length + " events)");
+  await refreshHealth();
+}
+
+/* ---------- metrics and comparison ---------- */
+
+function fillCompare(rows) {
+  const body = $("compare-body");
+  body.replaceChildren();
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    [row.pattern, Math.round(row.wall_s || 0), row.adk_tokens,
+     (row.a2a_bytes_out || 0) + "/" + (row.a2a_bytes_in || 0), row.evidence_count,
+     row.tool_calls, row.revision_rounds, row.confidence,
+     L.verdictLabel(row.approved, row.severity), row.degraded ? "yes" : "no"].forEach((value) => {
+      const cell = document.createElement("td");
+      text(cell, value);
+      tr.appendChild(cell);
+    });
+    body.appendChild(tr);
+  });
+}
+
+function renderCompareFromBundles(bundles) {
+  fillCompare(bundles.map((bundle) => ({
+    pattern: bundle.name, wall_s: bundle.summary ? bundle.summary.wall_s : 0,
+    adk_tokens: bundle.summary ? bundle.summary.adk_tokens : 0,
+    a2a_bytes_out: bundle.summary ? bundle.summary.a2a_bytes_out : 0,
+    a2a_bytes_in: bundle.summary ? bundle.summary.a2a_bytes_in : 0,
+    evidence_count: bundle.summary ? bundle.summary.evidence_count : 0,
+    tool_calls: bundle.summary ? bundle.summary.tool_calls : 0,
+    revision_rounds: bundle.summary ? bundle.summary.revision_rounds : 0,
+    confidence: bundle.summary ? bundle.summary.confidence : null,
+    approved: bundle.approved, severity: null, degraded: bundle.degraded,
+  })));
 }
 
 async function compareAll() {
   const question = $("question").value.trim();
   if (!question) { banner("Type a question first.", true); return; }
-  $("compare-body").replaceChildren();
   state.runs = [];
   for (const pattern of ["sequential", "parallel", "hierarchical", "p2p"]) {
     const data = await api("/api/runs", {
@@ -283,7 +394,7 @@ async function compareAll() {
     await waitForRun(data.run_id);
   }
   const rows = await api("/api/compare?run=" + state.runs.join(","));
-  renderCompare(rows.rows);
+  fillCompare(rows.rows);
 }
 
 async function waitForRun(runId) {
@@ -294,37 +405,82 @@ async function waitForRun(runId) {
   });
 }
 
-function renderCompare(rows) {
-  const body = $("compare-body");
+/* ---------- history ---------- */
+
+async function loadHistory() {
+  const data = await api("/api/runs");
+  const body = $("history-body");
   body.replaceChildren();
-  rows.forEach((row) => {
+  (data.runs || []).forEach((run) => {
     const tr = document.createElement("tr");
-    [row.pattern, Math.round(row.wall_s || 0), row.adk_tokens,
-     (row.a2a_bytes_out || 0) + "/" + (row.a2a_bytes_in || 0), row.evidence_count,
-     row.tool_calls, row.revision_rounds, row.confidence,
-     row.approved === true ? "approved" : row.approved === false ? "rejected" : "-",
-     row.degraded ? "yes" : "no"].forEach((value) => {
+    [run.question ? run.question.slice(0, 70) : "(unknown)",
+     run.pattern, run.started_at, run.confidence,
+     L.verdictLabel(run.approved, run.severity), run.degraded ? "yes" : "no"].forEach((value) => {
       const cell = document.createElement("td");
       text(cell, value);
       tr.appendChild(cell);
     });
+    tr.className = "clickable";
+    tr.addEventListener("click", () => openRun(run.run_id));
     body.appendChild(tr);
   });
-  text($("p2p-note"), "p2p carries the context in A2A messages, so its byte count is " +
-    "much higher than the blackboard patterns.");
 }
 
-function copyMarkdown() {
-  const report = $("report");
-  navigator.clipboard.writeText(report.innerText || "").then(
-    () => banner("Markdown copied.", true), () => banner("Copy failed.", true));
+async function openRun(runId) {
+  state.replaying = true;  // a finished run is shown like a replay: no SSE
+  state.runId = runId;
+  showRunId(runId);
+  const snapshot = await api("/api/runs/" + runId);
+  renderBlackboard(snapshot);
+  if (snapshot.final_report) renderReport(snapshot.final_report.value, snapshot.critique);
+  $("heatmap").src = "/api/runs/" + runId + "/heatmap.png?t=" + Date.now();
+  text($("status-mode"), "mode: replay");
 }
+
+/* ---------- tools ---------- */
+
+async function loadTools() {
+  const data = await api("/api/tools");
+  const host = $("tools-list");
+  host.replaceChildren();
+  (data.servers || []).forEach((server) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    const title = document.createElement("h4");
+    text(title, server.name);
+    card.appendChild(title);
+    const list = document.createElement("ul");
+    (server.tools || []).forEach((tool) => {
+      const item = document.createElement("li");
+      text(item, tool.name + " - " + tool.description);
+      list.appendChild(item);
+    });
+    card.appendChild(list);
+    host.appendChild(card);
+  });
+}
+
+/* ---------- wiring ---------- */
 
 $("run-button").addEventListener("click", startRun);
 $("compare-all").addEventListener("click", compareAll);
-$("copy-markdown").addEventListener("click", copyMarkdown);
+$("copy-markdown").addEventListener("click", () => {
+  navigator.clipboard.writeText($("report").innerText || "")
+    .then(() => banner("Markdown copied.", true), () => banner("Copy failed.", true));
+});
+$("toggle-raw").addEventListener("click", () => {
+  state.rawJson = !state.rawJson;
+  document.querySelectorAll(".raw").forEach((node) => {
+    node.classList.toggle("hidden", !state.rawJson);
+  });
+});
+$("banner").addEventListener("click", (event) => {
+  event.currentTarget.classList.add("hidden");
+});
+$("tab-history").addEventListener("click", loadHistory);
+$("tab-tools").addEventListener("click", loadTools);
 
 refreshHealth();
 loadQuestions().catch(() => {});
 loadReplays().catch(() => {});
-setInterval(refreshHealth, 15000);
+setInterval(refreshHealth, 20000);

@@ -166,6 +166,32 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
         ids = [value for value in run.split(",") if value] if run else []
         return {"rows": [_compare_row(run_id) for run_id in ids]}
 
+    @app.get("/api/runs")
+    def history() -> dict:
+        store = _store()
+        runs = []
+        for run_id in store.runs():
+            summary = _summary(run_id)
+            if not summary:
+                continue
+            task = Blackboard.open(run_id).read("task")
+            question = task[0].question if task else ""
+            runs.append({
+                "run_id": run_id,
+                "question": question,
+                "pattern": summary.get("pattern"),
+                "started_at": summary.get("started_at") or "",
+                "confidence": summary.get("confidence"),
+                "approved": summary.get("approved"),
+                "severity": summary.get("severity"),
+                "degraded": summary.get("degraded"),
+            })
+        return {"runs": list(reversed(runs))[-50:]}
+
+    @app.get("/api/tools")
+    def tools() -> dict:
+        return {"servers": _tool_catalog()}
+
     @app.get("/api/replay")
     def replay_index() -> dict:
         return {"bundles": replay.index()}
@@ -182,6 +208,9 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
         return JSONResponse(status_code=500,
                             content={"detail": f"{type(exc).__name__}: {exc}"[:300]})
 
+    from athena.api.settings_routes import router as settings_router
+
+    app.include_router(settings_router)
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
     return app
 
@@ -259,3 +288,27 @@ def _compare_row(run_id: str) -> dict:
         "severity": summary.get("severity"),
         "degraded": summary.get("degraded"),
     }
+
+_TOOLS_CACHE: list[dict] | None = None
+
+
+def _tool_catalog() -> list[dict]:
+    """Ask the MCP servers what they expose, once per process."""
+    global _TOOLS_CACHE
+    import subprocess
+    import sys
+
+    if _TOOLS_CACHE is not None:
+        return _TOOLS_CACHE
+    result = subprocess.run(
+        [sys.executable, "scripts/list_tools.py"],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    if result.returncode != 0:
+        _TOOLS_CACHE = []
+        return _TOOLS_CACHE
+    try:
+        _TOOLS_CACHE = json.loads(result.stdout).get("servers", [])
+    except ValueError:
+        _TOOLS_CACHE = []
+    return _TOOLS_CACHE

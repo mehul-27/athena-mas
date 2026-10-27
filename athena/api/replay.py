@@ -63,5 +63,6 @@ def index() -> list[dict]:
             "degraded": bool(summary.get("degraded")),
             "approved": summary.get("approved"),
             "events": len(bundle["events"]),
+            "note": bundle.get("note", ""),
         })
     return entries

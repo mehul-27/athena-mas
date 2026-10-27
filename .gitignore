@@ -38,3 +38,7 @@ data/*
 !data/demo/questions.json
 !data/demo/replay/
 !data/demo/replay/*.json
+# Local settings: the vault key and the encrypted secret store are never committed.
+data/settings/master.key
+data/settings/secrets.enc.json
+data/settings/active_profile.jsondata/settings/profiles.json
