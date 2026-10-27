@@ -82,8 +82,10 @@ def last_host() -> str:
 def install_guard() -> bool:
     """Wrap the completion entry points. Idempotent; no-op when inactive."""
     global _INSTALLED
-    if _INSTALLED or not guard_active():
+    if not guard_active():
         return False
+    # Not "install once": tests and scripts may replace litellm's entry points,
+    # so every call checks the *current* function instead of trusting a flag.
 
     import litellm
 

@@ -86,3 +86,44 @@ test("blackboard cards render readable views", () => {
 test("missing sections produce no cards", () => {
   assert.deepEqual(logic.blackboardCards({}), []);
 });
+
+/* --- settings ------------------------------------------------------------ */
+
+test("profile validation catches bad URLs", () => {
+  assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "https://x.example/v1" }).ok, true);
+  assert.equal(logic.validateProfile({ name: "", model: "m" }).errors.name, "name is required");
+  assert.equal(logic.validateProfile({ name: "a", model: "" }).errors.model, "model is required");
+  assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "http://x.example" }).errors.api_base,
+    "http is only allowed for localhost");
+  assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "http://localhost:8080/v1" }).ok, true);
+  assert.equal(logic.validateProfile({ name: "a", model: "m", api_base: "https://u:p@x.example" }).errors.api_base,
+    "must not contain credentials");
+  assert.equal(logic.validateProfile({ name: "a", model: "m", search_provider: "searxng" }).errors.search_endpoint,
+    "searxng needs an endpoint");
+});
+
+test("a preset fills the form", () => {
+  const presets = [{ id: "commandcode", api_base: "https://api.commandcode.ai/provider/v1", model: "openai/x" }];
+  assert.deepEqual(logic.presetFill(presets, "commandcode"),
+    { api_base: "https://api.commandcode.ai/provider/v1", model: "openai/x" });
+  assert.deepEqual(logic.presetFill(presets, "custom"), { api_base: "", model: "" });
+});
+
+test("activation reducer walks the flow", () => {
+  let state = logic.activationReducer(undefined, { type: "save" });
+  assert.equal(state.status, "saving");
+
+  state = logic.activationReducer(state, { type: "saved", id: "p1" });
+  assert.equal(state.status, "saved");
+
+  state = logic.activationReducer(state, { type: "activate", id: "p1" });
+  assert.equal(state.status, "activating");
+  assert.equal(state.message, "restarting crew server...");
+
+  state = logic.activationReducer(state, { type: "activated", ok: true, id: "p1" });
+  assert.equal(state.status, "active");
+
+  state = logic.activationReducer(state, { type: "activated", ok: false, message: "no key" });
+  assert.equal(state.status, "failed");
+  assert.equal(state.message, "no key");
+});

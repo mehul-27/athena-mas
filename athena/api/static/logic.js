@@ -152,9 +152,60 @@
     return cards;
   }
 
+  /* Settings: form validation and the activation flow, both DOM-free. */
+  function validateProfile(form) {
+    const errors = {};
+    const name = String(form.name || "").trim();
+    const model = String(form.model || "").trim();
+    const base = String(form.api_base || "").trim();
+    if (!name) errors.name = "name is required";
+    if (!model) errors.model = "model is required";
+    if (base) {
+      if (!/^https?:\/\//i.test(base)) errors.api_base = "must start with https://";
+      else if (!/^https:/i.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(base)) {
+        errors.api_base = "http is only allowed for localhost";
+      }
+      if (/^https?:\/\/[^/]*@/i.test(base)) errors.api_base = "must not contain credentials";
+    }
+    if (form.search_provider === "searxng" && !String(form.search_endpoint || "").trim()) {
+      errors.search_endpoint = "searxng needs an endpoint";
+    }
+    return { ok: Object.keys(errors).length === 0, errors };
+  }
+
+  function presetFill(presets, presetId) {
+    const preset = (presets || []).find((item) => item.id === presetId);
+    if (!preset) return { api_base: "", model: "" };
+    return { api_base: preset.api_base || "", model: preset.model || "" };
+  }
+
+  /* idle -> saving -> saved -> activating -> active | failed */
+  function activationReducer(state, action) {
+    const current = state || { status: "idle", message: "" };
+    switch (action.type) {
+      case "save":
+        return { status: "saving", message: "saving..." };
+      case "saved":
+        return { status: "saved", message: "saved", id: action.id };
+      case "activate":
+        return { status: "activating", message: "restarting crew server...", id: action.id };
+      case "activated":
+        return action.ok
+          ? { status: "active", message: "crew server restarted", id: action.id }
+          : { status: "failed", message: action.message || "activation failed", id: action.id };
+      case "failed":
+        return { status: "failed", message: action.message || "request failed" };
+      case "reset":
+        return { status: "idle", message: "" };
+      default:
+        return current;
+    }
+  }
+
   const api = {
     frameworkOf, reduceTimeline, a2aBytes, verdictLabel, verdictFromCritique,
-    citationRows, statusStrip, blackboardCards,
+    citationRows, statusStrip, blackboardCards, validateProfile, presetFill,
+    activationReducer,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AthenaLogic = api;

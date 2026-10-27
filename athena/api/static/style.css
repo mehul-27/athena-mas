@@ -127,3 +127,21 @@ footer a { color: var(--accent); }
 .card h4 { margin: 0 0 8px; font-size: 17px; color: var(--accent); }
 pre { white-space: pre-wrap; word-break: break-word; font-size: 17px; margin: 0; }
 pre.raw { color: var(--muted); font-size: 14px; }
+
+/* Tabs and the Settings panel */
+#tabs { display: flex; gap: 8px; padding: 10px 24px 0; background: #191d23; border-bottom: 1px solid #303845; }
+#tabs .tab {
+  width: auto; padding: 8px 18px; font-size: 17px; background: #101318;
+  color: var(--muted); border: 1px solid #303845; border-bottom: none;
+  border-radius: 8px 8px 0 0; cursor: pointer;
+}
+#tabs .tab.active { background: var(--panel); color: var(--ink); font-weight: 700; }
+.tab-panel { grid-column: 1 / -1; margin: 0 24px 20px; }
+#documents-panel, #settings-panel, #history-panel, #tools-panel { grid-column: 1 / -1; }
+
+.dropzone { border: 2px dashed #3d4655; border-radius: 10px; padding: 18px; text-align: center; margin-bottom: 12px; }
+.dropzone.dragging { border-color: var(--accent); background: #1b222c; }
+.error-text { color: var(--bad); min-height: 1.2em; }
+button.danger { background: var(--bad); color: #1a1d23; }
+#settings-panel input, #settings-panel select, #settings-panel textarea { max-width: 640px; }
+#profiles-table, #test-table, #docs-table { margin-bottom: 18px; }

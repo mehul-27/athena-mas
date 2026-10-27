@@ -41,4 +41,12 @@ data/*
 # Local settings: the vault key and the encrypted secret store are never committed.
 data/settings/master.key
 data/settings/secrets.enc.json
-data/settings/active_profile.jsondata/settings/profiles.json
+data/settings/active_profile.json
+data/settings/profiles.json
+data/user_docs/
+data/chroma/
+# Live-run captures pasted into the repo root during experiments.
+/record*.txt
+/run_*.txt
+/report*.txt
+/usage_lines.txt

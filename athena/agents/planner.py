@@ -13,6 +13,7 @@ import re
 from google.adk.agents import LlmAgent
 
 from athena.agents import bb_io
+from athena.settings.preferences import with_preferences
 from athena.blackboard import Blackboard, BlackboardStore, Plan, PlanStep
 from athena.config.llm import get_adk_model
 
@@ -110,15 +111,16 @@ def build_planner(
     if text is None:
         text = bb_io.task_text(Blackboard.open(run_id, store))
 
+    base = with_preferences(INSTRUCTION)
     if message_mode:
         instruction = (
-            f"{INSTRUCTION}\nThe task:\n{text}\n\n"
+            f"{base}\nThe task:\n{text}\n\n"
             'Reply with ONLY JSON: {"steps": ["rag_researcher: ...", '
             '"web_researcher: ..."]}'
         )
         tools = []
     else:
-        instruction = f"{INSTRUCTION}\nThe task:\n{text}\n"
+        instruction = f"{base}\nThe task:\n{text}\n"
         tools = [build_plan_writer(run_id, store)]
 
     return LlmAgent(

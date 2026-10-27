@@ -460,6 +460,193 @@ async function loadTools() {
   });
 }
 
+/* ---------- tabs ---------- */
+
+function showTab(name) {
+  document.querySelectorAll("#tabs .tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.tab === name);
+  });
+  const runPanels = ["ask-panel", "architecture-panel", "timeline-panel",
+    "blackboard-panel", "report-panel", "metrics-panel"];
+  runPanels.forEach((id) => {
+    const node = $(id);
+    if (node) node.classList.toggle("hidden", name !== "run");
+  });
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.tab !== name);
+  });
+  if (name === "history") loadHistory();
+  if (name === "tools") loadTools();
+  if (name === "settings") loadSettings();
+  if (name === "documents") loadDocuments();
+}
+
+/* ---------- settings ---------- */
+
+const settings = { profiles: [], presets: [], editing: "", flow: { status: "idle", message: "" } };
+
+function setFlow(action) {
+  settings.flow = L.activationReducer(settings.flow, action);
+  text($("settings-state"), settings.flow.message);
+}
+
+async function loadSettings() {
+  try {
+    const [profiles, presets] = await Promise.all([
+      api("/api/settings/profiles"), api("/api/settings/presets"),
+    ]);
+    settings.profiles = profiles.profiles || [];
+    settings.presets = presets.presets || [];
+    settings.active = profiles.active || "";
+    renderProfiles();
+    const select = $("profile-preset");
+    if (!select.options.length) {
+      settings.presets.forEach((preset) => select.appendChild(new Option(preset.name, preset.id)));
+    }
+    const about = await api("/api/settings/about-me");
+    $("about-me").value = about.about_me || "";
+    if (!settings.active) {
+      banner("Add a provider in Settings to run live.", true);
+    }
+  } catch (error) {
+    text($("settings-state"), "cannot load settings: " + error.message);
+  }
+}
+
+function renderProfiles() {
+  const body = $("profiles-body");
+  body.replaceChildren();
+  settings.profiles.forEach((profile) => {
+    const tr = document.createElement("tr");
+    const host = (profile.api_base || "").replace(/^https?:\/\//, "").split("/")[0];
+    [profile.name, profile.model, host,
+     profile.has_llm_key ? "stored" : "missing",
+     profile.id === settings.active ? "active" : ""].forEach((value) => {
+      const cell = document.createElement("td");
+      text(cell, value);
+      tr.appendChild(cell);
+    });
+    const actions = document.createElement("td");
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "small-button";
+    text(edit, "edit");
+    edit.addEventListener("click", () => editProfile(profile));
+    actions.appendChild(edit);
+    tr.appendChild(actions);
+    body.appendChild(tr);
+  });
+}
+
+function editProfile(profile) {
+  settings.editing = profile.id;
+  text($("profile-form-title"), "Edit " + profile.name);
+  $("profile-name").value = profile.name || "";
+  $("profile-api-base").value = profile.api_base || "";
+  $("profile-model").value = profile.model || "";
+  $("profile-reasoning").value = profile.reasoning_effort || "";
+  $("profile-search").value = profile.search_provider || "duckduckgo";
+  $("profile-search-endpoint").value = profile.search_endpoint || "";
+  $("profile-key").value = "";  // never repopulate a key
+}
+
+async function saveProfile() {
+  const form = {
+    name: $("profile-name").value, model: $("profile-model").value,
+    api_base: $("profile-api-base").value,
+    reasoning_effort: $("profile-reasoning").value,
+    search_provider: $("profile-search").value,
+    search_endpoint: $("profile-search-endpoint").value,
+  };
+  const check = L.validateProfile(form);
+  text($("profile-errors"), check.ok ? "" : Object.values(check.errors).join("; "));
+  if (!check.ok) return;
+
+  setFlow({ type: "save" });
+  const payload = { ...form, preset: $("profile-preset").value, llm_key: $("profile-key").value };
+  $("profile-key").value = "";  // cleared before the request returns
+  try {
+    const saved = settings.editing
+      ? await api("/api/settings/profiles/" + settings.editing, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload) })
+      : await api("/api/settings/profiles", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload) });
+    settings.editing = saved.id;
+    setFlow({ type: "saved", id: saved.id });
+    await loadSettings();
+  } catch (error) {
+    setFlow({ type: "failed", message: String(error.message) });
+  }
+}
+
+async function testProfile() {
+  if (!settings.editing) { text($("settings-state"), "save the profile first"); return; }
+  text($("settings-state"), "calling the provider once per path...");
+  const body = $("test-body");
+  body.replaceChildren();
+  try {
+    const data = await api("/api/settings/profiles/" + settings.editing + "/test", { method: "POST" });
+    (data.results || []).forEach((row) => {
+      const tr = document.createElement("tr");
+      [row.path, row.ok ? "ok" : "failed", row.host,
+       (row.tokens_in || 0) + "/" + (row.tokens_out || 0),
+       row.error_type ? row.error_type + ": " + (row.error || "") : ""].forEach((value) => {
+        const cell = document.createElement("td");
+        text(cell, value);
+        tr.appendChild(cell);
+      });
+      body.appendChild(tr);
+    });
+    text($("settings-state"), "");
+  } catch (error) {
+    text($("settings-state"), "test failed: " + error.message);
+  }
+}
+
+async function activateProfile() {
+  if (!settings.editing) { text($("settings-state"), "save the profile first"); return; }
+  setFlow({ type: "activate", id: settings.editing });
+  try {
+    const result = await api("/api/settings/activate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile_id: settings.editing }),
+    });
+    setFlow({ type: "activated", ok: result.ok, id: settings.editing,
+              message: result.ok ? "crew server: up" : "crew server: down" });
+    await loadSettings();
+    await refreshHealth();
+  } catch (error) {
+    setFlow({ type: "activated", ok: false, message: String(error.message) });
+  }
+}
+
+async function deleteProfile() {
+  if (!settings.editing) return;
+  if (!window.confirm("Delete this provider and its stored key?")) return;
+  await api("/api/settings/profiles/" + settings.editing, { method: "DELETE" });
+  settings.editing = "";
+  await loadSettings();
+}
+
+async function saveAboutMe() {
+  const value = $("about-me").value.slice(0, 800);
+  const saved = await api("/api/settings/about-me", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ about_me: value }),
+  });
+  $("about-me").value = saved.about_me || "";
+  text($("settings-state"), saved.about_me ? "about me saved" : "about me cleared");
+}
+
+/* ---------- documents (not implemented in this build) ---------- */
+
+async function loadDocuments() {
+  text($("docs-status"), "Document upload is not available in this build.");
+  $("docs-body").replaceChildren();
+}
+
 /* ---------- wiring ---------- */
 
 $("run-button").addEventListener("click", startRun);
@@ -477,8 +664,20 @@ $("toggle-raw").addEventListener("click", () => {
 $("banner").addEventListener("click", (event) => {
   event.currentTarget.classList.add("hidden");
 });
-$("tab-history").addEventListener("click", loadHistory);
-$("tab-tools").addEventListener("click", loadTools);
+$("profile-save").addEventListener("click", saveProfile);
+$("profile-test").addEventListener("click", testProfile);
+$("profile-activate").addEventListener("click", activateProfile);
+$("profile-delete").addEventListener("click", deleteProfile);
+$("about-save").addEventListener("click", saveAboutMe);
+$("profile-preset").addEventListener("change", () => {
+  const filled = L.presetFill(settings.presets, $("profile-preset").value);
+  if (filled.api_base) $("profile-api-base").value = filled.api_base;
+  if (filled.model) $("profile-model").value = filled.model;
+});
+document.querySelectorAll("#tabs .tab").forEach((tab) => {
+  tab.addEventListener("click", () => showTab(tab.dataset.tab));
+});
+showTab("run");
 
 refreshHealth();
 loadQuestions().catch(() => {});

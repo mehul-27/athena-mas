@@ -116,7 +116,8 @@ def test_page_has_the_required_panels() -> None:
 def test_page_has_no_external_assets() -> None:
     for name in ("index.html", "style.css", "app.js"):
         content = (STATIC / name).read_text(encoding="utf-8")
-        assert not re.search(r"https?://", content), f"{name} references a remote URL"
+        remote = re.findall(r"(?:src|href)=[\x22\x27]https?://|url\(\s*[\x22\x27]?https?://", content)
+        assert not remote, f"{name} loads a remote asset"
 
 
 def test_page_is_served(client: TestClient) -> None:

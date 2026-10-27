@@ -80,12 +80,22 @@ class RunRegistry:
                 cwd=os.getcwd(),
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                env=dict(os.environ),
+                # The active profile wins over stale shell/.env values.
+                env={**os.environ, **self._env_overrides()},
                 creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
             self._active = ActiveRun(run_id, pattern, question, process, log_path,
                                      summary_path)
             return run_id
+
+    @staticmethod
+    def _env_overrides() -> dict[str, str]:
+        try:
+            from athena.api.activation import active_env
+
+            return active_env()
+        except Exception:  # noqa: BLE001 - never block a run on settings
+            return {}
 
     def refresh(self) -> ActiveRun | None:
         """Update the cached exit code and read any new log lines."""

@@ -12,6 +12,7 @@ Never prints a key or a full URL: hostnames only, and the key only as a length.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -59,18 +60,49 @@ def result_line(result: ProbeResult) -> str:
     )
 
 
+def collect_live(probes) -> tuple[list[ProbeResult], list[str]]:
+    """Run every probe, even after a failure. No printing."""
+    from preflight_probes import failure
+
+    results: list[ProbeResult] = []
+    models: list[str] = []
+    for path, probe in probes:
+        models.append(path.model)
+        try:
+            results.append(probe())
+        except Exception as exc:  # noqa: BLE001 - a probe must never crash the run
+            results.append(failure(path.name, path.host, exc))
+    return results, models
+
+
+def exit_code(results: list[ProbeResult]) -> int:
+    return 0 if all(not result.failed for result in results) else 1
+
+
+def as_json(results: list[ProbeResult], models: list[str]) -> list[dict]:
+    """Per-path results, redacted: no key, no full URL, nothing else on stdout."""
+    payload = []
+    for result, model in zip(results, models):
+        payload.append({
+            "path": result.path,
+            "ok": not result.failed,
+            "host": result.host,
+            "model": model,
+            "tokens_in": result.tokens_in,
+            "tokens_out": result.tokens_out,
+            "reasoning": result.reasoning_tokens,
+            "calls": result.calls,
+            "error_type": result.error_type,
+            "error": result.error_message,
+        })
+    return payload
+
+
 def run_live(probes) -> int:
     """Run every probe, even after a failure, and summarise."""
-    results: list[ProbeResult] = []
     print("\nlive probe:")
-    for path, probe in probes:
-        try:
-            result = probe()
-        except Exception as exc:  # noqa: BLE001 - a probe must never crash the run
-            from preflight_probes import failure
-
-            result = failure(path.name, path.host, exc)
-        results.append(result)
+    results, _models = collect_live(probes)
+    for result in results:
         print(result_line(result))
 
     ok = sum(1 for result in results if not result.failed)
@@ -78,19 +110,29 @@ def run_live(probes) -> int:
     bad = [result.path for result in results if result.failed]
     if bad:
         print("failed: " + ", ".join(bad))
-    return 0 if ok == len(results) else 1
+    return exit_code(results)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="preflight")
     parser.add_argument("--live", action="store_true",
                         help="make one tiny real call per path")
+    parser.add_argument("--json", action="store_true",
+                        help="print one JSON list of per-path results and nothing else")
     args = parser.parse_args(argv)
 
     llm.configure_process()
     wanted = expected_host()
     active = guard_active()
     built = describe_paths()
+
+    if args.json:
+        if not args.live:
+            print(json.dumps({"error": "--json needs --live"}))
+            return 2
+        results, models = collect_live(built)
+        print(json.dumps(as_json(results, models), indent=2))
+        return exit_code(results)
 
     text, mismatch = table([info for info, _ in built], wanted, active)
     print(text)

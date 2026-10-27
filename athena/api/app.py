@@ -106,9 +106,14 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict:
+        from athena.api.activation import active_summary
+
+        active = active_summary()
+        has_profile_key = bool(active and active.get("has_key"))
         return {
             "crew_server": "up" if _crew_server_up() else "down",
-            "provider_configured": bool(os.getenv("LLM_API_KEY")),
+            "provider_configured": bool(os.getenv("LLM_API_KEY")) or has_profile_key,
+            "active_profile": active,
             "model": os.getenv("LLM_MODEL", ""),
             "api_host": _host_only(os.getenv("LLM_API_BASE", "")),
             "replay_available": len(replay.names()),

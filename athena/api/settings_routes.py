@@ -10,6 +10,8 @@ Two defences, both cheap and both tested:
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+import json
+
 from pydantic import BaseModel, Field
 
 from athena.settings import profiles as store
@@ -113,3 +115,79 @@ def _save(payload: ProfileIn, profile: Profile) -> dict:
     except VaultError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return profile.public()
+
+class ActivateIn(BaseModel):
+    profile_id: str
+
+
+@router.post("/activate")
+def activate_profile(payload: ActivateIn, request: Request) -> dict:
+    _guard(request)
+    from athena.api.activation import ActivationError, activate
+
+    try:
+        return activate(payload.profile_id)
+    except ActivationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/profiles/{profile_id}/test")
+def test_profile(profile_id: str, request: Request) -> dict:
+    _guard(request)
+    from athena.api.activation import profile_env
+    from athena.settings.profiles import ProfileError
+
+    if store.find(profile_id) is None:
+        raise HTTPException(status_code=404, detail=f"no profile {profile_id!r}")
+    try:
+        env = profile_env(profile_id)
+    except ProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"results": run_preflight(env)}
+
+
+def run_preflight(env: dict[str, str], timeout: int = 120) -> list[dict]:
+    """One subprocess call; returns the per-path JSON, never the environment."""
+    import os
+    import subprocess
+    import sys
+
+    child_env = dict(os.environ)
+    child_env.update(env)
+    try:
+        completed = subprocess.run(
+            [sys.executable, "scripts/preflight.py", "--live", "--json"],
+            capture_output=True, text=True, timeout=timeout, check=False,
+            env=child_env,
+        )
+    except subprocess.TimeoutExpired:
+        return [{"path": "preflight", "ok": False, "error_type": "TimeoutExpired",
+                 "error": f"preflight did not finish within {timeout}s"}]
+    try:
+        parsed = json.loads(completed.stdout)
+    except ValueError:
+        return [{"path": "preflight", "ok": False, "error_type": "InvalidJson",
+                 "error": (completed.stderr or completed.stdout or "")[:200]}]
+    return parsed if isinstance(parsed, list) else [parsed]
+
+class AboutMeIn(BaseModel):
+    about_me: str = Field(default="", max_length=800)
+
+
+@router.get("/about-me")
+def get_about_me(request: Request) -> dict:
+    _guard(request)
+    from athena.settings.preferences import about_me
+
+    return {"about_me": about_me()}
+
+
+@router.put("/about-me")
+def put_about_me(payload: AboutMeIn, request: Request) -> dict:
+    _guard(request)
+    from athena.settings.preferences import set_about_me
+
+    try:
+        return {"about_me": set_about_me(payload.about_me)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

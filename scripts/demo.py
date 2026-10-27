@@ -9,6 +9,7 @@ Nothing here prints a secret: presence is checked, values are not.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import threading
@@ -54,8 +55,16 @@ def wait_for(url: str, timeout: float = 40.0) -> bool:
 
 
 def start_crew_server() -> subprocess.Popen | None:
+    """Start the server with the active profile's environment, if there is one."""
     script = REPO / "scripts" / "dev_up.py"
-    process = subprocess.Popen([sys.executable, str(script)], cwd=str(REPO))
+    env = dict(os.environ)
+    try:
+        from athena.api.activation import active_env
+
+        env.update(active_env())
+    except Exception:  # noqa: BLE001 - settings are optional
+        pass
+    process = subprocess.Popen([sys.executable, str(script)], cwd=str(REPO), env=env)
     process.wait(timeout=120)
     if process.returncode != 0:
         print("CrewAI server did not start; continuing in replay mode.")

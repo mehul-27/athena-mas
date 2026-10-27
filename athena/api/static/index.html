@@ -22,6 +22,14 @@
 
   <p id="banner" class="hidden" role="status"></p>
 
+  <nav id="tabs">
+    <button type="button" class="tab active" data-tab="run">Run</button>
+    <button type="button" class="tab" data-tab="history">History</button>
+    <button type="button" class="tab" data-tab="documents">Documents</button>
+    <button type="button" class="tab" data-tab="tools">Tools</button>
+    <button type="button" class="tab" data-tab="settings">Settings</button>
+  </nav>
+
   <main>
     <section id="ask-panel">
       <h2>Ask</h2>
@@ -113,7 +121,7 @@
         <p id="p2p-note" class="small">p2p carries the context in A2A messages, so its byte count is far higher than the blackboard patterns.</p>
       </section>
 
-      <section id="history-panel">
+      <section id="history-panel" class="tab-panel" data-tab="history">
         <h2>History <button id="tab-history" type="button" class="small-button">load</button></h2>
         <table id="history-table">
           <thead><tr><th>question</th><th>pattern</th><th>when</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
@@ -121,12 +129,78 @@
         </table>
       </section>
 
-      <section id="tools-panel">
+      <section id="tools-panel" class="tab-panel" data-tab="tools">
         <h2>Tools <button id="tab-tools" type="button" class="small-button">load</button></h2>
         <p class="small">Three MCP servers expose tools over stdio; the agents call them through the Model Context Protocol.</p>
         <div id="tools-list"></div>
       </section>
-    </div>
+
+      <section id="documents-panel" class="tab-panel" data-tab="documents">
+        <h2>My documents</h2>
+        <p class="small">Documents stay on this computer.</p>
+        <div id="docs-drop" class="dropzone">
+          <input id="docs-input" type="file" accept=".pdf,.txt,.md" multiple />
+          <p class="small">Drop a PDF, TXT or MD here (up to 30 MB), or choose a file.</p>
+        </div>
+        <p id="docs-status" class="small"></p>
+        <table id="docs-table">
+          <thead><tr><th>name</th><th>pages</th><th>chunks</th><th>size</th><th>enabled</th><th></th></tr></thead>
+          <tbody id="docs-body"></tbody>
+        </table>
+      </section>
+
+      <section id="settings-panel" class="tab-panel" data-tab="settings">
+        <h2>Settings</h2>
+        <p id="settings-state" class="small"></p>
+        <table id="profiles-table">
+          <thead><tr><th>name</th><th>model</th><th>host</th><th>key</th><th>active</th><th></th></tr></thead>
+          <tbody id="profiles-body"></tbody>
+        </table>
+
+        <h3 id="profile-form-title">Add a provider</h3>
+        <label for="profile-name">Name</label>
+        <input id="profile-name" type="text" maxlength="80" />
+        <label for="profile-preset">Preset</label>
+        <select id="profile-preset"></select>
+        <label for="profile-api-base">API base URL</label>
+        <input id="profile-api-base" type="text" placeholder="https://..." />
+        <label for="profile-model">Model (LiteLLM string)</label>
+        <input id="profile-model" type="text" placeholder="openai/provider/model" />
+        <label for="profile-key">API key</label>
+        <input id="profile-key" type="password" autocomplete="new-password" spellcheck="false" />
+        <label for="profile-reasoning">Reasoning effort</label>
+        <select id="profile-reasoning">
+          <option value="">(send nothing)</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+        <label for="profile-search">Search provider</label>
+        <select id="profile-search">
+          <option value="duckduckgo">DuckDuckGo (keyless, default)</option>
+          <option value="searxng">SearXNG (self-hosted)</option>
+          <option value="brave">Brave (key)</option>
+          <option value="tavily">Tavily (key)</option>
+        </select>
+        <label for="profile-search-endpoint">SearXNG endpoint</label>
+        <input id="profile-search-endpoint" type="text" placeholder="http://localhost:8888" />
+        <p id="profile-errors" class="small error-text"></p>
+        <div class="buttons">
+          <button id="profile-save" type="button">Save</button>
+          <button id="profile-test" type="button">Test connection</button>
+          <button id="profile-activate" type="button">Activate</button>
+          <button id="profile-delete" type="button" class="danger">Delete</button>
+        </div>
+        <table id="test-table">
+          <thead><tr><th>path</th><th>ok</th><th>host</th><th>tokens</th><th>error</th></tr></thead>
+          <tbody id="test-body"></tbody>
+        </table>
+
+        <h3>About me</h3>
+        <p class="small">A standing instruction for the planner and the writer (up to 800 characters).</p>
+        <textarea id="about-me" rows="4" maxlength="800"></textarea>
+        <div class="buttons"><button id="about-save" type="button">Save about me</button></div>
+      </section>    </div>
   </main>
 
   <footer>

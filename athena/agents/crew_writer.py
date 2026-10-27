@@ -78,6 +78,7 @@ def writer_prompt(blackboard: Blackboard, instruction: str) -> str:
         f"{bb_io.evidence_text(blackboard, limit=8)}\n\n"
         f"ANALYSIS:\n{bb_io.analysis_text(blackboard)}\n"
         f"{revision}\n"
+        f"{_preferences_block()}"
         f"Write an answer of at most {MAX_ANSWER_WORDS} words that ends with a "
         "full stop, 3-5 key points, and 1-3 citations whose source_ref is "
         "copied verbatim from the evidence lines above. confidence is 0 to 1."
@@ -155,3 +156,10 @@ def write_report(
     if truncated:
         ack["truncated"] = True
     return ack
+
+def _preferences_block() -> str:
+    """The user's standing preferences, after the system rules."""
+    from athena.settings.preferences import preference_block
+
+    block = preference_block()
+    return f"\n{block}\n\n" if block else ""

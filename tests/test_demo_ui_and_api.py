@@ -109,7 +109,9 @@ def test_page_has_the_new_panels() -> None:
 def test_page_still_has_no_external_assets() -> None:
     for name in ("index.html", "style.css", "app.js", "logic.js"):
         content = (STATIC / name).read_text(encoding="utf-8")
-        assert not re.search(r"https?://", content), f"{name} references a remote URL"
+        # Placeholders may mention a URL; nothing may LOAD one.
+        remote = re.findall(r"(?:src|href)=[\x22\x27]https?://|url\(\s*[\x22\x27]?https?://", content)
+        assert not remote, f"{name} loads a remote asset: {remote[:2]}"
 
 
 def test_replay_index_marks_bundles_that_need_rerecording(client: TestClient) -> None:
@@ -176,3 +178,34 @@ class _Event:
     extra = {"pattern": "sequential", "confidence": 0.8, "approved": True,
              "severity": "low", "degraded": False}
     seq = 1
+
+# --- Part B7: the Settings tab ----------------------------------------------
+
+
+def test_settings_panel_has_its_controls() -> None:
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    for element_id in ("tabs", "settings-panel", "profiles-body", "profile-name",
+                       "profile-preset", "profile-api-base", "profile-model",
+                       "profile-key", "profile-reasoning", "profile-search",
+                       "profile-search-endpoint", "profile-save", "profile-test",
+                       "profile-activate", "profile-delete", "test-body",
+                       "about-me", "about-save", "documents-panel"):
+        assert f'id="{element_id}"' in html, f"missing #{element_id}"
+
+
+def test_the_key_field_never_keeps_a_key() -> None:
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    field = html[html.index('id="profile-key"'):html.index('id="profile-key"') + 120]
+
+    assert 'type="password"' in field
+    assert 'autocomplete="new-password"' in field
+    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "never repopulate a key" in source
+    assert 'llm_key: $("profile-key").value' in source
+    assert 'profile-key").value = ""' in source, "the field is cleared before the request returns"
+
+
+def test_tabs_exist_for_every_panel() -> None:
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    for name in ("run", "history", "documents", "tools", "settings"):
+        assert f'data-tab="{name}"' in html, f"no tab for {name}"

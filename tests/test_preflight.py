@@ -43,6 +43,9 @@ def _ok_probe(**kwargs):
 def test_dry_run_reports_hosts_never_keys(monkeypatch, capsys) -> None:
     monkeypatch.setenv("LLM_MODEL", "openai/some-org/some-model")
     monkeypatch.setenv("LLM_API_BASE", "http://gateway.local:8080/v1")
+    # Another module may have exported these; this test asserts its own endpoint.
+    for name in ("OPENAI_API_BASE", "OPENAI_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
 
     code = preflight.main([])
     out = capsys.readouterr().out
