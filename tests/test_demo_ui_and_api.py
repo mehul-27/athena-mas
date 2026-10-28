@@ -75,14 +75,16 @@ def test_verdict_is_rendered_as_text() -> None:
 def test_banner_is_inline_and_dismissible() -> None:
     html, css = _read("index.html"), _read("style.css")
     assert '<p id="banner"' in html
-    rule = css[css.index(".banner {"):css.index(".banner {") + 260]
+    start = css.index(".banner {")
+    rule = css[start:css.index("}", start) + 1]
     assert "position: fixed" not in rule
     assert "cursor: pointer" in rule
+    assert "max-height: 40px" in rule
 
 
 def test_presentation_size_raises_the_base_font() -> None:
     css = _read("style.css")
-    assert "--base: 19px" in css
+    assert "--base: 18px" in css
     assert 'html[data-size="presentation"]' in css
     assert "font: var(--base)" in css
 
@@ -116,10 +118,14 @@ def test_diagram_has_live_state_styles_and_reduced_motion() -> None:
 
 def test_page_has_the_panels() -> None:
     html = _read("index.html")
-    for element_id in ("sidebar", "status-pill", "question", "run-button", "live-map",
-                       "timeline-body", "event-log", "blackboard-sections", "result-card",
-                       "report-answer", "heatmap", "compare-body", "history-list",
-                       "replay-list", "how-diagram", "view-settings", "profiles-body",
+    for element_id in ("sidebar", "status-pill", "status-short", "question", "run-button",
+                       "composer", "run-tabs", "tab-answer", "tab-activity", "tab-blackboard",
+                       "tab-metrics", "panel-answer", "panel-activity", "panel-blackboard",
+                       "panel-metrics", "progress-strip", "live-map", "timeline-body",
+                       "event-log", "blackboard-sections", "result-card", "report-answer",
+                       "heatmap", "compare-body", "history-list", "history-more",
+                       "replay-list", "replay-panel", "replay-speed-row", "examples-popover",
+                       "toast", "how-diagram", "view-settings", "profiles-body",
                        "profile-key", "profile-test", "profile-activate", "test-result",
                        "about-me", "view-documents", "footer-run"):
         assert f'id="{element_id}"' in html, f"missing #{element_id}"
@@ -161,9 +167,9 @@ def test_page_has_no_remote_assets() -> None:
 
 def test_deep_links_are_supported() -> None:
     source = _read("app.js")
-    assert 'hash.startsWith("replay=")' in source
-    assert 'hash === "settings"' in source
-    assert 'hash === "how"' in source
+    assert 'boot.view.startsWith("replay=")' in source
+    assert '["settings", "how", "documents"]' in source
+    assert 'params.tab' in source and 'params.at' in source
 
 
 def test_page_is_served(client: TestClient) -> None:
@@ -235,3 +241,62 @@ class _Event:
     extra = {"pattern": "sequential", "confidence": 0.8, "approved": True,
              "severity": "low", "degraded": False}
     seq = 1
+
+# --- declutter --------------------------------------------------------------
+
+
+def test_composer_is_compact_and_sticky_only_on_the_run_view() -> None:
+    css = _read("style.css")
+    start = css.index(".composer {")
+    rule = css[start:css.index("}", start) + 1]
+
+    assert "max-height: 120px" in rule
+    assert "position: sticky" in rule
+    assert "scroll-padding-bottom" in css, "content must not hide behind it"
+    html = _read("index.html")
+    assert '<form class="composer"' in html
+    assert 'id="replay-select"' not in html, "replay controls moved to the sidebar"
+
+
+def test_toast_is_fixed_and_auto_dismisses() -> None:
+    css = _read("style.css")
+    start = css.index(".toast {")
+    rule = css[start:css.index("}", start) + 1]
+    assert "position: fixed" in rule
+    assert "bottom" in rule and "right" in rule
+
+    source = _read("app.js")
+    assert "TOAST_MS = 2500" in source
+    assert "clearTimeout(toastTimer)" in source
+    assert 'role="status" aria-live="polite"' in _read("index.html")
+
+
+def test_prose_uses_the_sans_stack_through_one_variable() -> None:
+    css = _read("style.css")
+    assert "--font-prose:" in css
+    assert "Segoe UI" in css.split("--font-prose:")[1].split(";")[0]
+    assert ".prose, .answer, .points" in css
+    # chrome stays monospace
+    assert "font: var(--base)/1.55 var(--font)" in css
+
+
+def test_only_the_selected_tab_panel_is_shown() -> None:
+    source = _read("app.js")
+    assert "panel-" in source and "classList.toggle(\"hidden\"" in source
+    assert "L.tabReducer" in source
+    assert "progress-strip" in source
+
+
+def test_history_rows_are_grouped_and_collapsible() -> None:
+    source = _read("app.js")
+    assert "L.groupHistory" in source
+    assert "history-more" in source
+    assert "badge-pattern" in source and "verdict-dot" in source
+    assert "row-sub" in source
+
+
+def test_status_pill_is_short_with_a_tooltip() -> None:
+    source = _read("app.js")
+    assert "L.statusPill" in source
+    assert '$("status-pill").title' in source
+    assert 'id="status-short"' in _read("index.html")

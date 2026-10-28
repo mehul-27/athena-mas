@@ -173,3 +173,85 @@ test("an unknown pattern still renders a diagram", () => {
   assert.equal(state.pattern, "sequential");
   assert.equal(Object.keys(state.nodes).length, logic.NODES.length);
 });
+
+/* --- declutter helpers --------------------------------------------------- */
+
+test("relative time reads naturally", () => {
+  const now = "2026-10-28T12:00:00Z";
+  assert.equal(logic.relativeTime("2026-10-28T11:59:30Z", now), "just now");
+  assert.equal(logic.relativeTime("2026-10-28T11:55:00Z", now), "5 m ago");
+  assert.equal(logic.relativeTime("2026-10-28T10:00:00Z", now), "2 h ago");
+  assert.equal(logic.relativeTime("2026-10-27T11:00:00Z", now), "yesterday");
+  assert.equal(logic.relativeTime("2026-10-25T11:00:00Z", now), "3 d ago");
+  assert.equal(logic.relativeTime("", now), "");
+});
+
+test("history groups by day and collapses consecutive duplicates", () => {
+  const runs = [
+    { run_id: "a", question: "same question", pattern: "sequential", approved: true,
+      started_at: "2026-10-28T10:00:00Z" },
+    { run_id: "b", question: "same question", pattern: "sequential", approved: true,
+      started_at: "2026-10-28T09:00:00Z" },
+    { run_id: "c", question: "same question", pattern: "sequential", approved: true,
+      started_at: "2026-10-28T08:00:00Z" },
+    { run_id: "d", question: "another question", pattern: "p2p", approved: false,
+      started_at: "2026-10-27T08:00:00Z" },
+    { run_id: "e", question: "old question", pattern: "parallel", approved: null,
+      started_at: "2026-10-20T08:00:00Z" },
+  ];
+  const grouped = logic.groupHistory(runs, { now: "2026-10-28T12:00:00Z" });
+
+  assert.deepEqual(grouped.groups.map((g) => g.label), ["Today", "Yesterday", "Earlier"]);
+  assert.equal(grouped.groups[0].items.length, 1, "consecutive duplicates collapse");
+  assert.equal(grouped.groups[0].items[0].count, 3);
+  assert.equal(grouped.groups[1].items[0].count, 1);
+  assert.equal(grouped.hidden, 0);
+});
+
+test("history shows eight rows and reports the rest as hidden", () => {
+  const runs = Array.from({ length: 11 }, (_, i) => ({
+    run_id: "r" + i, question: "question " + i, pattern: "sequential",
+    started_at: new Date(Date.parse("2026-10-28T11:00:00Z") - i * 60000).toISOString(),
+  }));
+  const grouped = logic.groupHistory(runs, { now: "2026-10-28T12:00:00Z" });
+
+  const shown = grouped.groups.reduce((total, group) => total + group.items.length, 0);
+  assert.equal(shown, 8);
+  assert.equal(grouped.hidden, 3);
+});
+
+test("the tab reducer opens activity while running and answers when done", () => {
+  let state = logic.tabReducer(undefined, { type: "select", tab: "blackboard" });
+  assert.equal(state.tab, "blackboard");
+  assert.equal(state.running, false);
+
+  state = logic.tabReducer(state, { type: "start" });
+  assert.equal(state.tab, "activity");
+  assert.equal(state.running, true);
+
+  state = logic.tabReducer(state, { type: "select", tab: "metrics" });
+  assert.equal(state.tab, "metrics");
+  assert.equal(state.running, true, "selecting does not end the run");
+
+  state = logic.tabReducer(state, { type: "finish" });
+  assert.equal(state.tab, "answer");
+  assert.equal(state.running, false);
+});
+
+test("the progress strip names each agent and its state", () => {
+  const strip = logic.progressStrip([
+    { kind: "stage_end", agent: "planner", duration_ms: 10 },
+    { kind: "stage_start", agent: "researcher" },
+  ]);
+  assert.equal(strip, "planner done \u00b7 researcher running");
+});
+
+test("the status pill is short with a full tooltip", () => {
+  const pill = logic.statusPill({ crew_server: "up", provider_configured: true,
+    model: "openai/deepseek/deepseek-v4.1-flash", api_host: "gateway.example" }, false);
+  assert.equal(pill.short, "crew up - live - deepseek-v4.1-flas - gateway.example");
+  assert.ok(pill.tooltip.includes("gateway.example"));
+
+  const replay = logic.statusPill({ crew_server: "up", provider_configured: false }, false);
+  assert.equal(replay.short, "crew up - replay");
+});

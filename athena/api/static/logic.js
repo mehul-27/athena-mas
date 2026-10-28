@@ -103,7 +103,24 @@
     }));
   }
 
+  /* Short label + tooltip: "crew up - live - qwen3.8 - gateway". */
   function statusPill(health, replaying) {
+    const full = statusPillFull(health, replaying);
+    const model = String(full.model || "").replace(/^.*\//, "").slice(0, 18);
+    const parts = ["crew " + full.crew, full.mode];
+    if (full.mode === "live") {
+      if (model) parts.push(model);
+      if (full.host && full.host !== "default") parts.push(full.host);
+    }
+    return {
+      ...full,
+      short: parts.join(" - "),
+      tooltip: "crew server: " + full.crew + " | mode: " + full.mode
+        + " | model: " + full.model + " | provider: " + full.host,
+    };
+  }
+
+  function statusPillFull(health, replaying) {
     const mode = replaying || !health || !health.provider_configured ? "replay" : "live";
     const active = (health && health.active_profile) || null;
     return {
@@ -228,7 +245,7 @@
   const PATTERN_EDGES = {
     sequential: [
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
-      ["planner", "rag_researcher", ""],
+      ["planner", "rag_researcher", ""], ["planner", "blackboard", "read/write"],
       ["rag_researcher", "blackboard", "read/write"], ["supervisor", "analyst", "A2A"],
       ["analyst", "blackboard", "read/write"], ["supervisor", "writer", "A2A"],
       ["writer", "blackboard", "read/write"], ["supervisor", "critic", "A2A"],
@@ -237,7 +254,7 @@
     parallel: [
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
       ["planner", "rag_researcher", ""], ["planner", "web_researcher", ""],
-      ["planner", "calc_researcher", ""],
+      ["planner", "calc_researcher", ""], ["rag_researcher", "blackboard", "read/write"],
       ["analyst", "blackboard", "read/write"], ["supervisor", "analyst", "A2A"],
       ["supervisor", "writer", "A2A"], ["supervisor", "critic", "A2A"],
       ["rag_researcher", "rag_tool", "MCP"], ["web_researcher", "web_tool", "MCP"],
@@ -247,14 +264,15 @@
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
       ["supervisor", "rag_researcher", ""], ["supervisor", "analyst", "A2A"],
       ["supervisor", "writer", "A2A"], ["supervisor", "critic", "A2A"],
-      ["writer", "critic", "revision"],
+      ["writer", "critic", "revision"], ["analyst", "blackboard", "read/write"],
+      ["rag_researcher", "blackboard", "read/write"],
       ["rag_researcher", "rag_tool", "MCP"],
     ],
     p2p: [
       ["user", "supervisor", ""], ["supervisor", "planner", ""],
       ["planner", "rag_researcher", ""], ["rag_researcher", "analyst", "A2A"],
       ["analyst", "writer", "A2A"], ["writer", "critic", "A2A"],
-      ["rag_researcher", "rag_tool", "MCP"],, ["analyst", "blackboard", ""],
+      ["rag_researcher", "rag_tool", "MCP"], ["analyst", "blackboard", "audit"],
     ],
   };
 
@@ -318,8 +336,103 @@
     return { nodes, edges, a2a: a2aBytes(events), pattern: spec.pattern };
   }
 
+  /* "just now" / "5 m ago" / "2 h ago" / "yesterday" / "3 d ago". */
+  function relativeTime(iso, now) {
+    const stamp = Date.parse(iso || "");
+    if (!stamp) return "";
+    const current = now ? new Date(now).getTime() : Date.now();
+    const seconds = Math.max(0, Math.round((current - stamp) / 1000));
+    if (seconds < 60) return "just now";
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return minutes + " m ago";
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return hours + " h ago";
+    const days = Math.round(hours / 24);
+    return days === 1 ? "yesterday" : days + " d ago";
+  }
+
+  /* History rows: Today / Yesterday / Earlier, consecutive duplicates collapsed. */
+  function groupHistory(runs, options) {
+    const opts = options || {};
+    const now = opts.now ? new Date(opts.now) : new Date();
+    const limit = opts.limit || 8;
+    const sorted = (runs || []).slice().sort((a, b) =>
+      String(b.started_at || "").localeCompare(String(a.started_at || "")));
+
+    const rows = [];
+    sorted.forEach((run) => {
+      const question = String(run.question || "").replace(/\s+/g, " ").trim();
+      const last = rows[rows.length - 1];
+      if (last && last.question === question) {
+        last.count += 1;
+        return;
+      }
+      rows.push({
+        run_id: run.run_id, question, pattern: run.pattern || "?",
+        approved: run.approved === undefined ? null : run.approved,
+        severity: run.severity || null,
+        started_at: run.started_at || "",
+        when: relativeTime(run.started_at, now),
+        count: 1,
+      });
+    });
+
+    const groups = [];
+    const dayOf = (iso) => {
+      const stamp = Date.parse(iso);
+      if (!stamp) return 2;
+      const then = new Date(stamp);
+      const days = Math.floor((now - then) / 86400000);
+      return days <= 0 ? 0 : days === 1 ? 1 : 2;
+    };
+    const labels = ["Today", "Yesterday", "Earlier"];
+
+    rows.forEach((row) => {
+      const index = dayOf(row.started_at);
+      let group = groups.find((item) => item.day === index);
+      if (!group) {
+        group = { day: index, label: labels[index], items: [] };
+        groups.push(group);
+      }
+      group.items.push(row);
+    });
+    groups.sort((a, b) => a.day - b.day);
+
+    let shown = 0;
+    let hidden = 0;
+    const limited = groups.map((group) => {
+      const items = [];
+      group.items.forEach((item) => {
+        if (shown < limit) { items.push(item); shown += 1; } else { hidden += 1; }
+      });
+      return { ...group, items };
+    }).filter((group) => group.items.length);
+    return { groups: limited, hidden };
+  }
+
+  /* Run view tabs: start moves to activity, finish returns to answer. */
+  function tabReducer(state, action) {
+    const current = state || { tab: "answer", running: false };
+    switch (action.type) {
+      case "start":
+        return { tab: "activity", running: true };
+      case "finish":
+        return { tab: "answer", running: false };
+      case "select":
+        return { tab: action.tab || "answer", running: current.running };
+      default:
+        return current;
+    }
+  }
+
+  function progressStrip(events) {
+    const rows = reduceTimeline(events);
+    return rows.slice(0, 6).map((row) => row.agent + " " + row.status).join(" \u00b7 ");
+  }
+
   const api = {
     frameworkOf, reduceTimeline, a2aBytes, duration, bytes, tokens,
+    relativeTime, groupHistory, tabReducer, progressStrip,
     verdictLabel, verdictFromCritique, citationRows, statusPill, blackboardCards,
     validateProfile, presetFill, requestState, isBusy,
     diagramFor, diagramState, NODES, PATTERN_EDGES,

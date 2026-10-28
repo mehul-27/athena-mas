@@ -8,11 +8,15 @@ const D = window.AthenaDiagram;
 
 const TIMEOUT_MS = 150000;
 const MAX_RETRIES = 5;
+const TOAST_MS = 2500;
+const HISTORY_LIMIT = 8;
 
 const state = {
   view: "run", pattern: "sequential", runId: null, events: [],
   source: null, retries: 0, replaying: false, bundles: [], presets: [],
   profiles: [], active: "", editing: "", rawJson: false, busy: false,
+  runs: [], historyLimit: HISTORY_LIMIT, speed: 1,
+  tab: L.tabReducer(undefined, { type: "select", tab: "answer" }),
   request: { status: "idle", message: "", rows: [] },
 };
 
@@ -45,13 +49,23 @@ async function api(path, options = {}, timeoutMs = TIMEOUT_MS) {
   }
 }
 
+/* ---------------------------------------------------------------- chrome */
+
+let toastTimer = null;
+
+function toast(message) {
+  const node = $("toast");
+  text(node, message);
+  node.classList.remove("hidden");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => node.classList.add("hidden"), TOAST_MS);
+}
+
 function banner(message, show) {
   const node = $("banner");
   text(node, message);
   node.classList.toggle("hidden", !show);
 }
-
-/* ---------------------------------------------------------------- chrome */
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -76,26 +90,55 @@ function showView(name) {
   if (name === "how") { renderHowDiagram(); loadTools(); }
   if (name === "settings") loadSettings();
   if (name === "run") renderLiveMap();
-  try { history.replaceState(null, "", "#" + name); } catch (_) { /* ignore */ }
+  try { history.replaceState(null, "", "#" + name + (state.replaying ? "&replay=" + state.runId : "")); } catch (_) { /* ignore */ }
 }
 
 async function refreshHealth() {
   try {
     const health = await api("/api/health");
     const pill = L.statusPill(health, state.replaying);
+    text($("status-short"), pill.short);
+    $("status-pill").title = pill.tooltip;
     text($("status-crew"), "crew: " + pill.crew);
     text($("status-mode"), "mode: " + pill.mode);
     text($("status-model"), "model: " + pill.model);
     text($("status-host"), "provider: " + pill.host);
     $("status-crew-dot").className = "dot " + (pill.crew === "up" ? "up" : "down");
     if (!health.provider_configured && !state.replaying) {
-      banner("No provider configured. Open Settings to add one, or replay a recording.", true);
+      banner("No provider configured. Add one in Settings, or replay a recording.", true);
     }
   } catch (error) {
-    const dot = $("status-crew-dot");
-    if (dot) dot.className = "dot down";
-    banner("API unreachable: " + error.message, true);
+    $("status-crew-dot").className = "dot down";
   }
+}
+
+/* ---------------------------------------------------------------- tabs */
+
+function setTab(name) {
+  state.tab = L.tabReducer(state.tab, { type: "select", tab: name });
+  renderTabs();
+}
+
+function setRunning(running) {
+  state.tab = L.tabReducer(state.tab, { type: running ? "start" : "finish" });
+  renderTabs();
+}
+
+function renderTabs() {
+  document.querySelectorAll("#run-tabs .tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.tab === state.tab.tab);
+  });
+  ["answer", "activity", "blackboard", "metrics"].forEach((name) => {
+    const panel = $("panel-" + name);
+    if (panel) panel.classList.toggle("hidden", state.tab.tab !== name);
+  });
+  $("progress-strip").classList.toggle("hidden", !state.tab.running);
+}
+
+function updateProgress() {
+  const strip = L.progressStrip(state.events);
+  text($("progress-strip"), strip);
+  $("progress-strip").classList.toggle("hidden", !strip || !state.tab.running);
 }
 
 /* ---------------------------------------------------------------- lists */
@@ -122,14 +165,20 @@ function emptyItem(host, message) {
 
 async function loadQuestions() {
   const data = await api("/api/questions");
-  const select = $("demo-question");
-  data.demo.concat((data.eval || []).slice(0, 40)).forEach((item) => {
-    const option = document.createElement("option");
-    option.value = item.text;
-    text(option, (item.id ? item.id + " - " : "") + String(item.text).slice(0, 90));
-    select.appendChild(option);
+  const popover = $("examples-popover");
+  popover.replaceChildren();
+  (data.demo || []).concat((data.eval || []).slice(0, 12)).forEach((item) => {
+    const row = document.createElement("li");
+    row.setAttribute("role", "option");
+    text(row, (item.id ? item.id + " - " : "") + String(item.text));
+    row.addEventListener("click", () => {
+      $("question").value = item.text;
+      autoGrow();
+      $("examples-popover").classList.add("hidden");
+      $("examples-toggle").setAttribute("aria-expanded", "false");
+    });
+    popover.appendChild(row);
   });
-  select.addEventListener("change", () => { $("question").value = select.value; });
 }
 
 async function loadReplays() {
@@ -139,35 +188,76 @@ async function loadReplays() {
   host.replaceChildren();
   if (!state.bundles.length) emptyItem(host, "no recordings");
   state.bundles.forEach((bundle) => {
-    host.appendChild(sidebarItem(bundle.name, bundle.pattern + (bundle.note ? " · note" : ""),
-      () => openReplay(bundle.name)));
+    host.appendChild(sidebarItem(bundle.name, bundle.pattern, () => openReplay(bundle.name)));
   });
-  const select = $("replay-select");
-  select.replaceChildren(new Option("replay a recording...", ""));
-  state.bundles.forEach((bundle) => select.appendChild(new Option(bundle.name, bundle.name)));
   fillCompare(state.bundles.map((bundle) => ({
     name: bundle.name, pattern: bundle.pattern, degraded: bundle.degraded,
-    approved: bundle.approved, summary: bundle.summary || {},
+    approved: bundle.approved, summary: {},
   })));
+}
+
+function historyRow(row) {
+  const item = document.createElement("li");
+  const top = document.createElement("span");
+  top.className = "row-top";
+
+  const pattern = document.createElement("span");
+  pattern.className = "badge-pattern";
+  text(pattern, row.pattern);
+  top.appendChild(pattern);
+
+  const dot = document.createElement("span");
+  dot.className = "verdict-dot " + (row.approved === true ? "ok" : row.approved === false ? "bad" : "");
+  dot.title = L.verdictLabel(row.approved, row.severity);
+  top.appendChild(dot);
+
+  const when = document.createElement("span");
+  text(when, row.when);
+  top.appendChild(when);
+
+  if (row.count > 1) {
+    const count = document.createElement("span");
+    count.className = "count-pill";
+    text(count, "x" + row.count);
+    top.appendChild(count);
+  }
+  item.appendChild(top);
+
+  const question = document.createElement("span");
+  question.className = "row-sub";
+  text(question, row.question || "(no question)");
+  item.appendChild(question);
+  item.addEventListener("click", () => openRun(row.run_id));
+  return item;
 }
 
 async function loadHistory() {
   const host = $("history-list");
   try {
     const data = await api("/api/runs");
-    const runs = (data.runs || []).slice(-25).reverse();
-    host.replaceChildren();
-    if (!runs.length) { emptyItem(host, "no runs yet"); return; }
-    runs.forEach((run) => {
-      host.appendChild(sidebarItem(
-        String(run.question || "(no question)").slice(0, 60),
-        run.pattern + " · " + L.verdictLabel(run.approved, run.severity),
-        () => openRun(run.run_id)));
-    });
+    state.runs = data.runs || [];
+    renderHistory();
   } catch (error) {
     host.replaceChildren();
     emptyItem(host, "history unavailable");
   }
+}
+
+function renderHistory() {
+  const host = $("history-list");
+  host.replaceChildren();
+  if (!state.runs.length) { emptyItem(host, "no runs yet"); return; }
+  const grouped = L.groupHistory(state.runs, { limit: state.historyLimit });
+  grouped.groups.forEach((group) => {
+    const label = document.createElement("li");
+    label.className = "group-label";
+    text(label, group.label);
+    host.appendChild(label);
+    group.items.forEach((row) => host.appendChild(historyRow(row)));
+  });
+  const more = $("history-more");
+  more.classList.toggle("hidden", grouped.hidden === 0);
+  text(more, "show " + grouped.hidden + " more");
 }
 
 /* ---------------------------------------------------------------- run */
@@ -175,6 +265,12 @@ async function loadHistory() {
 function pattern() {
   const chip = document.querySelector("#pattern-chips .chip.selected");
   return chip ? chip.dataset.pattern : "sequential";
+}
+
+function autoGrow() {
+  const box = $("question");
+  box.style.height = "auto";
+  box.style.height = Math.min(box.scrollHeight, 68) + "px";
 }
 
 function setBusy(busy) {
@@ -186,7 +282,7 @@ function setBusy(busy) {
 
 async function startRun() {
   const question = $("question").value.trim();
-  if (!question) { banner("Type a question first.", true); return; }
+  if (!question) { toast("Type a question first."); return; }
   state.pattern = pattern();
   try {
     setBusy(true);
@@ -197,7 +293,7 @@ async function startRun() {
     beginRun(data.run_id, false);
   } catch (error) {
     setBusy(false);
-    banner("Could not start: " + error.message, true);
+    toast("Could not start: " + error.message);
   }
 }
 
@@ -208,14 +304,19 @@ function beginRun(runId, replaying) {
   state.events = [];
   state.retries = 0;
   $("replay-badge").classList.toggle("hidden", !replaying);
-  text($("run-hint"), "run id: " + runId);
+  $("replay-speed-row").classList.toggle("hidden", !replaying);
+  text($("footer-run"), "run: " + runId);
   $("link-json").href = "/api/runs/" + runId;
   $("link-log").href = "/api/runs/" + runId + "/log";
   $("event-log").replaceChildren();
   $("timeline-body").replaceChildren();
-  $("result-card").classList.add("hidden");
   renderLiveMap();
-  if (!replaying) openStream(runId);
+  if (replaying) {
+    setRunning(true);
+  } else {
+    setRunning(true);
+    openStream(runId);
+  }
 }
 
 function openStream(runId) {
@@ -230,6 +331,7 @@ function openStream(runId) {
     addLog("done", "degraded=" + summary.degraded + " " + L.verdictLabel(summary.approved, summary.severity));
     closeStream();
     setBusy(false);
+    setRunning(false);
     finishRun(runId);
   });
   source.onerror = () => {
@@ -238,6 +340,7 @@ function openStream(runId) {
       addLog("stream", "stream ended", "error");
       closeStream();
       setBusy(false);
+      setRunning(false);
       finishRun(runId);
       return;
     }
@@ -253,13 +356,14 @@ function addEvent(event) {
   state.events.push(event);
   renderTimeline();
   renderLiveMap();
+  updateProgress();
   logEvent(event);
 }
 
 function addLog(kind, message, cssClass) {
   const item = document.createElement("li");
   item.className = cssClass || "";
-  text(item, kind + " · " + message);
+  text(item, kind + " \u00b7 " + message);
   $("event-log").appendChild(item);
   $("event-log").scrollTop = $("event-log").scrollHeight;
 }
@@ -276,7 +380,7 @@ function logEvent(event) {
   } else if (event.kind === "error") {
     addLog("error", (event.error_type || "error") + ": " + (event.error_message || ""), "error");
   } else if (event.kind === "stage_end") {
-    addLog("stage", event.agent + " " + L.duration(event.duration_ms) + " · "
+    addLog("stage", event.agent + " " + L.duration(event.duration_ms) + " \u00b7 "
       + L.tokens(event.tokens_in, event.tokens_out));
   }
 }
@@ -284,8 +388,7 @@ function logEvent(event) {
 function renderTimeline() {
   const body = $("timeline-body");
   body.replaceChildren();
-  const rows = L.reduceTimeline(state.events);
-  rows.forEach((row) => {
+  L.reduceTimeline(state.events).forEach((row) => {
     const tr = document.createElement("tr");
     tr.className = row.status;
     [row.agent, row.framework.toUpperCase(), row.status, L.duration(row.ms),
@@ -296,8 +399,6 @@ function renderTimeline() {
     });
     body.appendChild(tr);
   });
-  const done = rows.filter((row) => row.status === "done" || row.status === "failed").length;
-  text($("activity-summary"), rows.length ? done + "/" + rows.length + " agents finished" : "");
 }
 
 function renderLiveMap() {
@@ -307,27 +408,31 @@ function renderLiveMap() {
 }
 
 async function finishRun(runId) {
-  await loadSnapshot(runId);
+  await loadSnapshot(runId).catch(() => {});
   $("heatmap").src = "/api/runs/" + runId + "/heatmap.png?t=" + Date.now();
   await loadHistory();
 }
 
 /* ---------------------------------------------------------------- replay */
 
-async function openReplay(name) {
+async function openReplay(name, options) {
+  const opts = options || {};
   try {
     const bundle = await api("/api/replay/" + name);
     state.pattern = (bundle.summary && bundle.summary.pattern) || state.pattern;
     beginRun(bundle.run_id, true);
-    const speed = Number($("replay-speed").value);
+    const at = typeof opts.at === "number" ? Math.max(0, Math.min(1, opts.at)) : 1;
+    const stopAt = Math.max(1, Math.floor(bundle.events.length * at));
+    const speed = state.speed;
     const first = bundle.events.length ? Date.parse(bundle.events[0].ts) : 0;
     let previous = 0;
-    for (const event of bundle.events) {
+    for (let index = 0; index < stopAt; index += 1) {
+      const event = bundle.events[index];
       if (speed > 0) {
         const when = Date.parse(event.ts) - first;
         const wait = Math.max(0, (when - previous) / speed);
         previous = when;
-        await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 600)));
+        await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 400)));
       }
       addEvent(event);
     }
@@ -337,10 +442,17 @@ async function openReplay(name) {
       if (final) renderReport(final.value, bundle.blackboard.critique);
     }
     if (bundle.heatmap_png) $("heatmap").src = "data:image/png;base64," + bundle.heatmap_png;
-    addLog("replay", "finished " + name + " (" + bundle.events.length + " events)");
+    if (at < 1) {
+      addLog("replay", "paused at " + Math.round(at * 100) + "% of the recording");
+      if (opts.keepRunning !== false) setRunning(true);
+    } else {
+      addLog("replay", "finished " + name + " (" + bundle.events.length + " events)");
+      setRunning(false);
+    }
+    if (opts.tab) setTab(opts.tab);
     await refreshHealth();
   } catch (error) {
-    banner("Replay failed: " + error.message, true);
+    toast("Replay failed: " + error.message);
   }
 }
 
@@ -353,8 +465,9 @@ async function openRun(runId) {
     $("heatmap").src = "/api/runs/" + runId + "/heatmap.png?t=" + Date.now();
     state.pattern = (snapshot.task && snapshot.task.value.pattern) || state.pattern;
     renderLiveMap();
+    setRunning(false);
   } catch (error) {
-    banner("Could not open run: " + error.message, true);
+    toast("Could not open run: " + error.message);
   }
 }
 
@@ -373,7 +486,7 @@ function renderBlackboard(snapshot) {
     const box = document.createElement("div");
     box.className = "board-card";
     const title = document.createElement("h4");
-    text(title, card.name + (card.version ? " · v" + card.version : ""));
+    text(title, card.name + (card.version ? " \u00b7 v" + card.version : ""));
     box.appendChild(title);
     if (card.verdict) {
       const verdict = document.createElement("p");
@@ -415,7 +528,6 @@ function renderBlackboard(snapshot) {
 }
 
 function renderReport(report, critique) {
-  $("result-card").classList.remove("hidden");
   text($("report-answer"), report.answer || "(no answer)");
 
   const points = $("report-points");
@@ -432,10 +544,10 @@ function renderReport(report, critique) {
   [["confidence " + report.confidence, ""],
    [L.verdictLabel(verdict.approved, verdict.severity), verdict.approved === false ? "bad" : "ok"],
    ["tools: " + ((report.tools_used || []).join(", ") || "none"), ""],
-   ["sources " + ((report.citations || []).length), ""]].forEach(([label, tone]) => {
+   ["sources " + ((report.citations || []).length), ""]].forEach((pair) => {
     const pill = document.createElement("span");
-    pill.className = "pill " + tone;
-    text(pill, label);
+    pill.className = "pill " + pair[1];
+    text(pill, pair[0]);
     meta.appendChild(pill);
   });
 
@@ -454,7 +566,7 @@ function renderReport(report, critique) {
   L.citationRows(report).forEach((row) => {
     const item = document.createElement("li");
     item.id = "source-" + row.index;
-    text(item, row.source_ref + " - " + row.quote);
+    text(item, row.source_ref + " \u2014 " + row.quote);
     list.appendChild(item);
   });
 }
@@ -482,7 +594,7 @@ function fillCompare(rows) {
 
 async function compareAll() {
   const question = $("question").value.trim();
-  if (!question) { banner("Type a question first.", true); return; }
+  if (!question) { toast("Type a question first."); return; }
   const ids = [];
   try {
     setBusy(true);
@@ -500,8 +612,9 @@ async function compareAll() {
     }
     const rows = await api("/api/compare?run=" + ids.join(","));
     fillCompare((rows.rows || []).map((row) => ({ ...row, name: row.pattern, summary: row })));
+    setTab("metrics");
   } catch (error) {
-    banner("Compare failed: " + error.message, true);
+    toast("Compare failed: " + error.message);
   } finally {
     setBusy(false);
   }
@@ -716,7 +829,13 @@ async function testProfile() {
     const saved = await saveProfile();
     if (!saved) { setRequest({ type: "error", message: "save the provider first" }); return; }
   }
-  setRequest({ type: "start", message: "calling the provider once per path..." });
+  const started = Date.now();
+  setRequest({ type: "start", message: "testing... 0s" });
+  const ticker = setInterval(() => {
+    const seconds = Math.round((Date.now() - started) / 1000);
+    state.request = { ...state.request, message: "testing... " + seconds + "s" };
+    text($("profile-status"), state.request.message);
+  }, 1000);
   try {
     const data = await api("/api/settings/profiles/" + state.editing + "/test", { method: "POST" });
     const rows = data.results || [];
@@ -725,6 +844,8 @@ async function testProfile() {
     setRequest(error.code === "timeout"
       ? { type: "timeout" }
       : { type: "error", message: "test failed: " + error.message });
+  } finally {
+    clearInterval(ticker);
   }
 }
 
@@ -790,27 +911,58 @@ document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => showView(item.dataset.view));
 });
 
-$("run-button").addEventListener("click", startRun);
-$("compare-all").addEventListener("click", compareAll);
-$("replay-select").addEventListener("change", (event) => {
-  if (event.target.value) openReplay(event.target.value);
+document.querySelectorAll("#run-tabs .tab").forEach((tab) => {
+  tab.addEventListener("click", () => setTab(tab.dataset.tab));
 });
+
+$("composer").addEventListener("submit", (event) => {
+  event.preventDefault();
+  startRun();
+});
+$("question").addEventListener("input", autoGrow);
+$("question").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    startRun();
+  }
+});
+
+$("compare-all").addEventListener("click", compareAll);
+$("examples-toggle").addEventListener("click", () => {
+  const popover = $("examples-popover");
+  const open = popover.classList.toggle("hidden");
+  $("examples-toggle").setAttribute("aria-expanded", open ? "false" : "true");
+});
+$("replay-toggle").addEventListener("click", () => {
+  const panel = $("replay-panel");
+  const hidden = panel.classList.toggle("hidden");
+  $("replay-toggle").setAttribute("aria-expanded", hidden ? "false" : "true");
+});
+document.querySelectorAll("#replay-speed-row .chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll("#replay-speed-row .chip").forEach((other) => other.classList.remove("selected"));
+    chip.classList.add("selected");
+    state.speed = Number(chip.dataset.speed);
+  });
+});
+$("replay-speed-row").querySelector('[data-speed="1"]').classList.add("selected");
+
 $("copy-markdown").addEventListener("click", () => {
   const body = $("report-answer").textContent + "\n\n"
     + Array.from($("report-points").children).map((item) => "- " + item.textContent).join("\n");
   navigator.clipboard.writeText(body)
-    .then(() => banner("Markdown copied.", true), () => banner("Copy failed.", true));
+    .then(() => toast("Markdown copied."), () => toast("Copy failed."));
 });
 $("toggle-raw").addEventListener("click", () => {
   state.rawJson = !state.rawJson;
   document.querySelectorAll(".raw").forEach((node) => node.classList.toggle("hidden", !state.rawJson));
 });
-$("activity-toggle").addEventListener("click", () => {
-  const hidden = $("activity-body").classList.toggle("hidden");
-  text($("activity-toggle"), hidden ? "expand" : "collapse");
-});
 $("sidebar-toggle").addEventListener("click", () => document.body.classList.toggle("sidebar-collapsed"));
 $("history-refresh").addEventListener("click", loadHistory);
+$("history-more").addEventListener("click", () => {
+  state.historyLimit += HISTORY_LIMIT;
+  renderHistory();
+});
 $("tools-refresh").addEventListener("click", loadTools);
 $("profile-save").addEventListener("click", saveProfile);
 $("profile-test").addEventListener("click", testProfile);
@@ -829,11 +981,8 @@ $("presentation-toggle").addEventListener("click", () => {
   applySize(document.documentElement.dataset.size !== "presentation");
 });
 $("banner").addEventListener("click", (event) => event.currentTarget.classList.add("hidden"));
-$("question").addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); startRun(); }
-});
 
-/* boot */
+/* boot: theme, size, deep links */
 try {
   applyTheme(localStorage.getItem("athena.theme") || "dark");
   applySize(localStorage.getItem("athena.presentation") === "1");
@@ -842,14 +991,36 @@ try {
   applySize(false);
 }
 
-const hash = (window.location.hash || "").replace("#", "");
+function parseHash() {
+  const raw = (window.location.hash || "").replace(/^#/, "");
+  const parts = raw.split("&");
+  const view = parts[0] || "run";
+  const params = {};
+  parts.slice(1).forEach((pair) => {
+    const [key, value] = pair.split("=");
+    if (key) params[key] = decodeURIComponent(value || "");
+  });
+  return { view, params };
+}
+
+const boot = parseHash();
+const bootTab = ["answer", "activity", "blackboard", "metrics"].includes(boot.params.tab)
+  ? boot.params.tab : "answer";
+setTab(bootTab);
+renderTabs();
+renderLiveMap();
+autoGrow();
 refreshHealth();
 loadQuestions().catch(() => {});
 loadHistory();
-loadReplays().then(() => {
-  if (hash.startsWith("replay=")) openReplay(hash.slice(7));
-  else if (hash === "settings" || hash === "how" || hash === "documents") showView(hash);
-  else showView("run");
-}).catch(() => showView("run"));
-renderLiveMap();
+
+if (boot.view.startsWith("replay=")) {
+  const name = boot.view.slice(7);
+  const at = boot.params.at === undefined ? 1 : Number(boot.params.at);
+  openReplay(name, { at: Number.isFinite(at) ? at : 1, tab: bootTab });
+} else if (["settings", "how", "documents"].includes(boot.view)) {
+  showView(boot.view);
+} else {
+  showView("run");
+}
 setInterval(refreshHealth, 20000);
