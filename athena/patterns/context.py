@@ -12,10 +12,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from athena.agents.untrusted import wrap_untrusted
+
 MAX_EVIDENCE_ITEMS = 8
 MAX_EVIDENCE_CHARS = 600
 MAX_PLAN_STEPS = 8
 DEFAULT_CONTEXT_CHARS = 9000
+CITABLE_EVIDENCE_TYPES = frozenset({"rag", "web", "calculation", "forecast"})
 
 
 def context_budget() -> int:
@@ -46,9 +49,16 @@ class P2PContext:
     def evidence_block(self, limit: int | None = None) -> str:
         if not self.evidence:
             return "(no evidence recorded)"
+        items = [item for item in self.evidence if item.source_type in CITABLE_EVIDENCE_TYPES]
+        items.sort(key=lambda item: (
+            0 if item.source_type == "web" and item.id.startswith("fetch-")
+            else 1 if item.source_type == "rag" else 2
+        ))
+        if not items:
+            return "(no citable evidence recorded)"
         lines = []
         used = 0
-        for item in self.evidence[:MAX_EVIDENCE_ITEMS]:
+        for item in items[:MAX_EVIDENCE_ITEMS]:
             text = " ".join(item.content.split())
             if len(text) > MAX_EVIDENCE_CHARS:
                 text = text[:MAX_EVIDENCE_CHARS].rstrip() + "..."
@@ -57,7 +67,10 @@ class P2PContext:
                 break
             lines.append(line)
             used += len(line) + 1
-        return "\n".join(lines) if lines else "(evidence omitted: context full)"
+        body = wrap_untrusted("\n".join(lines)) if lines else "(evidence omitted: context full)"
+        if limit is not None and len(body) > limit:
+            return "(evidence omitted: context full)"
+        return body
 
     def for_role(self, role: str) -> str:
         """The context block a given role receives, highest priority first."""

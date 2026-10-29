@@ -146,6 +146,68 @@ test("each pattern selects its own variant", () => {
   assert.ok(logic.diagramFor("hierarchical").edges.some((edge) => edge.label === "revision"));
 });
 
+test("composer pattern values cover exactly the supported set", () => {
+  assert.deepEqual(logic.PATTERNS, ["sequential", "parallel", "hierarchical", "p2p"]);
+  assert.equal(logic.DEFAULT_PATTERN, "hierarchical");
+  for (const pattern of logic.PATTERNS) {
+    assert.equal(logic.patternValue(pattern), pattern);
+  }
+  assert.equal(logic.patternValue("nonsense"), "hierarchical");
+  assert.equal(logic.patternValue(undefined), "hierarchical");
+});
+
+test("run ids are accepted only when they are non-empty strings", () => {
+  assert.equal(logic.validRunId("r1"), true);
+  assert.equal(logic.validRunId("  run-123  "), true);
+  assert.equal(logic.validRunId(""), false);
+  assert.equal(logic.validRunId("   "), false);
+  assert.equal(logic.validRunId(null), false);
+  assert.equal(logic.validRunId(undefined), false);
+  assert.equal(logic.validRunId({ run_id: "r1" }), false);
+  assert.equal(logic.validRunId(7), false);
+});
+
+test("metric rows use only recorded values and mark missing fields", () => {
+  assert.deepEqual(logic.metricRows([]), []);
+  assert.deepEqual(logic.metricRows(null), []);
+
+  const rows = logic.metricRows([
+    {
+      agent: "researcher", framework: "adk", stage_ms: 1500,
+      model_calls: 3, tokens_in: 100, tokens_out: 20, reasoning_tokens: 5,
+      tool_calls: 4, errors: 0, a2a_bytes: 12, evidence_items: 7,
+    },
+    { agent: "critic", stage_ms: "bad", model_calls: null },
+    null,
+    "not a row",
+  ]);
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].stage, "1.5 s");
+  assert.equal(rows[0].tokens_in, "100");
+  assert.equal(rows[1].agent, "critic");
+  assert.equal(rows[1].stage, "\u2014");
+  assert.equal(rows[1].models, "\u2014");
+  assert.equal(rows[1].framework, "\u2014");
+});
+
+test("critic diagnostics distinguish rejection, failure, and missing verdicts", () => {
+  const rejected = logic.critiqueDiagnostic({
+    value: { issues: ["missing impact"], severity: "high", approved: false },
+  });
+  assert.equal(rejected.status, "rejected");
+  assert.equal(rejected.issues[0], "missing impact");
+  assert.match(rejected.label, /rejected/);
+
+  const missing = logic.critiqueDiagnostic(null);
+  assert.equal(missing.status, "missing");
+  assert.match(missing.reason, /not an approval/);
+
+  const approved = logic.critiqueDiagnostic({ approved: true, severity: "low", issues: [] });
+  assert.equal(approved.status, "approved");
+  assert.equal(approved.label, "critic approved (low)");
+});
+
 test("node states follow the events, including failure", () => {
   const state = logic.diagramState(events, "sequential");
 

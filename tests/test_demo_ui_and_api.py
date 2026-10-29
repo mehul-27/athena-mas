@@ -39,6 +39,17 @@ def test_logic_js_passes_its_node_tests() -> None:
     assert "# fail 0" in result.stdout
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_composer_harness_passes_its_node_tests() -> None:
+    result = subprocess.run(
+        ["node", str(STATIC / "app.composer.test.js")],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "# fail 0" in result.stdout
+
+
 def test_logic_js_has_no_dom_access() -> None:
     source = _read("logic.js")
     for forbidden in ("document.", "window.", "innerHTML", "getElementById"):
@@ -224,7 +235,10 @@ def test_history_lists_runs_with_summaries(client: TestClient, monkeypatch) -> N
 
     assert runs == [{
         "run_id": "r1", "question": "", "pattern": "sequential", "started_at": "",
-        "confidence": 0.8, "approved": True, "severity": "low", "degraded": False,
+        "confidence": 0.8, "approved": True, "severity": "low",
+        "critic_status": "missing",
+        "critique_reason": "no critique recorded; this is not an approval",
+        "evidence_sufficient": True, "outcome": "incomplete", "degraded": True,
     }]
 
 
@@ -250,7 +264,7 @@ def test_composer_is_compact_and_sticky_only_on_the_run_view() -> None:
     start = css.index(".composer {")
     rule = css[start:css.index("}", start) + 1]
 
-    assert "max-height: 120px" in rule
+    assert "max-height: 160px" in rule
     assert "position: sticky" in rule
     assert "scroll-padding-bottom" in css, "content must not hide behind it"
     html = _read("index.html")
@@ -300,3 +314,93 @@ def test_status_pill_is_short_with_a_tooltip() -> None:
     assert "L.statusPill" in source
     assert '$("status-pill").title' in source
     assert 'id="status-short"' in _read("index.html")
+
+
+def test_activation_uses_an_explicit_saved_profile() -> None:
+    source = _read("app.js")
+    block = source[source.index("async function activateProfile"):source.index("async function deleteProfile")]
+
+    assert "profileId" in block
+    assert "saveProfile()" not in block, "activation must not save a blank form"
+    assert "profile was not activated" in block
+    assert "activateProfile(profile.id)" in source, "each row has an explicit action"
+
+
+def test_composer_pattern_selector_has_exactly_the_supported_options() -> None:
+    html = _read("index.html")
+    block = html[html.index('id="composer-pattern"'):html.index("</select>", html.index('id="composer-pattern"'))]
+    options = re.findall(r'<option value="([^"]+)"([^>]*)>', block)
+    values = [value for value, _attrs in options]
+    selected = [value for value, attrs in options if "selected" in attrs]
+
+    assert values == ["sequential", "parallel", "hierarchical", "p2p"]
+    assert selected == ["hierarchical"]
+    assert 'for="composer-pattern"' in html
+    assert "applies to the next run" in html
+    assert 'class="chip selected" data-pattern="hierarchical"' in html
+
+
+def test_composer_pattern_is_sent_and_locked_during_an_active_run() -> None:
+    source = _read("app.js")
+
+    assert 'state = {\n  view: "run", pattern: L.DEFAULT_PATTERN' in source
+    assert 'body: JSON.stringify({ question: submittedQuestion, pattern: state.pattern })' in source
+    assert "const patternSelect = $(\"composer-pattern\")" in source
+    assert "patternSelect.disabled = locked" in source
+    assert "chip.disabled = locked" in source
+
+    new_chat = source[source.index("function newChat()"):source.index("async function startRun()")]
+    assert "state.pattern =" not in new_chat, "New Chat must preserve the composer selection"
+
+
+def test_history_and_replay_do_not_clear_a_composer_draft() -> None:
+    source = _read("app.js")
+
+    replay = source[source.index("async function openReplay"):source.index("async function openRun")]
+    history = source[source.index("async function openRun"):source.index("/* ---------------------------------------------------------------- snapshot */")]
+
+    assert '$("question").value = ""' not in replay
+    assert '$("question").value = ""' not in history
+
+
+def test_blackboard_and_metrics_containers_are_present() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+    css = _read("style.css")
+
+    for node in ("critique-detail", "agent-metrics-table", "agent-metrics-body",
+                 "metrics-empty", "heatmap-empty"):
+        assert f'id="{node}"' in html
+    assert "renderEvidenceTable" in source
+    assert "evidence-full" in source
+    assert "JSON.stringify(snapshot, null, 1)" in source
+    assert "loadMetrics" in source
+    assert "L.metricRows" in source
+    assert "L.critiqueDiagnostic" in source
+    assert "overflow-wrap: anywhere" in css
+    assert ".table-wrap" in css
+    assert "minmax(min(100%, 280px), 1fr)" in css
+    assert "table-layout: fixed" in css
+    assert "overflow-x: auto" in css
+    assert "redact(item.content)[:500]" not in (ROOT / "athena" / "api" / "app.py").read_text(encoding="utf-8")
+
+
+def test_metrics_empty_and_heatmap_failure_states_exist() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+
+    assert "No per-agent metrics were recorded" in source
+    assert "Heatmap image unavailable" in source
+    assert 'id="metrics-empty"' in html
+    assert 'id="heatmap-empty"' in html
+
+
+def test_critic_rejection_detail_is_rendered_in_run_details() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+
+    assert 'id="critique-detail"' in html
+    assert "L.critiqueDiagnostic" in source
+    assert "Critic failed" in source
+    assert "state.summary.critic_status" in source
+    assert "critique_reason" in source

@@ -73,7 +73,15 @@ def activate(profile_id: str) -> dict:
     if not env.get("LLM_API_KEY"):
         raise ActivationError("no API key stored for this profile")
 
+    was_up = server_up()
     stop_server()
+    # A card that still answers after the stop means the old server survived.
+    # Starting over it would report success without applying this profile.
+    if was_up and server_up():
+        raise ActivationError(
+            "the existing CrewAI server did not stop; profile was not activated"
+        )
+
     up = start_server(env)
     store.set_active(profile_id if up else "")
     return {"ok": up, "crew_server": "up" if up else "down",

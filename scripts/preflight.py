@@ -12,6 +12,8 @@ Never prints a key or a full URL: hostnames only, and the key only as a length.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -130,7 +132,10 @@ def main(argv: list[str] | None = None) -> int:
         if not args.live:
             print(json.dumps({"error": "--json needs --live"}))
             return 2
-        results, models = collect_live(built)
+        # Probe implementations may emit human-readable progress on stdout.
+        # JSON mode owns stdout, so keep those lines out of the parse channel.
+        with contextlib.redirect_stdout(sys.stderr):
+            results, models = collect_live(built)
         print(json.dumps(as_json(results, models), indent=2))
         return exit_code(results)
 

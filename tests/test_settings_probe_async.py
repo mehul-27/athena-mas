@@ -180,3 +180,83 @@ def test_bad_json_is_reported_not_raised(monkeypatch) -> None:
     results = asyncio.run(probe.run_preflight({}))
 
     assert results[0]["error_type"] == "InvalidJson"
+
+
+def test_preflight_accepts_a_leading_probe_diagnostic(monkeypatch) -> None:
+    """A human-readable log line before the JSON body must not corrupt parsing."""
+    payload = (
+        b"usage scope analyst: calls=1 tokens=1/1 reasoning=0\n"
+        b'[{"path": "adk-lite-llm", "ok": true}, '
+        b'{"path": "crewai-server-style", "ok": true}]\n'
+    )
+
+    class FakeProcess:
+        pid = 1
+        returncode = 0
+
+        async def communicate(self):
+            return payload, b""
+
+    async def fake_exec(*_args, **_kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr(probe.asyncio, "create_subprocess_exec", fake_exec)
+
+    results = asyncio.run(probe.run_preflight({}))
+
+    assert [row["path"] for row in results] == [
+        "adk-lite-llm", "crewai-server-style",
+    ]
+    assert all(row["ok"] for row in results)
+
+
+def test_preflight_still_rejects_truncated_json(monkeypatch) -> None:
+    payload = b"usage scope analyst: calls=1 tokens=1/1 reasoning=0\n[{\"path\": \"adk\""
+
+    class FakeProcess:
+        pid = 1
+        returncode = 0
+
+        async def communicate(self):
+            return payload, b""
+
+    async def fake_exec(*_args, **_kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr(probe.asyncio, "create_subprocess_exec", fake_exec)
+
+    results = asyncio.run(probe.run_preflight({}))
+
+    assert results[0]["path"] == "preflight"
+    assert results[0]["error_type"] == "InvalidJson"
+
+
+def test_preflight_json_mode_keeps_stdout_machine_readable(monkeypatch, capsys) -> None:
+    from pathlib import Path
+
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    import preflight
+    from preflight_probes import ProbeResult
+
+    def fake_collect(_built):
+        print("usage scope analyst: calls=1 tokens=1/1 reasoning=0")
+        return (
+            [
+                ProbeResult(path="adk-lite-llm", ok=True, host="api.commandcode.ai"),
+                ProbeResult(path="crewai-server-style", ok=True, host="api.commandcode.ai"),
+            ],
+            ["openai/deepseek/deepseek-v4.1-flash"] * 2,
+        )
+
+    monkeypatch.setattr(preflight.llm, "configure_process", lambda: None)
+    monkeypatch.setattr(preflight, "describe_paths", lambda: [])
+    monkeypatch.setattr(preflight, "collect_live", fake_collect)
+
+    code = preflight.main(["--json", "--live"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    rows = json.loads(captured.out)
+    assert [row["path"] for row in rows] == ["adk-lite-llm", "crewai-server-style"]
+    assert "usage scope analyst" in captured.err

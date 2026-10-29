@@ -17,6 +17,14 @@ TOOL_FOR_SOURCE = {
     "calculation": "calculate",
     "forecast": "forecast",
 }
+CITABLE_SOURCE_TYPES = frozenset(TOOL_FOR_SOURCE)
+
+
+def _tool_for(item) -> str | None:
+    """Tool attribution, including the fetch-specific web provenance id."""
+    if item.source_type == "web" and item.id.startswith("fetch-"):
+        return "fetch_page"
+    return TOOL_FOR_SOURCE.get(item.source_type)
 
 
 def _summary(item) -> str:
@@ -25,9 +33,13 @@ def _summary(item) -> str:
 
 
 def evidence_ids_for(report: FinalReport, items) -> list[str]:
-    """Ids of the evidence items the report actually cites."""
+    """Ids of the citable evidence items the report actually cites."""
     cited = {citation.source_ref for citation in report.citations}
-    return [item.id for item in items if item.source_ref in cited]
+    return [
+        item.id
+        for item in items
+        if item.source_type in CITABLE_SOURCE_TYPES and item.source_ref in cited
+    ]
 
 
 def sanitize_report(
@@ -42,7 +54,8 @@ def sanitize_report(
     sanitizer never has to read the blackboard for it.
     """
     items = bb_io.load_evidence(blackboard, limit=None) if items is None else list(items)
-    by_ref = {item.source_ref: item for item in items}
+    citable = [item for item in items if item.source_type in CITABLE_SOURCE_TYPES]
+    by_ref = {item.source_ref: item for item in citable}
 
     citations: list[Citation] = []
     for citation in report.citations:
@@ -64,7 +77,7 @@ def sanitize_report(
         ]
 
     tools_used = sorted(
-        {TOOL_FOR_SOURCE[item.source_type] for item in items if item.source_type in TOOL_FOR_SOURCE}
+        {tool for item in items if (tool := _tool_for(item)) is not None}
     )
     return report.model_copy(
         update={

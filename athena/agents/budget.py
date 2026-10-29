@@ -17,6 +17,11 @@ from dataclasses import dataclass, field
 
 DEFAULT_MAX_TOOL_CALLS = 3
 DEFAULT_MAX_MODEL_CALLS = 6
+DEFAULT_RESEARCHER_MAX_TOOL_CALLS = 8
+DEFAULT_RESEARCHER_MAX_MODEL_CALLS = 10
+RESEARCHER_ROLES = frozenset(
+    {"researcher", "web_researcher", "rag_researcher", "calc_researcher"}
+)
 STOP_TEXT = "Budget reached; findings are recorded on the blackboard."
 
 DUPLICATE_RESULT = {
@@ -30,7 +35,12 @@ def _limit(name: str, default: int) -> int:
     return int(value) if value.isdigit() else default
 
 
-def budget_limits() -> tuple[int, int]:
+def budget_limits(role: str | None = None) -> tuple[int, int]:
+    if role in RESEARCHER_ROLES:
+        return (
+            _limit("ATHENA_RESEARCHER_MAX_TOOL_CALLS", DEFAULT_RESEARCHER_MAX_TOOL_CALLS),
+            _limit("ATHENA_RESEARCHER_MAX_MODEL_CALLS", DEFAULT_RESEARCHER_MAX_MODEL_CALLS),
+        )
     return (
         _limit("ATHENA_MAX_TOOL_CALLS", DEFAULT_MAX_TOOL_CALLS),
         _limit("ATHENA_WORKER_MAX_MODEL_CALLS", DEFAULT_MAX_MODEL_CALLS),
@@ -70,8 +80,8 @@ class Budget:
     duplicates: int = 0
 
     @classmethod
-    def from_env(cls) -> "Budget":
-        tool_limit, model_limit = budget_limits()
+    def from_env(cls, role: str | None = None) -> "Budget":
+        tool_limit, model_limit = budget_limits(role)
         return cls(max_tool_calls=tool_limit, max_model_calls=model_limit)
 
     def before_tool(self, tool, args, tool_context):

@@ -6,10 +6,13 @@ one section. The writer lives in ``crew_writer`` because it owns the report.
 
 from __future__ import annotations
 
+import sys
 from typing import Callable
 
 from athena.agents import bb_io
 from athena.agents.critique_rules import calibrate
+from athena.agents.requirements import finding_requirement
+from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import (
     Analysis,
     Blackboard,
@@ -112,7 +115,8 @@ def crew_call(role: str, goal: str, prompt: str, schema: type) -> tuple[object, 
     print(
         f"usage scope {role}: calls={calls} tokens={tokens_in or 0}/"
         f"{tokens_out or 0} reasoning={reasoning or 0}"
-        + (" (estimated)" if estimated else "")
+        + (" (estimated)" if estimated else ""),
+        file=sys.stderr,
     )
     if recorder is not None:
         recorder.emit(
@@ -148,9 +152,12 @@ def analyse(
 ) -> dict:
     """Read task + evidence, write section ``analysis`` as author ``analyst``."""
     blackboard = Blackboard.open(run_id, store)
+    task_text = bb_io.task_text(blackboard)
     prompt = (
-        f"{instruction}\n\nTASK:\n{bb_io.task_text(blackboard)}\n\n"
+        f"{instruction}\n\nTASK:\n{task_text}\n\n"
         f"EVIDENCE (cite ids exactly as shown):\n{bb_io.evidence_text(blackboard)}\n\n"
+        f"{UNTRUSTED_DATA_RULE}\n\n"
+        f"{finding_requirement(task_text)}\n\n"
         "Return key_findings (2-4 short bullets) and gaps (what the evidence does "
         "not answer).\n"
         "When you name a source, cite it by its source_ref exactly as shown "
@@ -176,16 +183,23 @@ def critique(
 ) -> dict:
     """Review draft + report + evidence, write section ``critique`` as ``critic``."""
     blackboard = Blackboard.open(run_id, store)
+    task_text = bb_io.task_text(blackboard)
     prompt = (
-        f"{instruction}\n\nTASK:\n{bb_io.task_text(blackboard)}\n\n"
+        f"{instruction}\n\nTASK:\n{task_text}\n\n"
         f"EVIDENCE:\n{bb_io.evidence_text(blackboard)}\n\n"
         f"REPORT:\n{bb_io.report_text(blackboard)}\n\n"
+        f"{UNTRUSTED_DATA_RULE}\n\n"
+        f"{finding_requirement(task_text)}\n\n"
         "Grade strictly but fairly:\n"
         "- approved=true when every claim in the answer is traceable to the "
         "recorded evidence and the answer is complete.\n"
         "- approved=false only for concrete issues, and list each one in issues.\n"
+        "- For a fixed finding count, reject if any finding lacks a distinct "
+        "primary source, grounded explanation, practical impact, or source URL, "
+        "or if the same primary source is reused for two findings.\n"
         "- severity is 'high' ONLY for unsupported claims, contradictions with "
-        "the evidence, or a truncated answer. Style and brevity are not 'high'.\n"
+        "the evidence, missing required findings, or a truncated answer. Style and "
+        "brevity are not 'high'.\n"
         "- severity 'low' or 'medium' for everything else, with approved=true if "
         "the answer is still usable.\n"
         "- If the answer says the evidence does not cover the question, or its "

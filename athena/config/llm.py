@@ -43,7 +43,7 @@ ROLE_MAX_TOKENS = {
     "researcher": 2000,
     "analyst": 1500,
     "writer": 3000,
-    "critic": 1500,
+    "critic": 3000,
 }
 REASONING_EFFORTS = ("low", "medium", "high")
 

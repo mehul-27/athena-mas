@@ -8,6 +8,8 @@ a call without parsing the payload.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -73,6 +75,37 @@ class WebResult(ToolResult):
     )
     note: str | None = Field(
         default=None, description="Set when the search ran but found nothing."
+    )
+
+
+class FetchResult(ToolResult):
+    """Result of reading one web page."""
+
+    tool_name: str = "fetch_page"
+    fetch_id: str = Field(
+        default_factory=lambda: uuid4().hex,
+        description="Unique id for this fetch attempt; provenance is per attempt.",
+    )
+    requested_url: str = Field(description="URL the researcher asked to read.")
+    final_url: str = Field(default="", description="URL after any redirects.")
+    canonical_url: str = Field(
+        default="", description="Page-declared canonical URL, when valid."
+    )
+    title: str = Field(default="", description="Page title, when available.")
+    content_type: str = Field(default="", description="Normalized response media type.")
+    status: str = Field(
+        default="ok",
+        description=(
+            "ok, empty, blocked, timeout, too_large, unsupported_content_type, "
+            "http_error, or error."
+        ),
+    )
+    status_code: int | None = Field(
+        default=None, description="Final HTTP status code, when a response arrived."
+    )
+    text: str = Field(default="", description="Bounded readable page text.")
+    truncated: bool = Field(
+        default=False, description="True when readable text exceeded max_chars."
     )
 
 

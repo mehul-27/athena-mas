@@ -30,7 +30,10 @@ from athena.config.llm import configure_process
 from athena.blackboard import Blackboard, Task
 from athena.patterns import VALID_PATTERNS, UnknownPatternError
 from athena.run_report import ack_warning, parts_of, print_report, text_of, tool_lines
-from athena.summary import RunSummary, finish, format_table, note_ack, summary_line
+from athena.summary import (
+    RunSummary, finish, format_table, note_ack, note_critique, set_outcome, summary_line,
+)
+from athena.agents.sufficiency import assess
 from athena.tools import settings
 
 # ADK derives the app name from the root agent's package ("athena/agents"); use
@@ -135,12 +138,18 @@ async def _execute(
 
     evidence = blackboard.read("evidence")
     summary.evidence_count = len(evidence[0]) if evidence else 0
+    task = blackboard.read("task")
+    assessment = assess(
+        task[0].question if task else "",
+        evidence[0] if evidence else [],
+    )
+    summary.evidence_sufficient = assessment.ok
     report = blackboard.read("final_report")
     summary.confidence = report[0].confidence if report else None
     critique = blackboard.read("critique")
-    summary.approved = critique[0].approved if critique else None
-    summary.severity = critique[0].severity if critique else None
+    note_critique(summary, critique[0] if critique else None)
     finish(summary)
+    set_outcome(summary, report is not None, assessment.ok)
 
     # Persist the summary as one event so Step 9 can read everything in one place.
     recorder.emit(
@@ -235,9 +244,6 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-
 def write_summary_json(summary: RunSummary, path: str) -> None:
     """Write the RunSummary so the demo API can read it without the blackboard."""
     from pathlib import Path
@@ -245,3 +251,7 @@ def write_summary_json(summary: RunSummary, path: str) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(asdict(summary), indent=2, default=str), encoding="utf-8")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

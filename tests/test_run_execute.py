@@ -118,3 +118,16 @@ def test_default_runner_is_used_when_no_factory_is_given() -> None:
     """The seam must be optional: production still builds the real runner."""
     assert callable(runner_mod.default_runner)
     assert runner_mod.default_runner is not None
+
+
+def test_summary_writer_is_defined_before_the_cli_entrypoint(tmp_path) -> None:
+    source = __import__("pathlib").Path(runner_mod.__file__).read_text(encoding="utf-8")
+    assert source.index("def write_summary_json") < source.index(
+        'if __name__ == "__main__"'
+    )
+
+    summary = runner_mod.RunSummary(pattern="sequential", failed=False)
+    target = tmp_path / "summary.json"
+    runner_mod.write_summary_json(summary, str(target))
+
+    assert json.loads(target.read_text(encoding="utf-8"))["pattern"] == "sequential"

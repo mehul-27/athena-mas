@@ -7,6 +7,7 @@ import pytest
 from athena.agents.crew_roles import analyse, critique
 from athena.agents.crew_writer import looks_truncated, write_report, writer_prompt
 from athena.agents.planner import WORKER_ROLES, normalise_role, parse_plan_text, parse_steps
+from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import Blackboard, EvidenceItem, FinalReport, SQLiteStore, Task
 from athena.tools.adapters import clean_text, to_evidence_items
 from athena.tools.schemas import RagHit, RagResult
@@ -112,6 +113,7 @@ def test_analyst_and_critic_prompts_carry_the_rules(bb: Blackboard) -> None:
     analyse(bb.run_id, "go", store=bb.store, generate=capture_analyst)
     assert "never by internal ids" in seen["analyst"].lower() or "internal id" in seen["analyst"].lower()
     assert "source_ref" in seen["analyst"]
+    assert UNTRUSTED_DATA_RULE in seen["analyst"]
 
     def capture_critic(prompt: str):
         seen["critic"] = prompt
@@ -124,5 +126,7 @@ def test_analyst_and_critic_prompts_carry_the_rules(bb: Blackboard) -> None:
     assert "approved=true" in lowered
     assert "severity is 'high' only" in lowered
     assert "list each one in issues" in lowered
+    assert UNTRUSTED_DATA_RULE in seen["critic"]
 
     assert "150 words" in writer_prompt(bb, "go")
+    assert UNTRUSTED_DATA_RULE in writer_prompt(bb, "go")

@@ -47,7 +47,12 @@ def test_role_defaults_are_the_new_values(monkeypatch) -> None:
     assert llm_config.max_tokens_for("researcher") == 2000
     assert llm_config.max_tokens_for("analyst") == 1500
     assert llm_config.max_tokens_for("writer") == 3000
-    assert llm_config.max_tokens_for("critic") == 1500
+    assert llm_config.max_tokens_for("critic") == 3000
+
+
+def test_critic_cap_can_be_overridden(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_MAX_TOKENS_CRITIC", "2750")
+    assert llm_config.max_tokens_for("critic") == 2750
 
 
 def test_env_override_still_wins(monkeypatch) -> None:

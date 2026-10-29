@@ -24,26 +24,45 @@ from mcp import StdioServerParameters
 from athena.agents import bb_io
 from athena.agents.budget import Budget, make_budget_callbacks
 from athena.agents.evidence_recorder import make_evidence_recorder
+from athena.agents.requirements import finding_requirement
+from athena.agents.routing import source_guidance
+from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import Blackboard, BlackboardStore
 from athena.config.llm import get_adk_model
 from athena.observability.recorder import get_recorder
 from athena.tools.settings import REPO_ROOT
+from athena.tools.web.urls import plain_http_url
 
 TOOL_DISCIPLINE = (
-    "Call each tool at most once per distinct query. After the tool returns, "
-    "its result is recorded automatically; do not repeat the call, and finish "
-    "with a one-sentence summary."
+    "Call each search tool at most once per distinct query. Use `fetch_page` on "
+    "relevant primary-source URLs; do not fetch mirrors or aggregators. Pass "
+    "the URL as a plain HTTP(S) string, never a Markdown link. After a tool "
+    "returns, its result is recorded automatically; do not repeat the call, and "
+    "finish with a one-sentence summary. " + UNTRUSTED_DATA_RULE
 )
 
 INSTRUCTION = """You are the researcher. Gather evidence for the task below.
 
 Rules:
-- Call `rag_search` at least once and at most twice, with top_k=3. Use a short,
-  focused query (not the whole question verbatim).
+- Choose sources to fit the question. For software, programming-language,
+  library/API, release, standards, or current factual questions, start with
+  `web_search` and fetch the relevant official/primary pages. Do not require a
+  RAG call for every question.
+- For questions about supplied local documents, use `rag_search` and base claims
+  on the returned passages.
+- Use `rag_search` as a supplementary source only when the corpus is plausibly
+  relevant. If the corpus is unrelated, do not treat it as evidence.
+- A search snippet is a discovery hint, not sufficient evidence for a specific
+  claim. Fetch the page before relying on it.
 - If the task involves numbers, arithmetic, totals or a trend, call `calculate`
   or `forecast` and put the exact figures in the expression/values.
-- Only call `web_search` if the corpus cannot answer and the question needs
-  current information.
+- When a web result is a relevant primary source, call `fetch_page` on that URL
+  before relying on it. Cite the fetched page text, not the search snippet.
+- If a required finding still lacks a primary source, use the remaining fetch
+  budget to find it; if it remains unavailable, record the gap instead of
+  inventing evidence.
+- Mirrors, reposts and aggregators are corroboration only; do not treat them as
+  independent primary sources.
 - Do not answer the question and do not summarise. The evidence is already being
   recorded. When you have enough, reply with the single word DONE.
 """
@@ -51,8 +70,9 @@ Rules:
 ROLE_INSTRUCTIONS = {
     "rag_researcher": "Search the NASA document corpus. Call `rag_search` once "
     "with a short focused query (top_k=3). Ignore the other tools.",
-    "web_researcher": "Search the web. Call `web_search` once (max_results=3) "
-    "with a short query. Ignore the other tools.",
+    "web_researcher": "Search the web with `web_search` once (max_results=3), "
+    "then call `fetch_page` on the most relevant primary-source result(s). "
+    "Ignore the NASA corpus and calculator tools.",
     "calc_researcher": "Work the numbers. Call `calculate` or `forecast` with "
     "the exact figures the task mentions. Ignore the other tools.",
 }
@@ -84,6 +104,16 @@ def build_toolset(module: str, timeout: float = 120.0) -> MCPToolset:
     )
 
 
+def plain_fetch_urls(callback):
+    """Normalize fetch_page URLs before the MCP tool receives them."""
+    def before_tool(tool, args, tool_context):
+        if getattr(tool, "name", "") == "fetch_page" and isinstance(args, dict):
+            args["url"] = plain_http_url(args.get("url"))
+        return callback(tool, args, tool_context)
+
+    return before_tool
+
+
 def build_researcher(
     run_id: str,
     store: BlackboardStore | None = None,
@@ -94,14 +124,16 @@ def build_researcher(
     text = task_text if task_text is not None else bb_io.task_text(
         Blackboard.open(run_id, store)
     )
-    budget = Budget.from_env()
+    budget = Budget.from_env("researcher")
     before_model, before_tool = make_budget_callbacks(budget, get_recorder(), "researcher")
+    before_tool = plain_fetch_urls(before_tool)
     return LlmAgent(
         name="researcher",
         model=get_adk_model("researcher"),
         description="Gathers evidence with the RAG, web and calculator tools.",
         instruction=(
-            f"{INSTRUCTION}\n{TOOL_DISCIPLINE}\nThe task:\n{text}\n"
+            f"{INSTRUCTION}\n{TOOL_DISCIPLINE}\n{source_guidance(text)}\n"
+            f"{finding_requirement(text)}\nThe task:\n{text}\n"
         ),
         tools=[build_toolset(SERVERS[key]) for key in ("rag", "web", "calc")],
         before_model_callback=before_model,
@@ -121,14 +153,16 @@ def build_role_researcher(
     text = task_text if task_text is not None else bb_io.task_text(
         Blackboard.open(run_id, store)
     )
-    budget = Budget.from_env()
+    budget = Budget.from_env(role)
     before_model, before_tool = make_budget_callbacks(budget, get_recorder(), role)
+    before_tool = plain_fetch_urls(before_tool)
     return LlmAgent(
         name=role,
         model=get_adk_model("researcher"),
         description=f"The {role} worker.",
         instruction=(
             f"You are the {role}. {ROLE_INSTRUCTIONS[role]}\n{TOOL_DISCIPLINE}\n"
+            f"{source_guidance(text)}\n{finding_requirement(text)}\n"
             f"The task:\n{text}\nReply DONE when finished."
         ),
         tools=[build_toolset(SERVERS[ROLE_SERVER[role]])],

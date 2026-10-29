@@ -8,6 +8,7 @@ import pytest
 
 from athena.agents import bb_io
 from athena.agents.a2a_client import build_payload
+from athena.agents.untrusted import UNTRUSTED_BEGIN, UNTRUSTED_END
 from athena.blackboard import Blackboard, SQLiteStore, Task
 from athena.patterns.context import P2PContext
 from athena.patterns.p2p import P2PAgent
@@ -36,6 +37,39 @@ def test_p2p_payload_carries_context_and_is_larger() -> None:
     assert len(contextual) > len(plain) * 10
 
 
+def test_p2p_replaces_an_unsupported_report_with_a_gap_report(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "bb.db")
+    blackboard = Blackboard.create(
+        Task(question="Explain three key changes in Python 3.13 with official sources."),
+        store=store,
+    )
+    agent = P2PAgent(
+        name="supervisor",
+        run_id=blackboard.run_id,
+        question="Explain three key changes in Python 3.13 with official sources.",
+        card_url="http://127.0.0.1:9001/.well-known/agent-card.json",
+        store=store,
+    )
+
+    agent._audit_report(
+        json.dumps({
+            "answer": "Unsupported answer.",
+            "key_points": [],
+            "citations": [],
+            "confidence": 1.0,
+            "tools_used": [],
+            "guardrail_flags": [],
+            "run_id": blackboard.run_id,
+        }),
+        [],
+    )
+
+    report = blackboard.read("final_report")[0]
+    assert report.confidence == 0.0
+    assert "does not satisfy" in report.answer
+    assert report.citations == []
+
+
 def test_p2p_context_renders_with_the_blackboard_limits() -> None:
     context = P2PContext(question="q")
 
@@ -48,8 +82,10 @@ def test_p2p_context_renders_with_the_blackboard_limits() -> None:
     context.evidence = [Item()]
     block = context.evidence_block()
 
-    assert block.endswith("...")
-    assert len(block) < 800
+    assert block.startswith(UNTRUSTED_BEGIN)
+    assert block.endswith(UNTRUSTED_END)
+    assert "..." in block
+    assert len(block) < 900
 
 
 def test_p2p_agents_never_read_the_blackboard(setup) -> None:

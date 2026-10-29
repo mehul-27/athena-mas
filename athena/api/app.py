@@ -12,7 +12,7 @@ import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -74,6 +74,7 @@ def _snapshot(run_id: str) -> dict:
     evidence = blackboard.read("evidence")
     return {
         "run_id": run_id,
+        "summary": _summary(run_id),
         "task": section("task"),
         "plan": section("plan"),
         "analysis": section("analysis"),
@@ -82,7 +83,7 @@ def _snapshot(run_id: str) -> dict:
         "final_report": section("final_report"),
         "evidence": [
             {"id": item.id, "source_ref": item.source_ref, "score": item.score,
-             "retrieved_by": item.retrieved_by, "text": redact(item.content)[:500]}
+             "retrieved_by": item.retrieved_by, "text": redact(item.content)}
             for item in (evidence[0] if evidence else [])
         ],
         "history": [
@@ -96,7 +97,43 @@ def _snapshot(run_id: str) -> dict:
 def _summary(run_id: str) -> dict:
     for event in reversed(_store().events(run_id)):
         if event.payload_summary and event.payload_summary.startswith("run_summary"):
-            return dict(event.extra)
+            summary = dict(event.extra)
+            if not summary.get("critic_status"):
+                from athena.summary import critique_details
+
+                critique = Blackboard.open(run_id).read("critique")
+                status, reason = critique_details(
+                    critique[0] if critique else None,
+                    summary.get("stage_errors") or [],
+                )
+                summary["critic_status"] = status
+                summary["critique_reason"] = reason
+            if "evidence_sufficient" not in summary or "outcome" not in summary:
+                from athena.agents.sufficiency import assess
+
+                blackboard = Blackboard.open(run_id)
+                task = blackboard.read("task")
+                evidence = blackboard.read("evidence")
+                assessment = assess(
+                    task[0].question if task else "",
+                    evidence[0] if evidence else [],
+                )
+                summary.setdefault("evidence_sufficient", assessment.ok)
+                if "outcome" not in summary:
+                    approved = summary.get("approved")
+                    if summary.get("failed"):
+                        summary["outcome"] = "failed"
+                    elif summary.get("critic_status") in {"failed", "missing"}:
+                        summary["outcome"] = "incomplete"
+                    elif approved is False:
+                        summary["outcome"] = "rejected"
+                    elif approved is True and assessment.ok:
+                        summary["outcome"] = "approved"
+                    else:
+                        summary["outcome"] = "incomplete"
+                    if summary["outcome"] != "approved":
+                        summary["degraded"] = True
+            return summary
     return {}
 
 
@@ -110,12 +147,16 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
 
         active = active_summary()
         has_profile_key = bool(active and active.get("has_key"))
+        effective_model = (active or {}).get("model") or os.getenv("LLM_MODEL", "")
+        effective_host = (active or {}).get("api_host") or _host_only(
+            os.getenv("LLM_API_BASE", "")
+        )
         return {
             "crew_server": "up" if _crew_server_up() else "down",
             "provider_configured": bool(os.getenv("LLM_API_KEY")) or has_profile_key,
             "active_profile": active,
-            "model": os.getenv("LLM_MODEL", ""),
-            "api_host": _host_only(os.getenv("LLM_API_BASE", "")),
+            "model": effective_model,
+            "api_host": effective_host,
             "replay_available": len(replay.names()),
             "patterns": list(VALID_PATTERNS),
         }
@@ -152,8 +193,15 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
         return FileResponse(target, media_type="image/png")
 
     @app.get("/api/runs/{run_id}/stream")
-    def stream(run_id: str) -> StreamingResponse:
-        return StreamingResponse(_events(run_id), media_type="text/event-stream")
+    def stream(run_id: str, request: Request) -> StreamingResponse:
+        try:
+            last_event_id = int(request.headers.get("last-event-id") or "0")
+        except ValueError:
+            last_event_id = 0
+        return StreamingResponse(
+            _events(run_id, runs, last_event_id),
+            media_type="text/event-stream",
+        )
 
     @app.get("/api/runs/{run_id}/log")
     def log(run_id: str) -> dict:
@@ -189,6 +237,10 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
                 "confidence": summary.get("confidence"),
                 "approved": summary.get("approved"),
                 "severity": summary.get("severity"),
+                "critic_status": summary.get("critic_status"),
+                "critique_reason": summary.get("critique_reason"),
+                "evidence_sufficient": summary.get("evidence_sufficient"),
+                "outcome": summary.get("outcome"),
                 "degraded": summary.get("degraded"),
             })
         return {"runs": list(reversed(runs))[-50:]}
@@ -220,22 +272,63 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     return app
 
 
-async def _events(run_id: str):
-    """SSE: replay what exists, then follow the event log until done."""
+async def _events(run_id: str, runs: RunRegistry | None = None, last_event_id: int = 0):
+    """SSE: replay what exists, then follow the event log until done.
+
+    A response may already have been sent before the run's Blackboard task is
+    created. Never raise an HTTPException from this generator: wait while the
+    accepted run is still starting, and emit a terminal failed ``done`` event if
+    the run is no longer recoverable.
+    """
     store = _store()
-    last_seq = 0
+    registry = runs or REGISTRY
+    last_seq = max(0, int(last_event_id or 0))
     history_seen = 0
     deadline = time.monotonic() + STREAM_MAX_S
 
     while time.monotonic() < deadline:
-        events = store.events(run_id)
+        try:
+            events = store.events(run_id)
+        except Exception as exc:  # noqa: BLE001 - headers are already sent
+            detail = f"stream could not read the event log: {type(exc).__name__}"
+            try:
+                active = registry.refresh()
+            except Exception:  # noqa: BLE001
+                active = None
+            yield f"event: done\ndata: {json.dumps({'summary': _unavailable_summary(run_id, active, detail)})}\n\n"
+            return
         for event in events:
             if event.seq <= last_seq:
                 continue
             last_seq = event.seq
-            yield f"data: {json.dumps(_event_payload(event))}\n\n"
+            yield f"id: {event.seq}\ndata: {json.dumps(_event_payload(event))}\n\n"
 
-        snapshot = _snapshot(run_id)
+        try:
+            snapshot = _snapshot(run_id)
+        except HTTPException:
+            try:
+                active = registry.refresh()
+            except Exception:  # noqa: BLE001 - unavailable is still a terminal state
+                active = None
+            if active and active.run_id == run_id and not active.finished:
+                # The subprocess is alive but has not created its task yet.
+                await asyncio.sleep(STREAM_POLL_S)
+                continue
+            detail = (
+                "the run is no longer available and no terminal result can be "
+                "recovered"
+            )
+            yield f"event: done\ndata: {json.dumps({'summary': _unavailable_summary(run_id, active, detail)})}\n\n"
+            return
+        except Exception as exc:  # noqa: BLE001 - streaming has already started
+            detail = f"stream could not read the run: {type(exc).__name__}"
+            try:
+                active = registry.refresh()
+            except Exception:  # noqa: BLE001
+                active = None
+            yield f"event: done\ndata: {json.dumps({'summary': _unavailable_summary(run_id, active, detail)})}\n\n"
+            return
+
         if len(snapshot["history"]) > history_seen:
             history_seen = len(snapshot["history"])
             yield f"event: blackboard\ndata: {json.dumps({'history': snapshot['history'][-1]})}\n\n"
@@ -245,11 +338,37 @@ async def _events(run_id: str):
             for event in events
         )
         if done:
-            yield f"event: done\ndata: {json.dumps({'summary': _summary(run_id)})}\n\n"
+            try:
+                summary = _summary(run_id)
+            except Exception as exc:  # noqa: BLE001 - never raise after headers
+                try:
+                    active = registry.refresh()
+                except Exception:  # noqa: BLE001
+                    active = None
+                detail = f"terminal summary unavailable: {type(exc).__name__}"
+                summary = _unavailable_summary(run_id, active, detail)
+            yield f"event: done\ndata: {json.dumps({'summary': summary})}\n\n"
             return
         await asyncio.sleep(STREAM_POLL_S)
 
     yield "event: error\ndata: " + json.dumps({"detail": "stream timed out"}) + "\n\n"
+
+
+def _unavailable_summary(run_id: str, active, detail: str) -> dict:
+    """A failed terminal summary for a run with no recoverable Blackboard task."""
+    return {
+        "pattern": getattr(active, "pattern", "") if active else "",
+        "run_id": run_id,
+        "failed": True,
+        "degraded": True,
+        "outcome": "failed",
+        "stage_errors": [detail],
+        "approved": None,
+        "severity": None,
+        "confidence": None,
+        "critique_reason": "run unavailable; this is not an approval",
+        "evidence_sufficient": False,
+    }
 
 
 def _host_only(url: str) -> str:
@@ -291,6 +410,10 @@ def _compare_row(run_id: str) -> dict:
         "confidence": summary.get("confidence"),
         "approved": summary.get("approved"),
         "severity": summary.get("severity"),
+        "critic_status": summary.get("critic_status"),
+        "critique_reason": summary.get("critique_reason"),
+        "evidence_sufficient": summary.get("evidence_sufficient"),
+        "outcome": summary.get("outcome"),
         "degraded": summary.get("degraded"),
     }
 

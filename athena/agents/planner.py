@@ -13,6 +13,8 @@ import re
 from google.adk.agents import LlmAgent
 
 from athena.agents import bb_io
+from athena.agents.requirements import finding_requirement
+from athena.agents.routing import ensure_step_texts, source_guidance
 from athena.settings.preferences import with_preferences
 from athena.blackboard import Blackboard, BlackboardStore, Plan, PlanStep
 from athena.config.llm import get_adk_model
@@ -81,14 +83,16 @@ def parse_plan_text(text: str) -> list[PlanStep]:
     return parse_steps([str(item) for item in raw])
 
 
-def build_plan_writer(run_id: str, store: BlackboardStore | None = None):
+def build_plan_writer(
+    run_id: str, store: BlackboardStore | None = None, question: str = ""
+):
     def write_plan(steps: list[str]) -> str:
         """Record the research plan. Each step is "<owner>: <what to do>".
 
         Args:
             steps: 2-4 steps, each formatted as "owner: description".
         """
-        plan = Plan(steps=parse_steps(steps))
+        plan = Plan(steps=parse_steps(ensure_step_texts(steps, question)))
         version = Blackboard.open(run_id, store).write("plan", plan, author="planner")
         return f"Plan with {len(plan.steps)} steps recorded at version {version}."
 
@@ -112,6 +116,10 @@ def build_planner(
         text = bb_io.task_text(Blackboard.open(run_id, store))
 
     base = with_preferences(INSTRUCTION)
+    base = f"{base}\n{source_guidance(text)}"
+    requirement = finding_requirement(text)
+    if requirement:
+        base = f"{base}\n{requirement}\nPlan one primary-source investigation per finding."
     if message_mode:
         instruction = (
             f"{base}\nThe task:\n{text}\n\n"
@@ -121,7 +129,7 @@ def build_planner(
         tools = []
     else:
         instruction = f"{base}\nThe task:\n{text}\n"
-        tools = [build_plan_writer(run_id, store)]
+        tools = [build_plan_writer(run_id, store, text)]
 
     return LlmAgent(
         name="planner",

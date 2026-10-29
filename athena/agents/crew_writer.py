@@ -12,6 +12,9 @@ from typing import Callable
 from athena.agents import bb_io
 from athena.agents.crew_roles import crew_call, unpack_result
 from athena.agents.report_sanitize import sanitize_report
+from athena.agents.requirements import finding_requirement
+from athena.agents.sufficiency import assess, gap_answer
+from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import Blackboard, BlackboardStore, Draft, FinalReport
 
 Generate = Callable[[str], object]
@@ -78,6 +81,8 @@ def writer_prompt(blackboard: Blackboard, instruction: str) -> str:
         f"{bb_io.evidence_text(blackboard, limit=8)}\n\n"
         f"ANALYSIS:\n{bb_io.analysis_text(blackboard)}\n"
         f"{revision}\n"
+        f"{UNTRUSTED_DATA_RULE}\n"
+        f"{finding_requirement(bb_io.task_text(blackboard))}\n"
         f"{_preferences_block()}"
         f"Write an answer of at most {MAX_ANSWER_WORDS} words that ends with a "
         "full stop, 3-5 key points, and 1-3 citations whose source_ref is "
@@ -93,6 +98,32 @@ def write_report(
 ) -> dict:
     """Write ``draft`` and ``final_report`` as author ``writer``."""
     blackboard = Blackboard.open(run_id, store)
+    task = bb_io.section(blackboard, "task")
+    question = task.question if task else ""
+    assessment = assess(question, bb_io.load_evidence(blackboard, limit=None))
+    if not assessment.ok:
+        report = FinalReport(
+            answer=gap_answer(question, assessment),
+            key_points=list(assessment.issues),
+            citations=[],
+            confidence=0.0,
+            tools_used=[],
+            guardrail_flags=[],
+            run_id=run_id,
+        )
+        blackboard.write(
+            "draft",
+            Draft(text=report.answer, based_on_evidence_ids=[]),
+            author="writer",
+        )
+        version = blackboard.write("final_report", report, author="writer")
+        return {
+            "section": "final_report",
+            "version": version,
+            "insufficient": True,
+            "evidence_issues": list(assessment.issues),
+        }
+
     prompt = writer_prompt(blackboard, instruction)
     generate = generate or _generate_report
 

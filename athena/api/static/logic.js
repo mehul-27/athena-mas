@@ -11,6 +11,42 @@
     analyst: "crewai", writer: "crewai", critic: "crewai",
   };
 
+  const PATTERNS = Object.freeze(["sequential", "parallel", "hierarchical", "p2p"]);
+  const DEFAULT_PATTERN = "hierarchical";
+
+  function patternValue(value) {
+    return PATTERNS.includes(value) ? value : DEFAULT_PATTERN;
+  }
+
+  function validRunId(value) {
+    return typeof value === "string" && value.trim().length > 0;
+  }
+
+  /* ---------------------------------------------------------------- metrics */
+
+  function metricValue(value) {
+    return (typeof value === "number" && Number.isFinite(value)) ? String(value) : "\u2014";
+  }
+
+  function metricRows(rows) {
+    if (!Array.isArray(rows)) return [];
+    return rows.filter((row) => row && typeof row === "object").map((row) => ({
+      agent: typeof row.agent === "string" && row.agent ? row.agent : "(unknown)",
+      framework: typeof row.framework === "string" && row.framework ? row.framework : "\u2014",
+      stage: (typeof row.stage_ms === "number" && Number.isFinite(row.stage_ms))
+        ? duration(row.stage_ms) : "\u2014",
+      models: metricValue(row.model_calls),
+      tokens_in: metricValue(row.tokens_in),
+      tokens_out: metricValue(row.tokens_out),
+      reasoning: metricValue(row.reasoning_tokens),
+      tools: metricValue(row.tool_calls),
+      errors: metricValue(row.errors),
+      a2a: metricValue(row.a2a_bytes),
+      evidence: metricValue(row.evidence_items),
+      estimated: metricValue(row.estimated_calls),
+    }));
+  }
+
   const frameworkOf = (event) => event.framework || FRAMEWORK[event.agent] || "adk";
 
   /* ---------------------------------------------------------------- timeline */
@@ -93,6 +129,32 @@
     if (!critique || !critique.value) return { approved: null, severity: null };
     const value = critique.value || critique;
     return { approved: Boolean(value.approved), severity: value.severity || null };
+  }
+
+  function critiqueDiagnostic(critique) {
+    const value = critique && critique.value ? critique.value : critique;
+    if (!value) {
+      return {
+        status: "missing",
+        label: "No critique recorded",
+        reason: "The critic did not produce a critique; this is not an approval.",
+        issues: [],
+      };
+    }
+    const issues = (Array.isArray(value.issues) ? value.issues : [])
+      .map((issue) => String(issue)).filter(Boolean);
+    const status = value.approved === true ? "approved"
+      : value.approved === false ? "rejected" : "unknown";
+    const label = status === "unknown"
+      ? "Critic verdict unavailable"
+      : verdictLabel(value.approved, value.severity);
+    return {
+      status,
+      label,
+      reason: issues.length ? issues[0]
+        : status === "approved" ? "No issues recorded." : "No rejection reason was recorded.",
+      issues,
+    };
   }
 
   function citationRows(report) {
@@ -433,8 +495,10 @@
   const api = {
     frameworkOf, reduceTimeline, a2aBytes, duration, bytes, tokens,
     relativeTime, groupHistory, tabReducer, progressStrip,
-    verdictLabel, verdictFromCritique, citationRows, statusPill, blackboardCards,
+    verdictLabel, verdictFromCritique, critiqueDiagnostic, citationRows, statusPill, blackboardCards,
     validateProfile, presetFill, requestState, isBusy,
+    PATTERNS, DEFAULT_PATTERN, patternValue, validRunId,
+    metricRows, metricValue,
     diagramFor, diagramState, NODES, PATTERN_EDGES,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

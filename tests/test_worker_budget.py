@@ -9,6 +9,8 @@ import pytest
 from athena.agents.budget import (
     DEFAULT_MAX_MODEL_CALLS,
     DEFAULT_MAX_TOOL_CALLS,
+    DEFAULT_RESEARCHER_MAX_MODEL_CALLS,
+    DEFAULT_RESEARCHER_MAX_TOOL_CALLS,
     DUPLICATE_RESULT,
     STOP_TEXT,
     Budget,
@@ -139,3 +141,73 @@ def test_defaults_are_sane(monkeypatch) -> None:
 ])
 def test_call_key_is_stable(name: str, args: dict) -> None:
     assert call_key(name, args) == call_key(name, dict(reversed(list(args.items()))))
+
+
+def test_researcher_limits_are_role_scoped(monkeypatch) -> None:
+    for name in (
+        "ATHENA_RESEARCHER_MAX_TOOL_CALLS",
+        "ATHENA_RESEARCHER_MAX_MODEL_CALLS",
+        "ATHENA_MAX_TOOL_CALLS",
+        "ATHENA_WORKER_MAX_MODEL_CALLS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    researcher = Budget.from_env("researcher")
+    role_researcher = Budget.from_env("web_researcher")
+    analyst = Budget.from_env("analyst")
+
+    assert researcher.max_tool_calls == DEFAULT_RESEARCHER_MAX_TOOL_CALLS == 8
+    assert researcher.max_model_calls == DEFAULT_RESEARCHER_MAX_MODEL_CALLS == 10
+    assert role_researcher.max_tool_calls == 8
+    assert role_researcher.max_model_calls == 10
+    assert analyst.max_tool_calls == DEFAULT_MAX_TOOL_CALLS == 3
+    assert analyst.max_model_calls == DEFAULT_MAX_MODEL_CALLS == 6
+
+
+def test_researcher_env_override_does_not_change_the_global_default(monkeypatch) -> None:
+    monkeypatch.setenv("ATHENA_RESEARCHER_MAX_TOOL_CALLS", "12")
+    monkeypatch.setenv("ATHENA_RESEARCHER_MAX_MODEL_CALLS", "14")
+    monkeypatch.setenv("ATHENA_MAX_TOOL_CALLS", "3")
+    monkeypatch.setenv("ATHENA_WORKER_MAX_MODEL_CALLS", "6")
+
+    researcher = Budget.from_env("researcher")
+    analyst = Budget.from_env("analyst")
+
+    assert (researcher.max_tool_calls, researcher.max_model_calls) == (12, 14)
+    assert (analyst.max_tool_calls, analyst.max_model_calls) == (3, 6)
+
+
+def test_researcher_allows_one_search_five_fetches_and_one_rag(monkeypatch) -> None:
+    monkeypatch.delenv("ATHENA_RESEARCHER_MAX_TOOL_CALLS", raising=False)
+    budget = Budget.from_env("researcher")
+    tool = SimpleNamespace(name="fetch_page")
+
+    calls = [
+        ("web_search", {"query": "python 3.13"}),
+        *[
+            ("fetch_page", {"url": f"https://docs.python.org/3.13/page-{index}"})
+            for index in range(5)
+        ],
+        ("rag_search", {"query": "python 3.13", "top_k": 3}),
+    ]
+    for name, args in calls:
+        assert budget.before_tool(SimpleNamespace(name=name), args, None) is None
+
+    assert budget.tool_calls == 7
+    assert budget.before_tool(tool, {"url": "https://docs.python.org/3.13/extra"}, None) is None
+    assert budget.tool_calls == 8
+    refusal = budget.before_tool(tool, {"url": "https://docs.python.org/3.13/over"}, None)
+    assert refusal is not None
+    assert budget.stop_reason == "tool_budget"
+
+
+def test_researcher_model_budget_refuses_the_eleventh_call(monkeypatch) -> None:
+    monkeypatch.delenv("ATHENA_RESEARCHER_MAX_MODEL_CALLS", raising=False)
+    budget = Budget.from_env("researcher")
+
+    for _ in range(10):
+        assert budget.before_model(None, _request()) is None
+
+    response = budget.before_model(None, _request())
+    assert response is not None
+    assert budget.stop_reason == "model_budget"

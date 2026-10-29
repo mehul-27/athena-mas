@@ -19,9 +19,11 @@ from google.genai import types
 
 from athena.agents.a2a_client import build_payload, send_role_request
 from athena.agents.a2a_stage import DEFAULT_CARD_URL, INSTRUCTIONS
-from athena.agents.planner import build_planner, parse_plan_text
+from athena.agents.planner import build_planner, parse_plan_text, parse_steps
 from athena.agents.report_sanitize import evidence_ids_for, sanitize_report
 from athena.agents.researcher import build_researcher
+from athena.agents.routing import ensure_step_texts
+from athena.agents.sufficiency import assess, gap_answer
 from athena.agents import a2a_client
 from athena.blackboard import Analysis, Blackboard, Critique, Draft, FinalReport, Plan
 from athena.observability.recorder import get_recorder
@@ -67,6 +69,10 @@ class P2PAgent(BaseAgent):
             yield event
             raw = _text_of(event) or raw
         plan = Plan(steps=parse_plan_text(raw))
+        plan = Plan(steps=parse_steps(ensure_step_texts(
+            [f"{step.assigned_to}: {step.description}" for step in plan.steps],
+            self.question,
+        )))
         context.plan = render_plan(plan)
         yield _timing("planner", started)
         self._blackboard().write("plan", plan, author="planner")  # audit
@@ -122,8 +128,10 @@ class P2PAgent(BaseAgent):
             context.analysis = content
             return self._audit_analysis(content)
         if role == "writer":
-            context.report = content
-            return self._audit_report(content, context.evidence)
+            audited = self._audit_report(content, context.evidence)
+            context.report = audited
+            return audited
+        context.critique = content
         context.critique = content
         return self._audit_critique(content)
 
@@ -136,21 +144,33 @@ class P2PAgent(BaseAgent):
         return content
 
     def _audit_report(self, content: str, items: list) -> str:
-        try:
-            report = FinalReport.model_validate(json.loads(content))
-        except Exception as exc:  # noqa: BLE001
+        assessment = assess(self.question, items)
+        if not assessment.ok:
             report = FinalReport(
-                answer=f"The report could not be generated ({type(exc).__name__}).",
-                confidence=0.0, run_id=self.run_id,
+                answer=gap_answer(self.question, assessment),
+                key_points=list(assessment.issues),
+                citations=[],
+                confidence=0.0,
+                tools_used=[],
+                guardrail_flags=[],
+                run_id=self.run_id,
             )
-        report = sanitize_report(report, self._blackboard(), self.run_id, items=items)
+        else:
+            try:
+                report = FinalReport.model_validate(json.loads(content))
+            except Exception as exc:  # noqa: BLE001
+                report = FinalReport(
+                    answer=f"The report could not be generated ({type(exc).__name__}).",
+                    confidence=0.0, run_id=self.run_id,
+                )
+            report = sanitize_report(report, self._blackboard(), self.run_id, items=items)
         self._blackboard().write(
             "draft",
             Draft(text=report.answer, based_on_evidence_ids=evidence_ids_for(report, items)),
             author="writer",
         )
         self._blackboard().write("final_report", report, author="writer")
-        return content
+        return report.model_dump_json()
 
     def _audit_critique(self, content: str) -> str:
         try:

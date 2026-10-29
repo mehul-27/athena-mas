@@ -17,6 +17,8 @@ from google.adk.events import Event
 from google.genai import types
 
 from athena.agents import bb_io
+from athena.agents.researcher import build_role_researcher
+from athena.agents.routing import classify, critique_needs_research
 from athena.agents.supervisor import timed_stage
 from athena.blackboard import Blackboard
 
@@ -74,6 +76,21 @@ class HierarchicalAgent(BaseAgent):
             if not rejected or critique.severity != "high" or rounds >= self.revision_limit:
                 break
             rounds += 1
+            if critique_needs_research(list(critique.issues or [])):
+                task = bb_io.section(blackboard, "task")
+                gap_text = bb_io.critique_text(blackboard)
+                recovery_task = (
+                    f"{bb_io.task_text(blackboard)}\n\n"
+                    f"CRITIC GAPS TO RESOLVE WITH NEW PRIMARY EVIDENCE:\n{gap_text}"
+                )
+                role = "rag_researcher" if classify(
+                    task.question if task else ""
+                ).kind == "local" else "web_researcher"
+                worker = build_role_researcher(
+                    role, self.run_id, self.store, task_text=recovery_task
+                )
+                async for event in timed_stage(self.name, worker, ctx):
+                    yield event
 
         yield Event(
             author=self.name,
@@ -92,7 +109,6 @@ class HierarchicalAgent(BaseAgent):
 def build(run_id: str, store: Any = None, card_url: str = "") -> HierarchicalAgent:
     from athena.agents.a2a_stage import DEFAULT_CARD_URL, build_a2a_stage
     from athena.agents.planner import build_planner
-    from athena.agents.researcher import build_role_researcher
 
     card_url = card_url or DEFAULT_CARD_URL
     return HierarchicalAgent(

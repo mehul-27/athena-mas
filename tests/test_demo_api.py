@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from athena.api import replay
 from athena.api.app import create_app
 from athena.api.runs import RunRegistry
+from athena.observability.events import Event
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "athena" / "api" / "static"
@@ -65,6 +66,78 @@ def test_questions_include_demo_and_eval(client: TestClient) -> None:
 def test_invalid_pattern_is_rejected(client: TestClient) -> None:
     response = client.post("/api/runs", json={"question": "q", "pattern": "nonsense"})
     assert response.status_code == 422
+
+
+def test_metrics_endpoint_returns_recorded_rows(monkeypatch) -> None:
+    events = [
+        Event(run_id="r1", kind="stage_end", agent="researcher", framework="adk",
+              duration_ms=1200, tokens_in=3),
+        Event(run_id="r1", kind="model_call", agent="researcher", framework="adk",
+              tokens_in=100, tokens_out=20),
+        Event(run_id="r1", kind="tool_call", agent="researcher", framework="adk"),
+    ]
+
+    class Store:
+        def events(self, _run_id):
+            return events
+
+    monkeypatch.setattr("athena.api.app._store", lambda: Store())
+    client = TestClient(create_app())
+    response = client.get("/api/runs/r1/metrics")
+
+    assert response.status_code == 200
+    rows = response.json()["rows"]
+    assert rows and rows[0]["agent"] == "researcher"
+    assert rows[0]["model_calls"] == 1
+    assert rows[0]["tokens_in"] == 100
+    assert rows[0]["tool_calls"] == 1
+
+
+def test_metrics_endpoint_returns_empty_rows(monkeypatch) -> None:
+    class Store:
+        def events(self, _run_id):
+            return []
+
+    monkeypatch.setattr("athena.api.app._store", lambda: Store())
+    client = TestClient(create_app())
+    response = client.get("/api/runs/empty/metrics")
+
+    assert response.status_code == 200
+    assert response.json() == {"run_id": "empty", "rows": []}
+
+
+
+@pytest.mark.parametrize("pattern", ["sequential", "parallel", "hierarchical", "p2p"])
+def test_requested_pattern_reaches_the_run_registry(monkeypatch, tmp_path, pattern) -> None:
+    import athena.api.runs as runs_module
+
+    captured: dict = {}
+
+    class FakeProcess:
+        pid = 1234
+        returncode = None
+
+        def poll(self):
+            return None
+
+    def fake_popen(argv, **_kwargs):
+        captured["argv"] = list(argv)
+        return FakeProcess()
+
+    monkeypatch.setattr(runs_module, "RUN_DIR", tmp_path)
+    monkeypatch.setattr(runs_module.subprocess, "Popen", fake_popen)
+    registry = RunRegistry(command=["stub-runner"])
+    app = create_app(registry)
+    monkeypatch.setattr("athena.api.app._crew_server_up", lambda *a, **k: False)
+    client = TestClient(app)
+
+    response = client.post("/api/runs", json={"question": "q", "pattern": pattern})
+
+    assert response.status_code == 200, response.text
+    assert registry.active is not None
+    assert registry.active.pattern == pattern
+    assert captured["argv"][-2] == pattern, "the pattern must reach the run process"
+
 
 
 def test_question_is_length_limited(client: TestClient) -> None:

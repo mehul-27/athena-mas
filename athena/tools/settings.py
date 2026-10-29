@@ -72,3 +72,19 @@ def user_agent() -> str:
 
 def search_timeout() -> float:
     return float(os.getenv("SEARCH_TIMEOUT", "15"))
+
+
+def fetch_timeout() -> float:
+    return float(os.getenv("WEB_FETCH_TIMEOUT", "12"))
+
+
+def fetch_total_timeout() -> float:
+    return float(os.getenv("WEB_FETCH_TOTAL_TIMEOUT", "20"))
+
+
+def fetch_max_bytes() -> int:
+    return int(os.getenv("WEB_FETCH_MAX_BYTES", "1000000"))
+
+
+def fetch_max_chars() -> int:
+    return int(os.getenv("WEB_FETCH_MAX_CHARS", "8000"))

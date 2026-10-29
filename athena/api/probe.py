@@ -55,6 +55,35 @@ def _error(kind: str, message: str) -> list[dict]:
              "error": message[:LINE_LIMIT]}]
 
 
+def _parse_json_output(text: str):
+    """Return a JSON array/object even if a probe logged a line first.
+
+    The child process owns stdout, but a probe may legitimately emit a
+    human-readable diagnostic before the JSON body. Only a complete JSON value
+    that reaches the end of the stream is accepted; malformed or truncated
+    payloads still fall through to ``InvalidJson``.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        return json.loads(stripped)
+    except ValueError:
+        pass
+
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(stripped):
+        if char not in "[{":
+            continue
+        try:
+            value, end = decoder.raw_decode(stripped[index:])
+        except ValueError:
+            continue
+        if isinstance(value, (list, dict)) and not stripped[index + end:].strip():
+            return value
+    return None
+
+
 async def run_preflight(env: dict[str, str], timeout: int = 120) -> list[dict]:
     """One preflight call as an async child process. Always returns a list."""
     started = time.perf_counter()
@@ -80,9 +109,8 @@ async def run_preflight(env: dict[str, str], timeout: int = 120) -> list[dict]:
 
     log.info("preflight finished in %.1fs (exit %s)",
              time.perf_counter() - started, process.returncode)
-    try:
-        parsed = json.loads(stdout.decode("utf-8", "replace") or "null")
-    except ValueError:
+    parsed = _parse_json_output(stdout.decode("utf-8", "replace"))
+    if parsed is None:
         text = (stderr or stdout).decode("utf-8", "replace")
         return _error("InvalidJson", text.strip() or "preflight printed nothing")
     if isinstance(parsed, list):

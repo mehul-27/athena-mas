@@ -46,12 +46,21 @@ def _profile(with_key: bool = True) -> dict:
 def test_activation_starts_the_server_with_the_profile_env(monkeypatch, client) -> None:
     profile = _profile()
     seen: dict = {}
+    server = {"up": True}
 
-    monkeypatch.setattr(activation, "stop_server", lambda: seen.setdefault("stopped", True))
-    monkeypatch.setattr(activation, "server_up", lambda **kwargs: True)
+    def fake_stop():
+        seen["stopped"] = True
+        server["up"] = False
+
+    def fake_up(**_kwargs):
+        return server["up"]
+
+    monkeypatch.setattr(activation, "stop_server", fake_stop)
+    monkeypatch.setattr(activation, "server_up", fake_up)
 
     def fake_start(env_extra, wait_s=60):
         seen["env"] = dict(env_extra)
+        server["up"] = True
         return True
 
     monkeypatch.setattr(activation, "start_server", fake_start)
@@ -67,6 +76,24 @@ def test_activation_starts_the_server_with_the_profile_env(monkeypatch, client) 
     assert seen["env"]["LLM_MODEL"] == "openai/fake-model"
     assert SENTINEL not in response.text, "never echo the key"
     assert store.active_id() == profile["id"]
+
+
+def test_activation_refuses_when_the_old_server_survives(monkeypatch, client) -> None:
+    profile = _profile()
+    started: list = []
+    monkeypatch.setattr(activation, "stop_server", lambda: None)
+    monkeypatch.setattr(activation, "server_up", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        activation, "start_server",
+        lambda *a, **k: started.append(1) or True,
+    )
+
+    response = client.post("/api/settings/activate", json={"profile_id": profile["id"]})
+
+    assert response.status_code == 409
+    assert "did not stop" in response.json()["detail"]
+    assert started == [], "must not start over a server that never stopped"
+    assert store.active_id() == "", "must not claim activation"
 
 
 def test_activation_without_a_key_is_409_and_starts_nothing(monkeypatch, client) -> None:
@@ -93,6 +120,8 @@ def test_health_reports_the_active_profile(monkeypatch, client) -> None:
     assert health["active_profile"]["name"] == "Gateway"
     assert health["active_profile"]["model"] == "openai/fake-model"
     assert health["active_profile"]["api_host"] == "gateway.example"
+    assert health["model"] == "openai/fake-model"
+    assert health["api_host"] == "gateway.example"
     assert SENTINEL not in json.dumps(health)
 
 

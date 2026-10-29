@@ -8,11 +8,13 @@ blackboard, not in a prompt.
 
 from __future__ import annotations
 
+from athena.agents.untrusted import wrap_untrusted
 from athena.blackboard import Analysis, Blackboard, EvidenceItem, Task
 
 MAX_EVIDENCE_ITEMS = 8
 MAX_EVIDENCE_CHARS = 600
 MAX_PLAN_STEPS = 8
+CITABLE_EVIDENCE_TYPES = frozenset({"rag", "web", "calculation", "forecast"})
 
 
 _READS_FORBIDDEN = False
@@ -59,15 +61,28 @@ def plan_text(blackboard: Blackboard) -> str:
     )
 
 
+def _evidence_priority(item) -> int:
+    """Fetched pages first, then RAG, then search snippets."""
+    if item.source_type == "web" and item.id.startswith("fetch-"):
+        return 0
+    if item.source_type == "rag":
+        return 1
+    return 2
+
+
 def evidence_text(
     blackboard: Blackboard,
     limit: int = MAX_EVIDENCE_ITEMS,
     max_chars: int = MAX_EVIDENCE_CHARS,
 ) -> str:
     """Evidence as compact prompt lines: id, kind, source ref, truncated text."""
-    items = load_evidence(blackboard, limit)
+    items = load_evidence(blackboard, limit=None)
     if not items:
         return "(no evidence recorded)"
+    items = [item for item in items if item.source_type in CITABLE_EVIDENCE_TYPES]
+    items = sorted(items, key=_evidence_priority)[:limit]
+    if not items:
+        return "(no citable evidence recorded)"
 
     lines = []
     for item in items:
@@ -75,7 +90,7 @@ def evidence_text(
         if len(text) > max_chars:
             text = text[:max_chars].rstrip() + "..."
         lines.append(f"[{item.id}] {item.source_type} | {item.source_ref} | {text}")
-    return "\n".join(lines)
+    return wrap_untrusted("\n".join(lines))
 
 
 def analysis_text(blackboard: Blackboard) -> str:

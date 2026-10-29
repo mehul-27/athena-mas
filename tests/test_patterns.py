@@ -181,7 +181,7 @@ def _hierarchical(store, blackboard, writer_calls, critic_plan):
         blackboard.write(
             "critique",
             Critique(
-                issues=[] if approved else ["claim not supported"],
+                issues=[] if approved else ["answer is verbose and poorly organized"],
                 severity="low" if approved else "high",
                 approved=approved,
             ),
@@ -215,6 +215,70 @@ def test_hierarchical_dispatches_from_the_plan(tmp_path) -> None:
     assert workers["rag_researcher"].calls == 1
     assert workers["calc_researcher"].calls == 1
     assert workers["web_researcher"].calls == 0
+
+
+def test_hierarchical_rejection_requests_bounded_research_recovery(
+    tmp_path, monkeypatch
+) -> None:
+    store = SQLiteStore(tmp_path / "bb.db")
+    blackboard = Blackboard.create(
+        Task(question="Explain three key changes in Python 3.13."), store=store
+    )
+    writer_calls: list[int] = []
+    recovery_calls: list[int] = []
+
+    def write_plan(_=None):
+        blackboard.write(
+            "plan",
+            Plan(steps=[PlanStep(id="s1", description="search", assigned_to="web_researcher")]),
+            author="planner",
+        )
+
+    def write_report(call_number):
+        writer_calls.append(call_number)
+
+    def write_critique(call_number):
+        rejected = call_number == 1
+        blackboard.write(
+            "critique",
+            Critique(
+                issues=["missing source evidence for the requested findings"] if rejected else [],
+                severity="high" if rejected else "low",
+                approved=not rejected,
+            ),
+            author="critic",
+        )
+
+    def fake_researcher(role, run_id, store, task_text=None):
+        assert role == "web_researcher"
+        assert "CRITIC GAPS" in task_text
+        return StubStage("recovery", lambda number: recovery_calls.append(number))
+
+    monkeypatch.setattr(
+        "athena.patterns.hierarchical.build_role_researcher", fake_researcher
+    )
+
+    agent = HierarchicalAgent(
+        name="supervisor",
+        planner=StubStage("planner", write_plan),
+        workers={
+            role: StubStage(role)
+            for role in ("rag_researcher", "web_researcher", "calc_researcher")
+        },
+        analyst=StubStage("analyst"),
+        writer=StubStage("writer", write_report),
+        critic=StubStage("critic", write_critique),
+        run_id=blackboard.run_id,
+        store=store,
+        revision_limit=1,
+    )
+
+    _collect(agent)
+
+    assert len(writer_calls) == 2
+    assert recovery_calls == [1]
+    assert blackboard.read("critique")[0].approved is True
+
 
 
 def test_hierarchical_revises_once_when_rejected(tmp_path) -> None:

@@ -6,6 +6,7 @@ import pytest
 
 from athena.agents import bb_io
 from athena.agents.evidence_recorder import record_tool_result
+from athena.agents.untrusted import UNTRUSTED_BEGIN, UNTRUSTED_END
 from athena.blackboard import Blackboard, EvidenceItem, SQLiteStore, Task
 from athena.tools.schemas import CalcResult, RagHit, RagResult, WebHit, WebResult
 
@@ -37,16 +38,24 @@ def test_evidence_text_bounds_items_and_truncates(bb: Blackboard) -> None:
     text = bb_io.evidence_text(bb)
 
     lines = text.splitlines()
-    assert len(lines) == bb_io.MAX_EVIDENCE_ITEMS
-    assert all(line.endswith("...") for line in lines)
-    assert all(len(line) < bb_io.MAX_EVIDENCE_CHARS + 120 for line in lines)
+    item_lines = [line for line in lines if line.startswith("[")]
+    assert lines[0] == UNTRUSTED_BEGIN
+    assert lines[-1] == UNTRUSTED_END
+    assert len(item_lines) == bb_io.MAX_EVIDENCE_ITEMS
+    assert all(line.endswith("...") for line in item_lines)
+    assert all(len(line) < bb_io.MAX_EVIDENCE_CHARS + 120 for line in item_lines)
     assert "handbook.pdf#p0-chunk-0" in text
 
 
 def test_evidence_text_respects_a_custom_limit(bb: Blackboard) -> None:
     for index in range(5):
         bb.append("evidence", _evidence(index), author="researcher")
-    assert len(bb_io.evidence_text(bb, limit=2).splitlines()) == 2
+    text = bb_io.evidence_text(bb, limit=2)
+    item_lines = [line for line in text.splitlines() if line.startswith("[")]
+
+    assert text.startswith(UNTRUSTED_BEGIN)
+    assert text.endswith(UNTRUSTED_END)
+    assert len(item_lines) == 2
 
 
 def test_empty_sections_render_placeholders(bb: Blackboard) -> None:

@@ -9,23 +9,29 @@ FastMCP returns each result twice (text content plus ``structuredContent``), so
 echoing it back would burn the provider's input-token budget for text the model
 does not need — the evidence is already on the blackboard.
 
-Rule for failures: a tool call that failed (``ok=false``, or an MCP-level
-``isError``) records **no** evidence and returns the response untouched. A tool
-error is not a source.
+Rule for failures: a search or calculation that failed records **no** evidence
+and returns the response untouched. A failed page fetch is recorded as
+provenance (``source_type="other"``) so the attempt is visible, but it is not a
+citable web source. A tool error is not evidence.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from pydantic import ValidationError
 
+from athena.agents.untrusted import (
+    UNTRUSTED_BEGIN,
+    UNTRUSTED_DATA_RULE,
+    wrap_untrusted,
+)
 from athena.blackboard import Blackboard, BlackboardStore
 from athena.tools.adapters import rag_source_ref, to_evidence_items
 from athena.tools.schemas import (
     CalcResult,
+    FetchResult,
     ForecastResult,
     RagResult,
     ToolResult,
@@ -33,16 +39,12 @@ from athena.tools.schemas import (
 )
 
 AUTHOR = "researcher"
-
-# A hard ceiling on tool calls per researcher run. Every tool round-trip is
-# re-sent on the next model call, so a chatty researcher exhausts a free tier's
-# input-token budget and the run fails. Past the budget the hook stops
-# recording and tells the model to finish.
-MAX_TOOL_CALLS = int(os.getenv("ATHENA_MAX_TOOL_CALLS", "3"))
+MAX_FETCH_INSPECT_CHARS = 4000
 
 TOOL_MODELS: dict[str, type[ToolResult]] = {
     "rag_search": RagResult,
     "web_search": WebResult,
+    "fetch_page": FetchResult,
     "calculate": CalcResult,
     "forecast": ForecastResult,
 }
@@ -92,6 +94,24 @@ def compact_result(tool_name: str, result: ToolResult) -> dict[str, Any]:
             "recorded": len(result.results),
             "sources": [hit.url for hit in result.results],
             "note": "Results are saved to the blackboard.",
+        }
+    if isinstance(result, FetchResult):
+        return {
+            "untrusted_external_content": True,
+            "content_boundary": UNTRUSTED_BEGIN,
+            "status": result.status,
+            "requested_url": result.requested_url,
+            "final_url": result.final_url,
+            "canonical_url": result.canonical_url,
+            "title": result.title,
+            "truncated": result.truncated,
+            "inspect_truncated": len(result.text) > MAX_FETCH_INSPECT_CHARS,
+            "text": wrap_untrusted(result.text[:MAX_FETCH_INSPECT_CHARS]),
+            "note": (
+                f"{UNTRUSTED_DATA_RULE} Full bounded page text is on the "
+                "blackboard; cite this page only when its text supports the claim."
+            ),
+            "error": result.error,
         }
     if isinstance(result, CalcResult):
         return {"recorded": 1, "value": result.value, "expression": result.expression}
@@ -151,40 +171,16 @@ def make_evidence_recorder(
         if result is None:
             # Nothing trustworthy arrived: let the model see the original error.
             return None
-        record_tool_result(run_id, tool_name, tool_response, store, sink, author=author)
-        if not result.ok:
-            # A failed tool is not evidence, but the model gets a small answer
-            # instead of the whole payload it already could not use.
+        written = record_tool_result(
+            run_id, tool_name, tool_response, store, sink, author=author
+        )
+        if not result.ok and not isinstance(result, FetchResult):
+            # A failed search/calculation is not a source, but the model gets a
+            # small answer instead of the whole payload it already could not use.
             return {"recorded": 0, "error": result.error or "tool failed"}
-        return compact_result(tool_name, result)
+        payload = compact_result(tool_name, result)
+        if isinstance(result, FetchResult):
+            payload["recorded"] = written
+        return payload
 
     return evidence_recorder
-
-class ToolBudget:
-    """Shared counter so a worker cannot loop on tool calls forever.
-
-    Every tool round-trip is re-sent on the next model call, so an unbounded
-    loop burns the provider quota and the run never ends.
-    """
-
-    def __init__(self, limit: int = MAX_TOOL_CALLS) -> None:
-        self.limit = limit
-        self.calls = 0
-
-    def take(self) -> bool:
-        self.calls += 1
-        return self.calls <= self.limit
-
-
-def make_tool_guard(budget: ToolBudget):
-    """Refuse the tool call once the budget is gone (ADK skips the call)."""
-
-    def before_tool(tool, args, tool_context):
-        if budget.take():
-            return None
-        return {
-            "recorded": 0,
-            "note": f"Tool budget of {budget.limit} calls reached. Reply DONE now.",
-        }
-
-    return before_tool

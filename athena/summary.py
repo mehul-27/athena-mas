@@ -41,6 +41,10 @@ class RunSummary:
     confidence: float | None = None
     approved: bool | None = None
     severity: str | None = None
+    critic_status: str = "missing"
+    critique_reason: str = ""
+    evidence_sufficient: bool | None = None
+    outcome: str = "incomplete"
     stage_errors: list[str] = field(default_factory=list)
     degraded: bool = False
     failed: bool = False
@@ -103,9 +107,63 @@ def note_ack(summary: RunSummary, text: str) -> dict | None:
     return None
 
 
+def critique_details(critique, stage_errors) -> tuple[str, str]:
+    """Return (status, reason) without ever turning a missing critique into approval."""
+    if critique is None:
+        failed = any(error.startswith("critic:") for error in (stage_errors or []))
+        if failed:
+            return "failed", "critic failed before producing a critique: " + ", ".join(stage_errors)
+        return "missing", "no critique recorded; this is not an approval"
+    status = "approved" if critique.approved else "rejected"
+    issues = [str(issue).strip() for issue in (critique.issues or []) if str(issue).strip()]
+    reason = (
+        " | ".join(issues)
+        if issues
+        else ("approved with no issues" if critique.approved else "rejected without a reason")
+    )
+    return status, reason
+
+
+def note_critique(summary: "RunSummary", critique) -> "RunSummary":
+    """Record the critic verdict, or distinguish a missing/failed critique."""
+    if critique is None:
+        summary.critic_status, summary.critique_reason = critique_details(
+            None, summary.stage_errors
+        )
+        return summary
+
+    summary.approved = critique.approved
+    summary.severity = critique.severity
+    summary.critic_status, summary.critique_reason = critique_details(critique, [])
+    return summary
+
+
 def finish(summary: RunSummary) -> RunSummary:
     """A run with any failed stage is degraded, whatever the end state looks like."""
     summary.degraded = summary.degraded or bool(summary.stage_errors)
+    return summary
+
+
+def set_outcome(
+    summary: RunSummary, report_present: bool, evidence_sufficient: bool
+) -> RunSummary:
+    """Classify a normally terminated run without calling it a success by default."""
+    summary.evidence_sufficient = evidence_sufficient
+    if summary.failed:
+        outcome = "failed"
+    elif not report_present:
+        outcome = "incomplete"
+    elif summary.critic_status in {"failed", "missing"}:
+        outcome = "incomplete"
+    elif summary.approved is False:
+        outcome = "rejected"
+    elif summary.approved is True and evidence_sufficient:
+        outcome = "approved"
+    else:
+        outcome = "incomplete"
+    summary.outcome = outcome
+    if outcome != "approved":
+        summary.degraded = True
     return summary
 
 def summary_line(summary: RunSummary) -> str:

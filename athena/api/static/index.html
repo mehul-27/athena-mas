@@ -14,11 +14,11 @@
       <img class="brand-logo" src="/assets/athenalogo.svg" alt="" />
       <span class="brand-word">ATHENA</span>
     </div>
-    <div class="status-pill" id="status-pill" title="states">
+    <div class="status-pill" id="status-pill" title="Provider and run status">
       <span class="dot" id="status-crew-dot"></span>
-      <span id="status-short">crew: checking</span>
+      <span id="status-short">checking</span>
       <span id="status-crew" class="sr-only">crew: checking</span>
-      <span id="status-mode" class="sr-only">live</span>
+      <span id="status-mode" class="sr-only">mode: live</span>
       <span id="status-model" class="sr-only">-</span>
       <span id="status-host" class="sr-only">-</span>
     </div>
@@ -31,15 +31,18 @@
   <p id="banner" class="banner hidden" role="status"></p>
 
   <div class="shell">
-    <aside class="sidebar" id="sidebar" aria-label="Runs and views">
+    <aside class="sidebar" id="sidebar" aria-label="Research and views">
+      <button class="new-chat" id="new-chat" type="button">+ New chat</button>
+
       <div class="sidebar-group">
         <div class="sidebar-label">History <button class="link-button" id="history-refresh" type="button">refresh</button></div>
-        <ul class="sidebar-list" id="history-list"><li class="sidebar-empty">no runs yet</li></ul>
+        <ul class="sidebar-list" id="history-list"><li class="sidebar-empty">loading history...</li></ul>
         <button class="link-button hidden" id="history-more" type="button">show more</button>
       </div>
+
       <div class="sidebar-group">
         <div class="sidebar-label">
-          <button class="link-button" id="replay-toggle" type="button" aria-expanded="false">Demo recordings</button>
+          <button class="link-button" id="replay-toggle" type="button" aria-expanded="false">Recordings</button>
         </div>
         <div id="replay-panel" class="hidden">
           <ul class="sidebar-list" id="replay-list"><li class="sidebar-empty">loading...</li></ul>
@@ -50,9 +53,11 @@
           </div>
         </div>
       </div>
+
       <nav class="sidebar-group sidebar-nav">
-        <button class="nav-item" data-view="run" type="button" id="nav-run">Run</button>
-        <button class="nav-item" data-view="how" type="button" id="nav-how">How it works</button>
+        <button class="nav-item active" data-view="run" type="button" id="nav-run">Research</button>
+        <button class="nav-item" data-view="details" type="button" id="nav-details">Run details</button>
+        <button class="nav-item" data-view="how" type="button" id="nav-how">Architecture</button>
         <button class="nav-item" data-view="documents" type="button" id="nav-documents">Documents</button>
         <button class="nav-item" data-view="settings" type="button" id="nav-settings">Settings</button>
       </nav>
@@ -60,54 +65,111 @@
 
     <main class="main" id="main">
       <section class="view" id="view-run">
-        <form class="composer" id="composer" autocomplete="off">
-          <div class="composer-row">
-            <textarea id="question" rows="1" placeholder="Ask about NASA systems engineering"></textarea>
-            <button class="primary" id="run-button" type="submit">Run</button>
-          </div>
-          <div class="composer-row">
-            <div class="chips" id="pattern-chips" role="group" aria-label="Pattern">
-              <button class="chip selected" data-pattern="sequential" type="button">sequential</button>
-              <button class="chip" data-pattern="parallel" type="button">parallel</button>
-              <button class="chip" data-pattern="hierarchical" type="button">hierarchical</button>
-              <button class="chip" data-pattern="p2p" type="button">p2p</button>
-            </div>
-            <button class="link-button" id="compare-all" type="button">Compare all four</button>
-            <div class="popover-host">
-              <button class="link-button" id="examples-toggle" type="button" aria-expanded="false">Examples</button>
-              <ul class="popover hidden" id="examples-popover" role="listbox"></ul>
+        <div class="conversation" id="conversation">
+          <div class="empty-hero" id="empty-state">
+            <p class="eyebrow">Athena</p>
+            <h1>What should we research?</h1>
+            <p class="empty-copy">Ask a question. Athena plans, searches, and cites its sources.</p>
+            <div class="empty-suggestions" id="empty-suggestions" aria-label="Example research questions"></div>
+            <div class="empty-actions">
+              <span class="hint">Need another starting point?</span>
+              <div class="popover-host">
+                <button class="link-button" id="examples-toggle" type="button" aria-expanded="false">More examples</button>
+                <ul class="popover hidden" id="examples-popover" role="listbox"></ul>
+              </div>
             </div>
           </div>
-        </form>
+
+          <div class="exchange hidden" id="exchange">
+            <div class="user-turn">
+              <span class="turn-label">You</span>
+              <p id="user-question"></p>
+            </div>
+
+            <div class="exchange-status hidden" id="exchange-status" role="status" aria-live="polite">
+              <span id="exchange-status-text"></span>
+              <span class="exchange-status-actions">
+                <button class="link-button hidden" id="reconnect-run" type="button">Reconnect live updates</button>
+                <button class="link-button hidden" id="exchange-details" type="button">Run details</button>
+              </span>
+            </div>
+
+            <div class="tab-panel" id="panel-answer">
+              <section class="card result-card" id="result-card">
+                <div class="card-head">
+                  <h2 id="result-title">Athena</h2>
+                  <div class="card-head-actions">
+                    <span class="badge hidden" id="replay-badge">REPLAY</span>
+                    <button class="ghost" id="copy-markdown" type="button">Copy Markdown</button>
+                  </div>
+                </div>
+                <p class="answer prose" id="report-answer">Ask a question, or replay a recording.</p>
+                <ul class="points prose" id="report-points"></ul>
+                <div class="meta-row" id="report-meta"></div>
+                <div class="critique-detail hidden" id="critique-detail" aria-live="polite"></div>
+                <div class="citations" id="report-citations"></div>
+                <div class="sources">
+                  <div class="sidebar-label">Sources</div>
+                  <ol id="sources-list"></ol>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <p class="previous-run hidden" id="previous-run-status" role="status">
+          <span id="previous-run-text"></span>
+          <button class="link-button" id="previous-run-dismiss" type="button">dismiss</button>
+        </p>
 
         <p class="progress-strip hidden" id="progress-strip" aria-live="polite"></p>
 
+        <form class="composer" id="composer" autocomplete="off">
+          <div class="composer-pattern">
+            <label for="composer-pattern">Pattern</label>
+            <select id="composer-pattern" aria-label="Orchestration pattern for the next research run">
+              <option value="sequential">sequential</option>
+              <option value="parallel">parallel</option>
+              <option value="hierarchical" selected>hierarchical</option>
+              <option value="p2p">p2p</option>
+            </select>
+            <span class="composer-pattern-note">applies to the next run</span>
+          </div>
+          <div class="composer-row">
+            <textarea id="question" rows="1" maxlength="500" placeholder="Ask a research question&hellip;"></textarea>
+            <button class="primary" id="run-button" type="submit">Run</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="view hidden" id="view-details">
+        <header class="view-head">
+          <h1>Run details</h1>
+          <p class="hint">Pattern selection, the live run views, and the raw comparison data.
+            The conversation stays on Research.</p>
+        </header>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Pattern</h2>
+            <button class="link-button" id="compare-all" type="button">Compare all four</button>
+          </div>
+          <div class="chips" id="pattern-chips" role="group" aria-label="Pattern">
+            <button class="chip" data-pattern="sequential" type="button">sequential</button>
+            <button class="chip" data-pattern="parallel" type="button">parallel</button>
+            <button class="chip selected" data-pattern="hierarchical" type="button">hierarchical</button>
+            <button class="chip" data-pattern="p2p" type="button">p2p</button>
+          </div>
+          <p class="hint">Hierarchical is the default. These choices stay in sync with the composer;
+            all four produce the same blackboard sections and can be compared.</p>
+        </section>
+
         <nav class="tabs" id="run-tabs" role="tablist">
-          <button class="tab active" id="tab-answer" data-tab="answer" role="tab" type="button">Answer</button>
-          <button class="tab" id="tab-activity" data-tab="activity" role="tab" type="button">Agent activity</button>
+          <button class="tab" id="tab-answer" data-tab="answer" role="tab" type="button" title="Return to the conversation">Answer</button>
+          <button class="tab active" id="tab-activity" data-tab="activity" role="tab" type="button">Agent activity</button>
           <button class="tab" id="tab-blackboard" data-tab="blackboard" role="tab" type="button">Blackboard</button>
           <button class="tab" id="tab-metrics" data-tab="metrics" role="tab" type="button">Metrics</button>
         </nav>
-
-        <div class="tab-panel" id="panel-answer">
-          <section class="card result-card" id="result-card">
-            <div class="card-head">
-              <h2 id="result-title">Answer</h2>
-              <div class="card-head-actions">
-                <span class="badge hidden" id="replay-badge">REPLAY</span>
-                <button class="ghost" id="copy-markdown" type="button">Copy Markdown</button>
-              </div>
-            </div>
-            <p class="answer prose" id="report-answer">Ask a question, or replay a recording.</p>
-            <ul class="points prose" id="report-points"></ul>
-            <div class="meta-row" id="report-meta"></div>
-            <div class="citations" id="report-citations"></div>
-            <div class="sources">
-              <div class="sidebar-label">Sources</div>
-              <ol id="sources-list"></ol>
-            </div>
-          </section>
-        </div>
 
         <div class="tab-panel hidden" id="panel-activity">
           <div class="live-map" id="live-map"></div>
@@ -128,18 +190,50 @@
         </div>
 
         <div class="tab-panel hidden" id="panel-metrics">
-          <img id="heatmap" class="heatmap" alt="per-agent heatmap" />
-          <table class="table" id="compare-table">
-            <thead><tr><th>run</th><th>wall</th><th>tokens</th><th>A2A out/in</th><th>evidence</th><th>tools</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
-            <tbody id="compare-body"></tbody>
-          </table>
+          <div class="card-head">
+            <h2>Per-agent metrics</h2>
+            <p class="hint" id="metrics-note"></p>
+          </div>
+          <div class="table-wrap">
+            <table class="table metrics-table hidden" id="agent-metrics-table">
+              <thead>
+                <tr>
+                  <th>agent</th><th>framework</th><th>stage</th><th>models</th>
+                  <th>tokens in</th><th>tokens out</th><th>reasoning</th>
+                  <th>tools</th><th>errors</th><th>A2A bytes</th><th>evidence</th>
+                </tr>
+              </thead>
+              <tbody id="agent-metrics-body"></tbody>
+            </table>
+          </div>
+          <p class="empty-state hidden" id="metrics-empty"></p>
+          <div class="heatmap-wrap">
+            <img id="heatmap" class="heatmap hidden" alt="per-agent heatmap" />
+            <p class="empty-state hidden" id="heatmap-empty"></p>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="compare-table">
+              <thead><tr><th>run</th><th>wall</th><th>tokens</th><th>A2A out/in</th><th>evidence</th><th>tools</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
+              <tbody id="compare-body"></tbody>
+            </table>
+          </div>
           <p class="hint">p2p carries the context in A2A messages, so its byte count is far higher than the blackboard patterns.</p>
         </div>
+
+        <section class="card">
+          <div class="card-head"><h2>Run links</h2></div>
+          <p class="run-links">
+            <span id="footer-run">run: -</span>
+            <a id="link-json" href="#">raw JSON</a>
+            <a id="link-log" href="#">log</a>
+          </p>
+          <p class="hint">These open the API JSON and the process log for the run selected above.</p>
+        </section>
       </section>
 
       <section class="view hidden" id="view-how">
         <section class="card">
-          <div class="card-head"><h2>How it works</h2></div>
+          <div class="card-head"><h2>Architecture</h2></div>
           <p class="hint">One supervisor in Google ADK plans, three researchers call MCP tools, and the
             analyst, writer and critic live in a separate CrewAI process reached over A2A. They share a
             blackboard, and every step is recorded as an event.</p>
@@ -226,12 +320,6 @@
       </section>
     </main>
   </div>
-
-  <footer class="footer">
-    <span id="footer-run">run: -</span>
-    <a id="link-json" href="#">raw JSON</a>
-    <a id="link-log" href="#">log</a>
-  </footer>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
