@@ -31,6 +31,8 @@ data/*
 !data/.gitkeep
 !data/eval/
 !data/eval/*.csv
+# Provider presets are small, non-secret, and needed on a fresh clone.
+!data/presets.json
 # Stray zero-byte file the CrewAI package creates in the CWD on some runs.
 /crewai
 # The demo ships its recorded runs and curated questions (public handbook data).

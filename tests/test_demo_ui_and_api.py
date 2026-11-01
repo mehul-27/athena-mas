@@ -57,7 +57,7 @@ def test_logic_js_has_no_dom_access() -> None:
 
 
 def test_app_js_never_uses_innerhtml() -> None:
-    for name in ("app.js", "diagram.js"):
+    for name in ("app.js", "diagram.js", "chat.js", "settings.js", "tutorial.js", "icons.js", "background.js"):
         assert "innerHTML" not in _read(name), f"{name} builds DOM with innerHTML"
 
 
@@ -97,13 +97,14 @@ def test_presentation_size_raises_the_base_font() -> None:
     css = _read("style.css")
     assert "--base: 18px" in css
     assert 'html[data-size="presentation"]' in css
-    assert "font: var(--base)" in css
+    assert "400 var(--base)/1.55 var(--font)" in css
 
 
 def test_light_theme_exists() -> None:
     css = _read("style.css")
     assert 'html[data-theme="light"]' in css
-    assert "--bg: #eef1f5" in css
+    assert "--bg: #f6f6f3" in css
+    assert "--fg: #161616" in css
 
 
 # --- architecture diagram ---------------------------------------------------
@@ -138,14 +139,20 @@ def test_page_has_the_panels() -> None:
                        "replay-list", "replay-panel", "replay-speed-row", "examples-popover",
                        "toast", "how-diagram", "view-settings", "profiles-body",
                        "profile-key", "profile-test", "profile-activate", "test-result",
-                       "about-me", "view-documents", "footer-run"):
+                       "about-me", "view-documents", "footer-run",
+                       "view-chat", "chat-transcript", "chat-input", "chat-model",
+                       "chat-list", "settings-modal", "settings-dialog", "settings-nav",
+                       "settings-close", "settings-find", "tutorial",
+                       "tutorial-card", "tutorial-next", "tutorial-back", "tutorial-skip",
+                       "open-tutorial", "sidebar-toggle",
+                       "sidebar-chats", "sidebar-research", "sidebar-backdrop"):
         assert f'id="{element_id}"' in html, f"missing #{element_id}"
 
 
 def test_sidebar_has_every_view() -> None:
     html = _read("index.html")
-    for view in ("run", "how", "documents", "settings"):
-        assert f'id="view-{view}"' in html
+    for view in ("chat", "run", "how", "documents", "settings"):
+        assert f'id="view-{view}"' in html or f'data-view="{view}"' in html
         assert f'data-view="{view}"' in html
 
 
@@ -155,7 +162,7 @@ def test_the_key_field_never_keeps_a_key() -> None:
     assert 'type="password"' in field
     assert 'autocomplete="new-password"' in field
 
-    source = _read("app.js")
+    source = _read("settings.js")
     assert "never repopulate a stored key" in source
     assert 'profile-key").value = ""' in source
 
@@ -169,7 +176,10 @@ def test_reasoning_effort_defaults_to_not_sent() -> None:
 
 
 def test_page_has_no_remote_assets() -> None:
-    for name in ("index.html", "style.css", "app.js", "logic.js", "diagram.js"):
+    for name in (
+        "index.html", "style.css", "app.js", "logic.js", "diagram.js",
+        "chat.js", "settings.js", "tutorial.js", "icons.js", "background.js",
+    ):
         content = _read(name)
         remote = re.findall(
             r"(?:src|href)=[\x22\x27]https?://|url\(\s*[\x22\x27]?https?://|@import", content)
@@ -186,7 +196,7 @@ def test_deep_links_are_supported() -> None:
 def test_page_is_served(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert "Athena" in response.text
+    assert "athena" in response.text
 
 
 def test_replay_index_marks_bundles_that_need_rerecording(client: TestClient) -> None:
@@ -287,11 +297,12 @@ def test_toast_is_fixed_and_auto_dismisses() -> None:
 
 def test_prose_uses_the_sans_stack_through_one_variable() -> None:
     css = _read("style.css")
-    assert "--font-prose:" in css
-    assert "Segoe UI" in css.split("--font-prose:")[1].split(";")[0]
+    assert "--font-prose: var(--font)" in css
+    assert "Geist" in css.split("--font:")[1].split(";")[0]
     assert ".prose, .answer, .points" in css
-    # chrome stays monospace
-    assert "font: var(--base)/1.55 var(--font)" in css
+    assert "font: 400 var(--base)/1.55 var(--font)" in css
+    # technical values use a separate mono stack
+    assert "--font-mono:" in css and "Geist Mono" in css
 
 
 def test_only_the_selected_tab_panel_is_shown() -> None:
@@ -317,7 +328,7 @@ def test_status_pill_is_short_with_a_tooltip() -> None:
 
 
 def test_activation_uses_an_explicit_saved_profile() -> None:
-    source = _read("app.js")
+    source = _read("settings.js")
     block = source[source.index("async function activateProfile"):source.index("async function deleteProfile")]
 
     assert "profileId" in block

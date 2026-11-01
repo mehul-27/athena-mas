@@ -13,6 +13,7 @@ from athena.blackboard import Analysis, Blackboard, EvidenceItem, Task
 
 MAX_EVIDENCE_ITEMS = 8
 MAX_EVIDENCE_CHARS = 600
+MAX_FETCHED_EVIDENCE_CHARS = 2000
 MAX_PLAN_STEPS = 8
 CITABLE_EVIDENCE_TYPES = frozenset({"rag", "web", "calculation", "forecast"})
 
@@ -87,8 +88,11 @@ def evidence_text(
     lines = []
     for item in items:
         text = " ".join(item.content.split())
-        if len(text) > max_chars:
-            text = text[:max_chars].rstrip() + "..."
+        # Fetched pages carry navigation before the useful body. Keep enough
+        # text to reach the official highlights; snippets stay compact.
+        cap = MAX_FETCHED_EVIDENCE_CHARS if item.id.startswith("fetch-") else max_chars
+        if len(text) > cap:
+            text = text[:cap].rstrip() + "..."
         lines.append(f"[{item.id}] {item.source_type} | {item.source_ref} | {text}")
     return wrap_untrusted("\n".join(lines))
 

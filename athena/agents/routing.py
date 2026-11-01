@@ -123,6 +123,14 @@ def ensure_step_texts(steps: list[str], question: str) -> list[str]:
     """Guarantee that the plan contains one step for the required source class."""
     route = classify(question)
     texts = [str(step) for step in steps]
+    if route.kind == "external":
+        # The planner often adds a generic RAG step to every plan. Without an
+        # explicit local-corpus requirement, that spends a research stage on an
+        # unrelated corpus and adds no citable evidence.
+        texts = [
+            text for text in texts
+            if not text.lower().startswith("rag_researcher:")
+        ]
     if route.needs_web and not any("web_researcher:" in text.lower() for text in texts):
         texts.insert(0, "web_researcher: Search for official primary documentation, "
                         "release notes, or specifications, then fetch the relevant pages.")

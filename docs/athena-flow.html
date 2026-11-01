@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Athena — Live Run Flow</title>
+<style>
+  :root {
+    --paper: #f4efe4;
+    --paper-2: #ebe3d3;
+    --ink: #17221e;
+    --muted: #68736b;
+    --line: #cfc4b1;
+    --line-strong: #a99c86;
+    --teal: #0f6255;
+    --teal-soft: #dbe9e3;
+    --rust: #b85d32;
+    --rust-soft: #f0ded2;
+    --gold: #9b762d;
+    --gold-soft: #eee3c8;
+    --white: #fffdf8;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #d8d1c2;
+    color: var(--ink);
+    font-family: "Aptos", "Segoe UI", "Helvetica Neue", sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 297mm;
+    height: 210mm;
+    background:
+      linear-gradient(90deg, rgba(23, 34, 30, .025) 1px, transparent 1px),
+      linear-gradient(rgba(23, 34, 30, .025) 1px, transparent 1px),
+      var(--paper);
+    background-size: 9mm 9mm, 9mm 9mm, auto;
+    padding: 12mm 14mm 10mm;
+    margin: 0 auto 10mm;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 18px 40px rgba(23, 34, 30, .16);
+  }
+
+  .page::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3.2mm;
+    background: var(--teal);
+  }
+
+  .page::after {
+    content: attr(data-page);
+    position: absolute;
+    right: 14mm;
+    bottom: 7mm;
+    font: 700 8pt/1 "Aptos", "Segoe UI", sans-serif;
+    letter-spacing: .18em;
+    color: var(--muted);
+  }
+
+  .kicker {
+    font-size: 7.2pt;
+    font-weight: 700;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--teal);
+  }
+
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line-strong);
+    padding-bottom: 2.5mm;
+    margin-bottom: 7mm;
+  }
+
+  .brand {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 15pt;
+    font-weight: 700;
+    letter-spacing: .03em;
+  }
+
+  .brand span { color: var(--rust); }
+  .topbar .meta { font-size: 7.4pt; color: var(--muted); letter-spacing: .08em; text-align: right; }
+
+  h1 {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 29pt;
+    line-height: .98;
+    letter-spacing: -.025em;
+    margin: 0;
+    max-width: 165mm;
+  }
+
+  h1 em { color: var(--teal); font-style: normal; }
+  .lede {
+    font-size: 9.3pt;
+    line-height: 1.5;
+    max-width: 120mm;
+    margin: 4mm 0 0;
+    color: var(--muted);
+  }
+
+  .hero-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12mm;
+    margin-bottom: 7mm;
+  }
+
+  .hero-note {
+    width: 55mm;
+    border-left: 2px solid var(--rust);
+    padding-left: 4mm;
+    font-size: 8.2pt;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .hero-note strong { color: var(--ink); display: block; font-size: 8.6pt; margin-bottom: 1mm; }
+
+  /* ---------- page 1 pipeline ---------- */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    margin: 0 0 6mm;
+  }
+
+  .node {
+    flex: 1 1 0;
+    min-width: 0;
+    background: rgba(255, 253, 248, .82);
+    border: 1px solid var(--line-strong);
+    border-top: 3px solid var(--teal);
+    padding: 3.2mm 3.4mm 3mm;
+    position: relative;
+  }
+
+  .node:nth-child(7) { border-top-color: var(--rust); }
+
+  .node .num {
+    display: inline-block;
+    font-size: 6.5pt;
+    letter-spacing: .16em;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 1.8mm;
+  }
+
+  .node b {
+    display: block;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 12pt;
+    line-height: 1.08;
+    margin-bottom: 1.6mm;
+  }
+
+  .node small {
+    display: block;
+    font-size: 7.3pt;
+    line-height: 1.35;
+    color: var(--muted);
+  }
+
+  .node .tag {
+    display: inline-block;
+    margin-top: 2mm;
+    font-size: 6.2pt;
+    font-weight: 700;
+    letter-spacing: .1em;
+    color: var(--teal);
+    background: var(--teal-soft);
+    padding: .8mm 1.4mm;
+  }
+
+  .connector {
+    width: 7mm;
+    flex: 0 0 7mm;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .connector::before {
+    content: "";
+    width: 100%;
+    height: 1px;
+    background: var(--line-strong);
+  }
+  .connector::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 4px solid var(--line-strong);
+    border-top: 3px solid transparent;
+    border-bottom: 3px solid transparent;
+  }
+  .connector span {
+    position: absolute;
+    top: calc(50% - 5mm);
+    font-size: 5.8pt;
+    letter-spacing: .08em;
+    color: var(--muted);
+    background: var(--paper);
+    padding: 0 1mm;
+    white-space: nowrap;
+  }
+
+  .storage {
+    display: grid;
+    grid-template-columns: 1.45fr 1fr .9fr;
+    gap: 3mm;
+    margin-top: 2mm;
+  }
+
+  .store {
+    background: var(--white);
+    border: 1px solid var(--line);
+    padding: 3mm 3.4mm;
+  }
+
+  .store h3 {
+    margin: 0 0 1.6mm;
+    font-size: 7pt;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--teal);
+  }
+
+  .store p {
+    margin: 0;
+    font-size: 7.3pt;
+    line-height: 1.42;
+    color: var(--muted);
+  }
+
+  .store .mono {
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 6.8pt;
+    color: var(--ink);
+  }
+
+  .return-strip {
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    margin-top: 4mm;
+    border-top: 1px solid var(--line);
+    padding-top: 3mm;
+    font-size: 7.5pt;
+    color: var(--muted);
+  }
+
+  .return-strip b {
+    color: var(--rust);
+    font-size: 7pt;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .return-strip .pill {
+    border: 1px solid var(--line-strong);
+    padding: 1mm 2mm;
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 6.8pt;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  /* ---------- page 2 evidence ---------- */
+  .page-title {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 24pt;
+    line-height: 1;
+    margin: 0 0 2mm;
+    letter-spacing: -.02em;
+  }
+  .page-sub {
+    font-size: 8.4pt;
+    line-height: 1.45;
+    color: var(--muted);
+    max-width: 150mm;
+    margin: 0 0 6mm;
+  }
+
+  .path-grid {
+    display: grid;
+    grid-template-columns: 1.1fr .45fr 1.1fr;
+    gap: 4mm;
+    align-items: stretch;
+  }
+
+  .path-col { display: flex; flex-direction: column; gap: 2.5mm; }
+
+  .path-step {
+    background: var(--white);
+    border: 1px solid var(--line);
+    padding: 2.7mm 3.2mm;
+    position: relative;
+    min-height: 22mm;
+  }
+  .path-step::before {
+    content: attr(data-step);
+    position: absolute;
+    top: 2.4mm;
+    right: 3mm;
+    font: 700 6.4pt/1 "Aptos", "Segoe UI", sans-serif;
+    letter-spacing: .12em;
+    color: var(--gold);
+  }
+  .path-step b {
+    display: block;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 10.5pt;
+    margin-bottom: 1.2mm;
+  }
+  .path-step span {
+    display: block;
+    font-size: 7.2pt;
+    line-height: 1.38;
+    color: var(--muted);
+  }
+
+  .path-mid {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 3mm;
+    color: var(--teal);
+  }
+  .path-mid::before {
+    content: "";
+    width: 1px;
+    height: 12mm;
+    background: var(--line-strong);
+  }
+  .path-mid::after {
+    content: "→";
+    font-size: 16pt;
+    line-height: 1;
+    color: var(--teal);
+  }
+  .path-mid span {
+    font-size: 6.2pt;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .callouts {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3mm;
+    margin-top: 5mm;
+  }
+  .callout {
+    border-top: 2px solid var(--rust);
+    background: rgba(255, 253, 248, .6);
+    padding: 2.8mm 3mm;
+  }
+  .callout b {
+    display: block;
+    font-size: 7.1pt;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--rust);
+    margin-bottom: 1.2mm;
+  }
+  .callout span {
+    display: block;
+    font-size: 7.3pt;
+    line-height: 1.42;
+    color: var(--muted);
+  }
+
+  .rule-strip {
+    display: flex;
+    gap: 2.5mm;
+    margin-top: 5mm;
+    padding-top: 3mm;
+    border-top: 1px solid var(--line);
+    font-size: 7pt;
+    color: var(--muted);
+  }
+  .rule-strip b { color: var(--teal); letter-spacing: .08em; }
+
+  /* ---------- page 3 patterns ---------- */
+  .pattern-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+    margin-top: 5mm;
+  }
+  .pattern {
+    background: var(--white);
+    border: 1px solid var(--line);
+    padding: 4mm;
+    position: relative;
+    min-height: 62mm;
+  }
+  .pattern::before {
+    content: attr(data-index);
+    position: absolute;
+    right: 3mm;
+    top: 2mm;
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 24pt;
+    line-height: 1;
+    color: var(--paper-2);
+  }
+  .pattern h3 {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 15pt;
+    margin: 0 0 1mm;
+  }
+  .pattern .note {
+    font-size: 7.1pt;
+    color: var(--muted);
+    margin: 0 0 4mm;
+    line-height: 1.35;
+  }
+  .chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.2mm;
+    margin-top: 2mm;
+  }
+  .chip {
+    display: inline-block;
+    border: 1px solid var(--line-strong);
+    background: var(--paper);
+    padding: 1.3mm 1.8mm;
+    font-size: 6.6pt;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+  .chip.teal { background: var(--teal-soft); border-color: #9bc2b7; }
+  .chip.rust { background: var(--rust-soft); border-color: #d6a88e; }
+  .arrow { color: var(--muted); font-size: 8pt; }
+  .pattern .loop {
+    margin-top: 3mm;
+    border-left: 2px solid var(--rust);
+    padding-left: 2.5mm;
+    font-size: 6.9pt;
+    line-height: 1.35;
+    color: var(--muted);
+  }
+
+  /* ---------- page 4 recovery ---------- */
+  .recovery-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 3mm 0 5mm;
+  }
+  .rnode {
+    flex: 1;
+    border: 1px solid var(--line);
+    background: var(--white);
+    padding: 3mm;
+    min-height: 22mm;
+  }
+  .rnode b { display: block; font: 700 9.4pt/1.2 "Aptos", "Segoe UI", sans-serif; }
+  .rnode span { display: block; margin-top: 1.2mm; font-size: 7pt; line-height: 1.35; color: var(--muted); }
+  .rnode.accent { border-top: 3px solid var(--rust); }
+  .rnode.good { border-top: 3px solid var(--teal); }
+
+  .rarrow {
+    flex: 0 0 10mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 11pt;
+  }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2.5mm;
+    margin-top: 4mm;
+  }
+  .status {
+    border-top: 2px solid var(--line-strong);
+    padding-top: 2.2mm;
+  }
+  .status b { display: block; font-size: 7.4pt; margin-bottom: 1mm; }
+  .status span { display: block; font-size: 6.8pt; line-height: 1.35; color: var(--muted); }
+  .status.ok { border-top-color: var(--teal); }
+  .status.warn { border-top-color: var(--gold); }
+  .status.bad { border-top-color: var(--rust); }
+
+  .guarantees {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4mm;
+    margin-top: 5mm;
+  }
+  .guarantee {
+    border-left: 2px solid var(--teal);
+    padding-left: 3mm;
+    font-size: 7.2pt;
+    line-height: 1.42;
+    color: var(--muted);
+  }
+  .guarantee b { display: block; color: var(--ink); font-size: 7.6pt; margin-bottom: 1mm; }
+
+  .footer-note {
+    position: absolute;
+    left: 14mm;
+    right: 14mm;
+    bottom: 7mm;
+    border-top: 1px solid var(--line);
+    padding-top: 2mm;
+    padding-right: 22mm;
+    font-size: 6.4pt;
+    letter-spacing: .05em;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  @page { size: A4 landscape; margin: 0; }
+  @media print {
+    body { background: none; }
+    .page {
+      margin: 0;
+      box-shadow: none;
+      break-after: page;
+      page-break-after: always;
+    }
+    .page:last-of-type { break-after: auto; page-break-after: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================ PAGE 1 ============================ -->
+<section class="page" data-page="01 / 04">
+  <div class="topbar">
+    <div class="brand">ATHENA<span>.</span></div>
+    <div class="meta">LIVE RUN / DATA FLOW<br>LOCAL-FIRST RESEARCH SYSTEM</div>
+  </div>
+
+  <div class="hero-row">
+    <div>
+      <div class="kicker">One question, four boundaries</div>
+      <h1>From question<br>to <em>verified answer.</em></h1>
+      <p class="lede">A browser starts the run. ADK plans and researches. CrewAI writes and reviews. A shared Blackboard carries the evidence, while a separate event log carries the trace.</p>
+    </div>
+    <div class="hero-note">
+      <strong>Control path</strong>
+      The browser never calls a model, a tool, or the provider directly. The local API starts the run and reads the stores.
+    </div>
+  </div>
+
+  <div class="pipeline">
+    <article class="node">
+      <span class="num">01 / REQUEST</span>
+      <b>Browser</b>
+      <small>Question + pattern.<br>Opens the SSE stream.</small>
+      <span class="tag">HTTP</span>
+    </article>
+    <div class="connector"><span>POST</span></div>
+
+    <article class="node">
+      <span class="num">02 / ACCEPT</span>
+      <b>API + Registry</b>
+      <small>Validates, spawns the CLI,<br>keeps the active process.</small>
+      <span class="tag">FASTAPI</span>
+    </article>
+    <div class="connector"><span>SPAWN</span></div>
+
+    <article class="node">
+      <span class="num">03 / PLAN + GATHER</span>
+      <b>CLI + ADK</b>
+      <small>Creates the task, plans,<br>calls MCP tools.</small>
+      <span class="tag">SUBPROCESS</span>
+    </article>
+    <div class="connector"><span>A2A</span></div>
+
+    <article class="node">
+      <span class="num">04 / SYNTHESISE</span>
+      <b>CrewAI roles</b>
+      <small>Analyst, writer, critic.<br>Reads the Blackboard.</small>
+      <span class="tag">CREWAI</span>
+    </article>
+    <div class="connector"><span>WRITE</span></div>
+
+    <article class="node">
+      <span class="num">05 / RESULT</span>
+      <b>Report + status</b>
+      <small>Verified answer, gaps,<br>or an honest rejection.</small>
+      <span class="tag">TERMINAL</span>
+    </article>
+  </div>
+
+  <div class="storage">
+    <div class="store">
+      <h3>Blackboard / research state</h3>
+      <p>Task → plan → evidence → analysis → draft → final report → critique.</p>
+      <p class="mono">data/blackboard.db</p>
+      <p>Written by ADK and CrewAI; read by every stage and by the API snapshot.</p>
+    </div>
+    <div class="store">
+      <h3>Event log / trace</h3>
+      <p>Stage, model, tool, A2A, limiter, error and <span class="mono">run_summary</span> events.</p>
+      <p class="mono">data/events.db</p>
+      <p>Feeds the timeline, metrics, heatmap and SSE stream.</p>
+    </div>
+    <div class="store">
+      <h3>Run files</h3>
+      <p>Process output and the final summary JSON.</p>
+      <p class="mono">.run/runs/{id}.log<br>.run/runs/{id}.summary.json</p>
+      <p>Read by the <span class="mono">/log</span> watchdog.</p>
+    </div>
+  </div>
+
+  <div class="return-strip">
+    <b>Read path</b>
+    <span class="pill">SSE /api/runs/{id}/stream</span>
+    <span>events + Blackboard snapshot</span>
+    <span>→</span>
+    <span class="pill">/log</span>
+    <span>process exit / watchdog</span>
+    <span>→</span>
+    <span>Browser timeline, report, metrics</span>
+  </div>
+
+  <div class="footer-note">
+    <span>ATHENA / RUN FLOW</span>
+    <span>Blackboard = content · Event log = trace · Browser = view</span>
+  </div>
+</section>
+
+<!-- ============================ PAGE 2 ============================ -->
+<section class="page" data-page="02 / 04">
+  <div class="topbar">
+    <div class="brand">ATHENA<span>.</span></div>
+    <div class="meta">EVIDENCE PATH<br>WHAT THE MODEL ACTUALLY SEES</div>
+  </div>
+
+  <h2 class="page-title">Evidence is the product.</h2>
+  <p class="page-sub">Search finds candidates. Fetching produces source text. Only recorded, relevant evidence reaches the analyst, writer and critic.</p>
+
+  <div class="path-grid">
+    <div class="path-col">
+      <div class="path-step" data-step="01">
+        <b>Question</b>
+        <span>Explicit requirements: finding count, official sources, practical impact.</span>
+      </div>
+      <div class="path-step" data-step="02">
+        <b>Route</b>
+        <span>External → web + fetch. Local → RAG. Mixed → both. Calculation only when the task needs it.</span>
+      </div>
+      <div class="path-step" data-step="03">
+        <b>MCP tools</b>
+        <span>web_search returns discovery hints. fetch_page returns primary text. rag_search returns local chunks. calculate returns exact values.</span>
+      </div>
+    </div>
+
+    <div class="path-mid">
+      <span>record</span>
+      <span>then</span>
+      <span>read</span>
+    </div>
+
+    <div class="path-col">
+      <div class="path-step" data-step="04">
+        <b>EvidenceItem</b>
+        <span>Every item keeps id, source type, source ref, content and retrieved_by. Full content stays on the Blackboard.</span>
+      </div>
+      <div class="path-step" data-step="05">
+        <b>Prompt evidence</b>
+        <span>Fetched pages get 2,000 chars; snippets, RAG and calculations get 600. Failed/empty fetches are excluded from citable evidence.</span>
+      </div>
+      <div class="path-step" data-step="06">
+        <b>Analysis → Draft → Critique</b>
+        <span>The writer cites source refs. The critic checks claims against evidence. Rejection is a result, not a failure to hide.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="callouts">
+    <div class="callout">
+      <b>Snippet ≠ evidence</b>
+      <span>A search result is a pointer. A claim that needs verification must rest on fetched page text.</span>
+    </div>
+    <div class="callout">
+      <b>Failed fetch ≠ evidence</b>
+      <span>Errors and empty pages remain visible for audit, but never become citable support.</span>
+    </div>
+    <div class="callout">
+      <b>Missing evidence ≠ invention</b>
+      <span>The writer states the gap. The reader gets an honest incomplete answer, not a fabricated one.</span>
+    </div>
+  </div>
+
+  <div class="rule-strip">
+    <b>UNTRUSTED BY DEFAULT</b>
+    <span>Fetched web text is wrapped as data. It cannot change the role, policy or tool rules.</span>
+    <span>·</span>
+    <b>PROVENANCE</b>
+    <span>Every citable item carries a source_ref and the role that retrieved it.</span>
+  </div>
+
+  <div class="footer-note">
+    <span>ATHENA / EVIDENCE PATH</span>
+    <span>fetch first · filter failed · fetch body before claims</span>
+  </div>
+</section>
+
+<!-- ============================ PAGE 3 ============================ -->
+<section class="page" data-page="03 / 04">
+  <div class="topbar">
+    <div class="brand">ATHENA<span>.</span></div>
+    <div class="meta">ORCHESTRATION<br>FOUR PATTERNS / ONE CONTRACT</div>
+  </div>
+
+  <h2 class="page-title">Four patterns. One contract.</h2>
+  <p class="page-sub">All four produce the same Blackboard sections and comparable reports. The difference is how work and context travel.</p>
+
+  <div class="pattern-grid">
+    <article class="pattern" data-index="01">
+      <h3>Sequential</h3>
+      <p class="note">One researcher with all tools. The baseline.</p>
+      <div class="chain">
+        <span class="chip teal">planner</span><span class="arrow">→</span>
+        <span class="chip">researcher<br>all tools</span><span class="arrow">→</span>
+        <span class="chip teal">analyst</span><span class="arrow">→</span>
+        <span class="chip">writer</span><span class="arrow">→</span>
+        <span class="chip">critic</span>
+      </div>
+    </article>
+
+    <article class="pattern" data-index="02">
+      <h3>Parallel</h3>
+      <p class="note">Role-specific researchers run concurrently where planned.</p>
+      <div class="chain">
+        <span class="chip teal">planner</span><span class="arrow">→</span>
+        <span class="chip">rag</span>
+        <span class="chip">web</span>
+        <span class="chip">calc</span>
+        <span class="arrow">→</span>
+        <span class="chip teal">analyst</span><span class="arrow">→</span>
+        <span class="chip">writer</span><span class="arrow">→</span>
+        <span class="chip">critic</span>
+      </div>
+    </article>
+
+    <article class="pattern" data-index="03">
+      <h3>Hierarchical</h3>
+      <p class="note">Plan roles are dispatched in order; one worker run per unique role.</p>
+      <div class="chain">
+        <span class="chip teal">planner</span><span class="arrow">→</span>
+        <span class="chip">unique workers<br>in plan order</span><span class="arrow">→</span>
+        <span class="chip teal">analyst</span><span class="arrow">→</span>
+        <span class="chip">writer</span><span class="arrow">→</span>
+        <span class="chip">critic</span>
+      </div>
+      <div class="loop"><b>Recovery:</b> high rejection + budget → targeted research → writer → critic again (bounded).</div>
+    </article>
+
+    <article class="pattern" data-index="04">
+      <h3>P2P</h3>
+      <p class="note">Context travels inline in A2A messages; the supervisor audits afterward.</p>
+      <div class="chain">
+        <span class="chip teal">planner<br>message</span><span class="arrow">→</span>
+        <span class="chip">researcher<br>message</span><span class="arrow">→</span>
+        <span class="chip">analyst<br>inline</span><span class="arrow">→</span>
+        <span class="chip">writer<br>inline</span><span class="arrow">→</span>
+        <span class="chip">critic<br>inline</span>
+      </div>
+      <div class="loop"><b>Difference:</b> no agent reads the Blackboard during reasoning; the supervisor writes audit records.</div>
+    </article>
+  </div>
+
+  <div class="footer-note">
+    <span>ATHENA / PATTERNS</span>
+    <span>same sections · same report shape · different transport</span>
+  </div>
+</section>
+
+<!-- ============================ PAGE 4 ============================ -->
+<section class="page" data-page="04 / 04">
+  <div class="topbar">
+    <div class="brand">ATHENA<span>.</span></div>
+    <div class="meta">TRUTH / TERMINATION<br>NO SILENT SUCCESS</div>
+  </div>
+
+  <h2 class="page-title">Recovery, then honesty.</h2>
+  <p class="page-sub">A critic rejection is useful only if it produces either better evidence or a clear final gap. It never becomes an approval.</p>
+
+  <div class="recovery-flow">
+    <div class="rnode">
+      <b>Writer</b>
+      <span>Draft + structured FinalReport</span>
+    </div>
+    <div class="rarrow">→</div>
+    <div class="rnode accent">
+      <b>Critic</b>
+      <span>Claim / source / completeness check</span>
+    </div>
+    <div class="rarrow">→</div>
+    <div class="rnode good">
+      <b>Approved</b>
+      <span>Every claim traceable; answer complete</span>
+    </div>
+  </div>
+
+  <div class="recovery-flow">
+    <div class="rnode" style="flex:1.35">
+      <b>Rejected, high, hierarchical</b>
+      <span>Targeted research gap → new evidence → writer + critic rerun, bounded</span>
+    </div>
+    <div class="rarrow">→</div>
+    <div class="rnode accent" style="flex:1">
+      <b>Rejected / no safe loop</b>
+      <span>Terminal rejected or incomplete result; gaps stay explicit</span>
+    </div>
+  </div>
+
+  <div class="status-grid">
+    <div class="status ok"><b>Approved</b><span>Critic approved and evidence sufficient.</span></div>
+    <div class="status warn"><b>Degraded</b><span>Stage error, warning, or partial evidence.</span></div>
+    <div class="status bad"><b>Rejected</b><span>Critic found concrete issues.</span></div>
+    <div class="status bad"><b>Failed</b><span>Execution stopped before a result.</span></div>
+    <div class="status warn"><b>Unconfirmed</b><span>Process ended without completion evidence.</span></div>
+  </div>
+
+  <div class="guarantees">
+    <div class="guarantee">
+      <b>Missing critique is not approval.</b>
+      A missing or failed critic produces an incomplete result, never a verified one.
+    </div>
+    <div class="guarantee">
+      <b>Disconnect is not success.</b>
+      The SSE stream and <span class="mono">/log</span> watchdog only mark success on valid completion evidence.
+    </div>
+    <div class="guarantee">
+      <b>Evidence gaps stay visible.</b>
+      The report may be shorter than requested; it may not be invented.
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <span>ATHENA / TERMINAL STATE</span>
+    <span>same truth in report · summary · Blackboard · metrics</span>
+  </div>
+</section>
+
+<script>
+  // Preview helper only: file.html#page2 shows one page for screenshots.
+  // Printing the PDF never uses a hash and is unaffected.
+  const match = location.hash.match(/^#page([1-4])$/);
+  if (match) {
+    const index = Number(match[1]) - 1;
+    document.querySelectorAll(".page").forEach((page, i) => {
+      page.style.display = i === index ? "block" : "none";
+    });
+    document.body.style.background = "#d8d1c2";
+  }
+</script>
+</body>
+</html>

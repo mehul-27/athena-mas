@@ -34,12 +34,17 @@ def _isolated_databases(tmp_path, monkeypatch):
     """
     from athena.config import ratelimit
 
-    monkeypatch.setenv("EVENTS_DB", str(tmp_path / "events.db"))
-    monkeypatch.setenv("BLACKBOARD_DB", str(tmp_path / "blackboard.db"))
-    monkeypatch.setenv("RATELIMIT_DB", str(tmp_path / "ratelimit.db"))
-    monkeypatch.setenv("RATELIMIT_OUT_DB", str(tmp_path / "ratelimit_out.db"))
-    monkeypatch.setenv("CHROMA_PATH", str(tmp_path / "chroma"))
-    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    agetenv = monkeypatch.setenv
+    agetenv("EVENTS_DB", str(tmp_path / "events.db"))
+    agetenv("BLACKBOARD_DB", str(tmp_path / "blackboard.db"))
+    agetenv("RATELIMIT_DB", str(tmp_path / "ratelimit.db"))
+    agetenv("RATELIMIT_OUT_DB", str(tmp_path / "ratelimit_out.db"))
+    agetenv("CHROMA_PATH", str(tmp_path / "chroma"))
+    agetenv("CHAT_DB", str(tmp_path / "chat.db"))
+    agetenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    from athena.settings import defaults as settings_defaults
+
+    monkeypatch.setattr(settings_defaults, "DEFAULTS_FILE", tmp_path / "defaults.json")
     ratelimit.reset_limiters()
     yield
     ratelimit.reset_limiters()

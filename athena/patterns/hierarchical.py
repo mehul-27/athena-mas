@@ -54,7 +54,10 @@ class HierarchicalAgent(BaseAgent):
         if not steps:
             steps_text = [FALLBACK_WORKER]
         else:
-            steps_text = [step.assigned_to for step in steps]
+            # The supervisor dispatches by role, not by step description. Running
+            # the same worker twice for two steps therefore repeats the same task
+            # and cannot target the second step's objective.
+            steps_text = list(dict.fromkeys(step.assigned_to for step in steps))
 
         for role in steps_text:
             worker = self.workers.get(role) or self.workers[FALLBACK_WORKER]

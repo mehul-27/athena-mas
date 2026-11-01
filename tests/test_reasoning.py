@@ -45,7 +45,7 @@ def test_role_defaults_are_the_new_values(monkeypatch) -> None:
 
     assert llm_config.max_tokens_for("planner") == 1500
     assert llm_config.max_tokens_for("researcher") == 2000
-    assert llm_config.max_tokens_for("analyst") == 1500
+    assert llm_config.max_tokens_for("analyst") == 3000
     assert llm_config.max_tokens_for("writer") == 3000
     assert llm_config.max_tokens_for("critic") == 3000
 

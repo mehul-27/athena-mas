@@ -1,0 +1,37 @@
+[
+  {
+    "id": "commandcode",
+    "name": "Command Code",
+    "api_base": "https://api.commandcode.ai/provider/v1",
+    "model": "openai/deepseek/deepseek-v4.1-flash",
+    "notes": "The gateway used for the live runs in this project."
+  },
+  {
+    "id": "groq",
+    "name": "Groq",
+    "api_base": "https://api.groq.com/openai/v1",
+    "model": "groq/qwen/qwen3.8-27b",
+    "notes": "Free tier: 7000 input tokens/min, 1000 output tokens/min, 200k/day."
+  },
+  {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "api_base": "https://openrouter.ai/api/v1",
+    "model": "openrouter/meta-llama/llama-3.1-70b-instruct",
+    "notes": "Many models behind one key."
+  },
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "api_base": "https://api.openai.com/v1",
+    "model": "openai/gpt-4o-mini",
+    "notes": "Direct OpenAI."
+  },
+  {
+    "id": "custom",
+    "name": "Custom OpenAI-compatible",
+    "api_base": "",
+    "model": "",
+    "notes": "Any endpoint that speaks /chat/completions. https, or http for localhost only."
+  }
+]

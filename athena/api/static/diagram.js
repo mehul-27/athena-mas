@@ -75,7 +75,7 @@
       viewBox: "0 0 900 460", class: "diagram" + (opts.compact ? " compact" : ""),
       role: "img", "aria-labelledby": "diagram-title diagram-desc",
     });
-    svg.appendChild(el("title", { id: "diagram-title" }, "Athena architecture"));
+    svg.appendChild(el("title", { id: "diagram-title" }, "athena architecture"));
     svg.appendChild(el("desc", { id: "diagram-desc" },
       "User to supervisor to planner in Google ADK, researchers calling MCP tools, "
       + "analyst writer and critic reached over A2A, all sharing a blackboard."));

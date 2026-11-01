@@ -82,6 +82,10 @@ def test_metrics_endpoint_returns_recorded_rows(monkeypatch) -> None:
             return events
 
     monkeypatch.setattr("athena.api.app._store", lambda: Store())
+    monkeypatch.setattr(
+        "athena.api.app._evidence_attribution",
+        lambda _run_id: {"r1": ["researcher", "researcher"]},
+    )
     client = TestClient(create_app())
     response = client.get("/api/runs/r1/metrics")
 
@@ -91,6 +95,24 @@ def test_metrics_endpoint_returns_recorded_rows(monkeypatch) -> None:
     assert rows[0]["model_calls"] == 1
     assert rows[0]["tokens_in"] == 100
     assert rows[0]["tool_calls"] == 1
+    assert rows[0]["evidence_items"] == 2
+
+
+def test_metrics_evidence_attribution_reads_retrieved_by(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import athena.api.app as app_module
+
+    class Board:
+        def read(self, section):
+            assert section == "evidence"
+            return ([SimpleNamespace(retrieved_by="web_researcher")], 1)
+
+    monkeypatch.setattr(app_module.Blackboard, "open", lambda _run_id: Board())
+
+    assert app_module._evidence_attribution("r1") == {
+        "r1": ["web_researcher"]
+    }
 
 
 def test_metrics_endpoint_returns_empty_rows(monkeypatch) -> None:
@@ -200,7 +222,7 @@ def test_page_has_no_external_assets() -> None:
 def test_page_is_served(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert "Athena" in response.text
+    assert "athena" in response.text
     assert "Blackboard" in response.text
 
 

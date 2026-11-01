@@ -37,6 +37,21 @@ def test_p2p_payload_carries_context_and_is_larger() -> None:
     assert len(contextual) > len(plain) * 10
 
 
+def test_p2p_context_keeps_fetched_body_after_navigation() -> None:
+    class Item:
+        id = "fetch-official"
+        source_type = "web"
+        source_ref = "https://docs.python.org/3/whatsnew/3.13.html"
+        content = "Navigation " * 100 + "Free-threaded mode (PEP 703) and JIT (PEP 744)."
+
+    context = P2PContext(question="two changes")
+    context.evidence = [Item()]
+    block = context.evidence_block()
+
+    assert "free-threaded" in block.lower()
+    assert "PEP 744" in block
+
+
 def test_p2p_replaces_an_unsupported_report_with_a_gap_report(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "bb.db")
     blackboard = Blackboard.create(

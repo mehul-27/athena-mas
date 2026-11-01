@@ -31,8 +31,11 @@ class FakeRegistry:
         return self.active
 
 
-def _active(run_id="r1", finished=True):
-    return SimpleNamespace(run_id=run_id, pattern="sequential", finished=finished)
+def _active(run_id="r1", finished=True, exit_code=0):
+    return SimpleNamespace(
+        run_id=run_id, pattern="sequential", finished=finished,
+        exit_code=exit_code, lines=[],
+    )
 
 
 def _summary_event(failed=False, approved=True, severity="low"):
@@ -40,7 +43,8 @@ def _summary_event(failed=False, approved=True, severity="low"):
         run_id="r1", seq=1, kind="stage_end", agent="supervisor", framework="adk",
         payload_summary="run_summary sequential",
         extra={"failed": failed, "degraded": failed, "approved": approved,
-               "severity": severity, "outcome": "failed" if failed else "approved"},
+               "severity": severity, "outcome": "failed" if failed else "approved",
+               "critic_status": "approved", "evidence_sufficient": True},
     )
 
 
@@ -83,14 +87,14 @@ def test_stream_waits_for_a_starting_run_then_completes(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "_store", lambda: store)
     calls = {"count": 0}
 
-    def snapshot(_run_id):
+    def snapshot(_run_id, _runs=None):
         calls["count"] += 1
         if calls["count"] == 1:
             raise HTTPException(status_code=404, detail="no run")
         return {"history": []}
 
     monkeypatch.setattr(app_module, "_snapshot", snapshot)
-    monkeypatch.setattr(app_module, "_summary", lambda _run_id: {"approved": True})
+    monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
 
     async def collect():
         return [part async for part in app_module._events("r1", registry)]
@@ -105,8 +109,8 @@ def test_stream_waits_for_a_starting_run_then_completes(monkeypatch) -> None:
 
 def test_stream_reconnects_to_a_completed_run_without_false_failure(monkeypatch) -> None:
     client = _client(monkeypatch, FakeRegistry(_active(finished=True)), [_summary_event()])
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id: {"history": []})
-    monkeypatch.setattr(app_module, "_summary", lambda _run_id: {"approved": True})
+    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
 
     first = client.get("/api/runs/r1/stream")
     second = client.get("/api/runs/r1/stream")
@@ -123,8 +127,8 @@ def test_stream_preserves_a_failed_terminal_summary(monkeypatch) -> None:
         FakeRegistry(_active(finished=True)),
         [_summary_event(failed=True, approved=False)],
     )
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id: {"history": []})
-    monkeypatch.setattr(app_module, "_summary", lambda _run_id: {"failed": True, "outcome": "failed"})
+    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"failed": True, "outcome": "failed"})
 
     response = client.get("/api/runs/r1/stream")
 
@@ -151,6 +155,112 @@ def test_stream_store_failure_is_terminal_without_asgi_exception(monkeypatch) ->
     assert "Traceback" not in response.text
 
 
+def test_run_summary_with_nonzero_exit_is_not_reported_successful(monkeypatch) -> None:
+    client = _client(
+        monkeypatch,
+        FakeRegistry(_active(finished=True, exit_code=1)),
+        [_summary_event()],
+    )
+    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+
+    response = client.get("/api/runs/r1/stream")
+
+    assert response.status_code == 200
+    assert "event: done" in response.text
+    payload = json.loads(response.text.split("event: done\ndata: ", 1)[1].split("\n\n", 1)[0])
+    summary = payload["summary"]
+    assert summary["failed"] is True
+    assert summary["outcome"] == "failed"
+    assert summary["approved"] is None
+    assert "exited with code 1" in " ".join(summary["stage_errors"])
+
+
+def test_snapshot_summary_observes_the_subprocess_exit(monkeypatch) -> None:
+    store = FakeStore([_summary_event()])
+    registry = FakeRegistry(_active(finished=True, exit_code=2))
+    monkeypatch.setattr(app_module, "_store", lambda: store)
+
+    summary = app_module._summary("r1", registry)
+
+    assert summary["failed"] is True
+    assert summary["outcome"] == "failed"
+    assert summary["approved"] is None
+
+
+def test_synthetic_unavailable_summary_is_not_a_persisted_run_summary(monkeypatch) -> None:
+    store = FakeStore([])
+    monkeypatch.setattr(app_module, "_store", lambda: store)
+
+    summary = app_module._summary("missing", FakeRegistry(_active(finished=True, exit_code=1)))
+
+    assert summary == {}
+
+
+def test_startup_exit_reaches_terminal_state_promptly(monkeypatch) -> None:
+    client = _client(
+        monkeypatch,
+        FakeRegistry(_active(finished=True, exit_code=1)),
+        [],
+    )
+    started = __import__("time").monotonic()
+
+    response = client.get("/api/runs/r1/stream")
+
+    elapsed = __import__("time").monotonic() - started
+    assert response.status_code == 200
+    assert "event: done" in response.text
+    assert elapsed < 2.0, "a known-exited run must not wait for the 1800s timeout"
+
+
+def test_last_event_id_header_is_honored_by_the_stream_route(monkeypatch) -> None:
+    first = Event(
+        run_id="r1", seq=1, kind="stage_start", agent="researcher",
+        framework="adk",
+    )
+    second = Event(
+        run_id="r1", seq=2, kind="stage_end", agent="supervisor",
+        framework="adk", payload_summary="run_summary sequential",
+        extra={"approved": True},
+    )
+    client = _client(
+        monkeypatch,
+        FakeRegistry(_active(finished=True)),
+        [first, second],
+    )
+    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
+
+    response = client.get("/api/runs/r1/stream", headers={"Last-Event-ID": "1"})
+
+    assert response.status_code == 200
+    assert "id: 2" in response.text
+    assert "id: 1" not in response.text
+    assert "event: done" in response.text
+
+
+def test_log_reports_the_same_nonzero_exit(monkeypatch) -> None:
+    client = _client(
+        monkeypatch,
+        FakeRegistry(_active(finished=True, exit_code=7)),
+        [],
+    )
+
+    response = client.get("/api/runs/r1/log")
+
+    assert response.status_code == 200
+    assert response.json()["finished"] is True
+    assert response.json()["exit_code"] == 7
+
+
+def test_frontend_uses_native_eventsource_and_does_not_hand_build_the_header() -> None:
+    source = (
+        Path(__file__).resolve().parents[1] / "athena/api/static/app.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'new EventSource("/api/runs/" + runId + "/stream")' in source
+    assert "Last-Event-ID" not in source
+
+
 def test_last_event_id_resumes_without_duplicate_events(monkeypatch) -> None:
     first = Event(
         run_id="r1", seq=1, kind="stage_start", agent="researcher",
@@ -163,8 +273,8 @@ def test_last_event_id_resumes_without_duplicate_events(monkeypatch) -> None:
     )
     registry = FakeRegistry(_active(finished=True))
     monkeypatch.setattr(app_module, "_store", lambda: FakeStore([first, second]))
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id: {"history": []})
-    monkeypatch.setattr(app_module, "_summary", lambda _run_id: {"approved": True})
+    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
 
     async def collect():
         return [part async for part in app_module._events("r1", registry, 1)]

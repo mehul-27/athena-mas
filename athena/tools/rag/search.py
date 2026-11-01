@@ -24,6 +24,11 @@ def get_index() -> RagIndex:
     return RagIndex.open()
 
 
+def clear_index_cache() -> None:
+    """Forget the cached index so a rebuild is visible without a restart."""
+    get_index.cache_clear()
+
+
 def search_index(index: RagIndex, query: str, top_k: int = 5) -> list[RagHit]:
     """Hybrid search over an already-open index. Raises on an unusable index."""
     query = " ".join((query or "").split())

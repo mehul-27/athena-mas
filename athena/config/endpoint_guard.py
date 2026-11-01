@@ -11,12 +11,20 @@ Messages contain hostnames only, never keys or full URLs.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from urllib.parse import urlparse
 
 ENV_GUARD = "ATHENA_ENDPOINT_GUARD"
 
 _INSTALLED = False
 _LAST_HOST: str = ""
+
+# A chat turn may target a provider profile whose base URL differs from the
+# process's LLM_API_BASE. The scope lets that one call state its expected host
+# without mutating the environment. `""` means "no host to verify" (the provider
+# default), which disables the check for that call only.
+_SCOPE: ContextVar[str | None] = ContextVar("athena_expected_host", default=None)
 
 
 class EndpointMismatchError(RuntimeError):
@@ -32,7 +40,20 @@ def host_of(url: str) -> str:
 
 
 def expected_host() -> str:
+    scoped = _SCOPE.get()
+    if scoped is not None:
+        return scoped
     return host_of(os.getenv("LLM_API_BASE") or "")
+
+
+@contextmanager
+def expected_host_scope(base_url: str | None):
+    """Verify calls in this block against ``base_url`` (``None`` = no check)."""
+    token = _SCOPE.set(host_of(base_url or ""))
+    try:
+        yield
+    finally:
+        _SCOPE.reset(token)
 
 
 def guard_active() -> bool:
@@ -80,9 +101,14 @@ def last_host() -> str:
 
 
 def install_guard() -> bool:
-    """Wrap the completion entry points. Idempotent; no-op when inactive."""
+    """Wrap the completion entry points. Idempotent; no-op when disabled.
+
+    Arming is independent of whether LLM_API_BASE is set: a chat turn can carry
+    its own expected host in ``expected_host_scope``. When no host is expected,
+    ``check_call`` is a no-op, so the previous behaviour is preserved.
+    """
     global _INSTALLED
-    if not guard_active():
+    if (os.getenv(ENV_GUARD) or "").strip() == "0":
         return False
     # Not "install once": tests and scripts may replace litellm's entry points,
     # so every call checks the *current* function instead of trusting a flag.

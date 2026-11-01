@@ -58,6 +58,33 @@ def test_evidence_text_respects_a_custom_limit(bb: Blackboard) -> None:
     assert len(item_lines) == 2
 
 
+def test_evidence_text_keeps_fetched_body_after_navigation(bb: Blackboard) -> None:
+    """A real docs page has navigation before the release highlights."""
+    navigation = "Navigation " * 100
+    content = (
+        navigation
+        + "Python 3.13 highlights include experimental free-threaded mode "
+        "(PEP 703) and a basic JIT compiler (PEP 744). These are the changes "
+        "that the analyst and writer must be able to read."
+    )
+    bb.append(
+        "evidence",
+        EvidenceItem(
+            id="fetch-official",
+            source_type="web",
+            source_ref="https://docs.python.org/3/whatsnew/3.13.html",
+            content=content,
+            retrieved_by="web_researcher",
+        ),
+        author="web_researcher",
+    )
+
+    text = bb_io.evidence_text(bb)
+
+    assert "free-threaded" in text
+    assert "PEP 744" in text
+
+
 def test_empty_sections_render_placeholders(bb: Blackboard) -> None:
     assert bb_io.evidence_text(bb) == "(no evidence recorded)"
     assert bb_io.plan_text(bb) == "(no plan recorded)"

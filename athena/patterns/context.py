@@ -16,6 +16,7 @@ from athena.agents.untrusted import wrap_untrusted
 
 MAX_EVIDENCE_ITEMS = 8
 MAX_EVIDENCE_CHARS = 600
+MAX_FETCHED_EVIDENCE_CHARS = 2000
 MAX_PLAN_STEPS = 8
 DEFAULT_CONTEXT_CHARS = 9000
 CITABLE_EVIDENCE_TYPES = frozenset({"rag", "web", "calculation", "forecast"})
@@ -60,8 +61,13 @@ class P2PContext:
         used = 0
         for item in items[:MAX_EVIDENCE_ITEMS]:
             text = " ".join(item.content.split())
-            if len(text) > MAX_EVIDENCE_CHARS:
-                text = text[:MAX_EVIDENCE_CHARS].rstrip() + "..."
+            cap = (
+                MAX_FETCHED_EVIDENCE_CHARS
+                if item.id.startswith("fetch-")
+                else MAX_EVIDENCE_CHARS
+            )
+            if len(text) > cap:
+                text = text[:cap].rstrip() + "..."
             line = f"[{item.id}] {item.source_type} | {item.source_ref} | {text}"
             if limit is not None and used + len(line) > limit:
                 break

@@ -138,9 +138,9 @@ def duckduckgo(query: str, count: int) -> list[WebHit]:
     return hits
 
 
-def searxng(query: str, count: int) -> list[WebHit]:
+def searxng(query: str, count: int, endpoint: str | None = None) -> list[WebHit]:
     """Query a self-hosted SearXNG instance's JSON API."""
-    instance = settings.searxng_instance()
+    instance = (endpoint or settings.searxng_instance()).rstrip("/")
     if not instance:
         raise ValueError("SEARCH_PROVIDER=searxng requires SEARXNG_INSTANCE")
 
@@ -167,10 +167,22 @@ def searxng(query: str, count: int) -> list[WebHit]:
     return hits
 
 
-def web_search(query: str, max_results: int = 5) -> WebResult:
-    """Search the web. Never raises: failures come back as ``ok=False``."""
+def web_search(
+    query: str,
+    max_results: int = 5,
+    *,
+    provider: str | None = None,
+    endpoint: str | None = None,
+) -> WebResult:
+    """Search the web. Never raises: failures come back as ``ok=False``.
+
+    ``provider``/``endpoint`` let an in-process caller (chat) use the search
+    settings of the selected provider profile instead of the process environment.
+    The MCP wrapper keeps calling the two positional arguments, so its contract
+    is unchanged.
+    """
     started = time.perf_counter()
-    provider = settings.search_provider()
+    provider = (provider or settings.search_provider()).lower()
     limit = max(1, min(int(max_results), 20))
 
     def result(**kwargs) -> WebResult:
@@ -185,17 +197,19 @@ def web_search(query: str, max_results: int = 5) -> WebResult:
     if provider == "disabled":
         return result(ok=False, error="web search is disabled (SEARCH_PROVIDER=disabled)")
 
-    callers = {"duckduckgo": duckduckgo, "searxng": searxng}
-    caller = callers.get(provider)
-    if caller is None:
+    if provider == "duckduckgo":
+        caller = lambda: duckduckgo(query, limit)  # noqa: E731 - tiny adapter
+    elif provider == "searxng":
+        caller = lambda: searxng(query, limit, endpoint=endpoint)  # noqa: E731
+    else:
         return result(
             ok=False,
             error=f"unsupported SEARCH_PROVIDER {provider!r} "
-            f"(use one of {sorted(callers)} or disabled)",
+            f"(use one of ['duckduckgo', 'searxng'] or disabled)",
         )
 
     try:
-        hits = caller(query, limit)
+        hits = caller()
     except SearchThrottled:
         return result(ok=False, error="search provider throttled")
     except Exception as exc:  # noqa: BLE001 - network failure is a result, not a crash

@@ -317,3 +317,110 @@ test("the status pill is short with a full tooltip", () => {
   const replay = logic.statusPill({ crew_server: "up", provider_configured: false }, false);
   assert.equal(replay.short, "crew up - replay");
 });
+
+/* ------------------------------------------------------------ chat tests */
+
+test("the SSE parser handles frames split across chunks", () => {
+  const parser = logic.sseParser();
+  assert.deepEqual(parser.push('id: 1\nevent: delta\ndata: {"text":"a"}'), []);
+  assert.deepEqual(parser.push("\n\n"), [
+    { event: "delta", id: "1", data: '{"text":"a"}' },
+  ]);
+  assert.deepEqual(parser.flush(), []);
+});
+
+test("the SSE parser joins data lines, ignores comments and handles CRLF", () => {
+  const parser = logic.sseParser();
+  const frames = parser.push(": keep-alive\r\n\r\nevent: tool\r\ndata: one\r\ndata: two\r\n\r\n");
+  assert.deepEqual(frames, [{ event: "tool", id: "", data: "one\ntwo" }]);
+});
+
+test("the SSE parser flushes a final unterminated frame", () => {
+  const parser = logic.sseParser();
+  assert.deepEqual(parser.push("data: tail"), []);
+  assert.deepEqual(parser.flush(), [{ event: "message", id: "", data: "tail" }]);
+});
+
+test("usage and tool labels only show real values", () => {
+  assert.equal(logic.usageLabel(null), "");
+  assert.equal(logic.usageLabel({ tokens_in: 0, tokens_out: 0 }), "");
+  assert.equal(logic.usageLabel({ tokens_in: 1200, tokens_out: 30, reasoning_tokens: 4 }),
+    "1,200 in \u00b7 30 out \u00b7 4 reasoning");
+  assert.equal(logic.toolSummary([]), "");
+  assert.equal(logic.toolSummary([{ status: "ok" }]), "1 tool \u00b7 1 ok");
+  assert.equal(logic.toolSummary([{ status: "ok" }, { status: "error" }]),
+    "2 tools \u00b7 1 failed");
+});
+
+test("source labels distinguish documents and web pages", () => {
+  assert.equal(logic.sourceLabel({ kind: "document", document: "handbook.pdf", page: 12 }),
+    "handbook.pdf \u00b7 p12");
+  assert.equal(logic.sourceLabel({ kind: "web", url: "https://docs.python.org/3.13/" }),
+    "docs.python.org");
+});
+
+test("settings filtering and focus wrapping are deterministic", () => {
+  const sections = [
+    { id: "models", label: "Models", keywords: ["provider"] },
+    { id: "library", label: "Library", keywords: ["rag"] },
+  ];
+  assert.deepEqual(logic.filterSettingsSections(sections, ""), ["models", "library"]);
+  assert.deepEqual(logic.filterSettingsSections(sections, "rag"), ["library"]);
+  assert.equal(logic.nextFocusIndex(3, 2, false), 0);
+  assert.equal(logic.nextFocusIndex(3, 0, true), 2);
+  assert.equal(logic.nextFocusIndex(0, 0, false), 0);
+});
+
+test("Capillary options keep the requested values and do not fake bayer4", () => {
+  const options = logic.capillaryOptions(null);
+  assert.equal(options.palette, "var(--capillary-ink, #f2f0ea)");
+  assert.equal(options.speed, 1);
+  assert.equal(options.cellSize, 10);
+  assert.equal(options.opacity, 1);
+  assert.equal(options.charset, "detailed");
+  assert.equal(options.cursor, "lantern");
+  assert.equal(options.mark, "glyph");
+  assert.equal(options.dither, 0);
+  assert.equal(options.text, "ASCIIFY");
+  assert.deepEqual(options.look, { scene: "flow" });
+  assert.equal(options.algorithm, undefined);
+  assert.equal(logic.CAPILLARY_REQUESTED.algorithm, "bayer4");
+  assert.equal(logic.CAPILLARY_REQUESTED.ink, "#f2f0ea");
+});
+
+test("tutorial placement stays inside the viewport", () => {
+  const target = { left: 500, top: 400, width: 120, height: 30 };
+  const card = { width: 300, height: 200 };
+  const viewport = { width: 1200, height: 800 };
+  const below = logic.tutorialPlacement(target, card, viewport, "bottom");
+  assert.equal(below.placement, "bottom");
+  assert.equal(below.top, 442);
+  assert.equal(below.left, 410);
+
+  const above = logic.tutorialPlacement(target, card, viewport, "top");
+  assert.equal(above.placement, "top");
+  assert.equal(above.top, 188);
+
+  const right = logic.tutorialPlacement(target, card, viewport, "right");
+  assert.equal(right.placement, "right");
+  assert.equal(right.left, 632);
+
+  const clamped = logic.tutorialPlacement(
+    { left: 1150, top: 20, width: 20, height: 20 }, card, viewport, "bottom"
+  );
+  assert.equal(clamped.left, 888);
+  assert.equal(logic.tutorialPlacement(target, card, { width: 390, height: 844 }, "bottom").mobile, true);
+});
+
+test("tutorial persistence and auto-start rules are pure", () => {
+  assert.equal(logic.tutorialProgress(1, 8), "Step 2 of 8");
+  assert.deepEqual(logic.parseTutorialState('{"status":"done","step":3}'),
+    { status: "done", step: 3 });
+  assert.equal(logic.parseTutorialState("not json"), null);
+  assert.equal(logic.parseTutorialState('{"status":"open"}'), null);
+  assert.equal(logic.shouldAutoStartTutorial({ view: "run", params: {} }, null, false), true);
+  assert.equal(logic.shouldAutoStartTutorial({ view: "run", params: {} }, { status: "done" }, false), false);
+  assert.equal(logic.shouldAutoStartTutorial({ view: "run", params: {} }, null, true), false);
+  assert.equal(logic.shouldAutoStartTutorial({ view: "settings", params: {} }, null, false), false);
+  assert.equal(logic.shouldAutoStartTutorial({ view: "replay=x", params: {} }, null, false), false);
+});

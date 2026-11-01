@@ -150,7 +150,7 @@ def test_env_for_profile_uses_the_vault(store: Path) -> None:
     assert set(env) <= set(profiles_module.ENV_KEYS)
 
 
-def test_env_for_searxng_and_search_key(store: Path) -> None:
+def test_env_for_searxng_does_not_export_the_unused_search_key(store: Path) -> None:
     profile = upsert(_profile(search_provider="searxng",
                               search_endpoint="http://localhost:8888"), store)
     from athena.settings.vault import default_vault
@@ -159,7 +159,9 @@ def test_env_for_searxng_and_search_key(store: Path) -> None:
     env = env_for_profile(profile.id, path=store)
 
     assert env["SEARXNG_INSTANCE"] == "http://localhost:8888"
-    assert "search-secret" in json.dumps(env)
+    # DuckDuckGo and SearXNG are the supported providers; neither consumes a
+    # search key, so the old Brave/Tavily secret path must not exist.
+    assert "search-secret" not in json.dumps(env)
 
 
 def test_env_for_unknown_profile_raises(store: Path) -> None:

@@ -87,30 +87,63 @@ function banner(message, show) {
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   try { localStorage.setItem("athena.theme", theme); } catch (_) { /* private mode */ }
+  document.dispatchEvent(new CustomEvent("athena:theme", { detail: { theme: theme } }));
 }
 
 function applySize(presentation) {
   document.documentElement.dataset.size = presentation ? "presentation" : "normal";
-  $("presentation-toggle").classList.toggle("on", presentation);
   try { localStorage.setItem("athena.presentation", presentation ? "1" : "0"); } catch (_) { /* ignore */ }
+  document.dispatchEvent(new CustomEvent("athena:size", { detail: { presentation: presentation } }));
+}
+
+function updateSidebarBackdrop() {
+  const backdrop = $("sidebar-backdrop");
+  if (!backdrop) return;
+  const collapsed = document.body.classList.contains("sidebar-collapsed");
+  backdrop.classList.toggle("hidden", collapsed || window.innerWidth > 680);
+}
+
+function setSidebar(collapsed, persist) {
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  const toggle = $("sidebar-toggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    toggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    toggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  }
+  updateSidebarBackdrop();
+  if (persist !== false) {
+    try { localStorage.setItem("athena.sidebar", collapsed ? "collapsed" : "open"); } catch (_) { /* private mode */ }
+  }
+  window.setTimeout(() => window.AthenaBackground?.updateClear(), 220);
 }
 
 function showView(name) {
+  if (name === "settings") {
+    window.AthenaSettings?.open();
+    return;
+  }
   state.view = name;
-  ["run", "details", "how", "documents", "settings"].forEach((view) => {
+  ["chat", "run", "details", "how", "documents"].forEach((view) => {
     const node = $("view-" + view);
     if (node) node.classList.toggle("hidden", view !== name);
   });
+  const chatMode = name === "chat";
+  const chats = $("sidebar-chats");
+  const research = $("sidebar-research");
+  if (chats) chats.classList.toggle("hidden", !chatMode);
+  if (research) research.classList.toggle("hidden", chatMode);
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.view === name);
   });
+  if (name === "chat") window.AthenaChat?.activate();
   if (name === "run") { setTab("answer"); renderLiveMap(); }
   if (name === "details") {
     if (state.tab.tab === "answer") setTab("activity");
     renderLiveMap();
   }
   if (name === "how") { renderHowDiagram(); loadTools(); }
-  if (name === "settings") loadSettings();
+  document.dispatchEvent(new CustomEvent("athena:view", { detail: { view: name } }));
   try { history.replaceState(null, "", "#" + name + (state.replaying ? "&replay=" + state.runId : "")); } catch (_) { /* ignore */ }
 }
 
@@ -607,6 +640,11 @@ function lockedReason() {
 }
 
 function newChat() {
+  if (window.innerWidth <= 680) setSidebar(true, false);
+  if (state.view === "chat" && window.AthenaChat) {
+    window.AthenaChat.newConversation();
+    return;
+  }
   if (isLocked()) { toast(lockedReason()); return; }
   closeStream();
   stopWatchdog();
@@ -678,7 +716,7 @@ async function startRun() {
     showView("run");
     showExchange(submittedQuestion);
     beginRun(data.run_id, false, "live");
-    resetReport("Athena is researching this question\u2026");
+    resetReport("athena is researching this question\u2026");
   } catch (error) {
     const active = isActiveRunError(error);
     addLog("start", "start failed: " + error.message, "error");
@@ -1514,256 +1552,6 @@ function renderHowDiagram() {
   });
 }
 
-/* ---------------------------------------------------------------- settings */
-
-function setRequest(action) {
-  state.request = L.requestState(state.request, action);
-  const busy = L.isBusy(state.request);
-  ["profile-save", "profile-test", "profile-activate", "profile-delete"].forEach((id) => {
-    const button = $(id);
-    if (button) button.disabled = busy;
-  });
-  text($("profile-status"), state.request.message);
-  renderTestResults();
-}
-
-function renderTestResults() {
-  const host = $("test-result");
-  host.replaceChildren();
-  const rows = state.request.rows || [];
-  if (!rows.length) {
-    if (state.request.status === "error" || state.request.status === "timeout") {
-      const message = document.createElement("p");
-      message.className = "error-text";
-      text(message, state.request.message);
-      host.appendChild(message);
-    }
-    return;
-  }
-  const table = document.createElement("table");
-  table.className = "table";
-  const head = document.createElement("tr");
-  ["path", "ok", "host", "tokens", "error"].forEach((label) => {
-    const th = document.createElement("th");
-    text(th, label);
-    head.appendChild(th);
-  });
-  table.appendChild(head);
-  rows.forEach((row) => {
-    const tr = document.createElement("tr");
-    [row.path, row.ok ? "ok" : "failed", row.host,
-     (row.tokens_in || 0) + "/" + (row.tokens_out || 0),
-     row.error_type ? row.error_type + ": " + (row.error || "") : ""].forEach((value) => {
-      const cell = document.createElement("td");
-      text(cell, value);
-      tr.appendChild(cell);
-    });
-    table.appendChild(tr);
-  });
-  host.appendChild(table);
-}
-
-async function loadSettings() {
-  try {
-    const [profiles, presets, about] = await Promise.all([
-      api("/api/settings/profiles"), api("/api/settings/presets"), api("/api/settings/about-me"),
-    ]);
-    state.profiles = profiles.profiles || [];
-    state.active = profiles.active || "";
-    state.presets = presets.presets || [];
-    $("about-me").value = about.about_me || "";
-    const select = $("profile-preset");
-    if (!select.options.length) {
-      select.appendChild(new Option("(choose a preset)", ""));
-      state.presets.forEach((preset) => select.appendChild(new Option(preset.name, preset.id)));
-    }
-    renderProfiles();
-    text($("settings-state"), state.active ? "" : "no active provider");
-    if (!state.active && state.profiles.length === 0) {
-      text($("settings-state"), "No provider configured. Add one to run live.");
-    }
-  } catch (error) {
-    text($("settings-state"), "cannot load settings: " + error.message);
-  }
-}
-
-function renderProfiles() {
-  const body = $("profiles-body");
-  body.replaceChildren();
-  state.profiles.forEach((profile) => {
-    const tr = document.createElement("tr");
-    const host = String(profile.api_base || "").replace(/^https?:\/\//, "").split("/")[0];
-    [profile.name, profile.model, host,
-     profile.has_llm_key ? "stored" : "missing",
-     profile.id === state.active ? "active" : ""].forEach((value) => {
-      const cell = document.createElement("td");
-      text(cell, value);
-      tr.appendChild(cell);
-    });
-    const actions = document.createElement("td");
-    const activate = document.createElement("button");
-    activate.type = "button";
-    activate.className = "link-button";
-    text(activate, "activate");
-    activate.title = "Activate this saved profile";
-    activate.addEventListener("click", () => activateProfile(profile.id));
-    actions.appendChild(activate);
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.className = "link-button";
-    text(edit, "edit");
-    edit.addEventListener("click", () => editProfile(profile));
-    actions.appendChild(edit);
-    const replace = document.createElement("button");
-    replace.type = "button";
-    replace.className = "link-button";
-    text(replace, "replace key");
-    replace.addEventListener("click", () => {
-      $("profile-key").value = "";
-      $("profile-key").focus();
-    });
-    actions.appendChild(replace);
-    tr.appendChild(actions);
-    body.appendChild(tr);
-  });
-}
-
-function editProfile(profile) {
-  state.editing = profile.id;
-  text($("profile-form-title"), "Edit " + profile.name);
-  $("profile-name").value = profile.name || "";
-  $("profile-api-base").value = profile.api_base || "";
-  $("profile-model").value = profile.model || "";
-  $("profile-reasoning").value = profile.reasoning_effort || "";
-  $("profile-search").value = profile.search_provider || "duckduckgo";
-  $("profile-search-endpoint").value = profile.search_endpoint || "";
-  $("profile-key").value = "";  // never repopulate a stored key
-}
-
-function formPayload() {
-  return {
-    name: $("profile-name").value, model: $("profile-model").value,
-    api_base: $("profile-api-base").value,
-    reasoning_effort: $("profile-reasoning").value,
-    search_provider: $("profile-search").value,
-    search_endpoint: $("profile-search-endpoint").value,
-    llm_key: $("profile-key").value,
-  };
-}
-
-async function saveProfile() {
-  const payload = formPayload();
-  const existing = state.profiles.find((item) => item.id === state.editing);
-  const check = L.validateProfile({ ...payload, needs_key: !existing && !payload.llm_key });
-  text($("profile-errors"), check.ok ? "" : Object.values(check.errors).join("; "));
-  if (!check.ok) return false;
-
-  setRequest({ type: "start", message: "saving..." });
-  payload.llm_key = payload.llm_key || null;
-  $("profile-key").value = "";  // cleared before the request returns
-  try {
-    const saved = state.editing
-      ? await api("/api/settings/profiles/" + state.editing, {
-          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
-      : await api("/api/settings/profiles", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    state.editing = saved.id;
-    setRequest({ type: "ok", message: "saved", rows: [] });
-    await loadSettings();
-    return true;
-  } catch (error) {
-    setRequest({ type: "error", message: "save failed: " + error.message });
-    return false;
-  }
-}
-
-async function testProfile() {
-  if (!state.editing) {
-    const saved = await saveProfile();
-    if (!saved) { setRequest({ type: "error", message: "save the provider first" }); return; }
-  }
-  const started = Date.now();
-  setRequest({ type: "start", message: "testing... 0s" });
-  const ticker = setInterval(() => {
-    const seconds = Math.round((Date.now() - started) / 1000);
-    state.request = { ...state.request, message: "testing... " + seconds + "s" };
-    text($("profile-status"), state.request.message);
-  }, 1000);
-  try {
-    const data = await api("/api/settings/profiles/" + state.editing + "/test", { method: "POST" });
-    const rows = data.results || [];
-    setRequest({ type: "ok", message: rows.length + " path(s) checked", rows });
-  } catch (error) {
-    setRequest(error.code === "timeout"
-      ? { type: "timeout" }
-      : { type: "error", message: "test failed: " + error.message });
-  } finally {
-    clearInterval(ticker);
-  }
-}
-
-async function activateProfile(profileId) {
-  const id = typeof profileId === "string" && profileId ? profileId : state.editing;
-  if (!id) {
-    setRequest({ type: "error", message: "select a saved provider or use its activate action" });
-    return;
-  }
-  const selected = state.profiles.find((profile) => profile.id === id);
-  if (!selected) {
-    setRequest({ type: "error", message: "select a saved provider first" });
-    return;
-  }
-  editProfile(selected);
-  setRequest({ type: "start", message: "restarting crew server..." });
-  try {
-    const result = await api("/api/settings/activate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile_id: id }),
-    });
-    if (result.ok) {
-      setRequest({ type: "ok", message: "crew server: up", rows: [] });
-    } else {
-      setRequest({
-        type: "error",
-        message: "profile was not activated; crew server did not start",
-        rows: [],
-      });
-    }
-    await loadSettings();
-    await refreshHealth();
-  } catch (error) {
-    setRequest(error.code === "timeout"
-      ? { type: "timeout" }
-      : { type: "error", message: String(error.message) });
-  }
-}
-
-async function deleteProfile() {
-  if (!state.editing) { setRequest({ type: "error", message: "nothing selected" }); return; }
-  if (!window.confirm("Delete this provider and its stored key?")) return;
-  setRequest({ type: "start", message: "deleting..." });
-  try {
-    await api("/api/settings/profiles/" + state.editing, { method: "DELETE" });
-    state.editing = "";
-    setRequest({ type: "ok", message: "deleted", rows: [] });
-    await loadSettings();
-  } catch (error) {
-    setRequest({ type: "error", message: "delete failed: " + error.message });
-  }
-}
-
-async function saveAboutMe() {
-  try {
-    const saved = await api("/api/settings/about-me", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ about_me: $("about-me").value.slice(0, 800) }),
-    });
-    text($("about-status"), saved.about_me ? "saved" : "cleared");
-  } catch (error) {
-    text($("about-status"), "failed: " + error.message);
-  }
-}
-
 /* ---------------------------------------------------------------- wiring */
 
 $("composer-pattern").addEventListener("change", (event) => {
@@ -1777,7 +1565,14 @@ document.querySelectorAll("#pattern-chips .chip").forEach((chip) => {
 setPattern(state.pattern, false);
 
 document.querySelectorAll(".nav-item").forEach((item) => {
-  item.addEventListener("click", () => showView(item.dataset.view));
+  item.addEventListener("click", () => {
+    if (window.innerWidth <= 680) setSidebar(true, false);
+    if (item.dataset.view === "settings") {
+      window.AthenaSettings?.open();
+      return;
+    }
+    showView(item.dataset.view);
+  });
 });
 
 document.querySelectorAll("#run-tabs .tab").forEach((tab) => {
@@ -1836,33 +1631,38 @@ $("toggle-raw").addEventListener("click", () => {
   state.rawJson = !state.rawJson;
   document.querySelectorAll(".raw").forEach((node) => node.classList.toggle("hidden", !state.rawJson));
 });
-$("sidebar-toggle").addEventListener("click", () => document.body.classList.toggle("sidebar-collapsed"));
+$("sidebar-toggle").addEventListener("click", () => {
+  setSidebar(!document.body.classList.contains("sidebar-collapsed"));
+});
+$("sidebar-backdrop").addEventListener("click", () => setSidebar(true));
 $("history-refresh").addEventListener("click", loadHistory);
 $("history-more").addEventListener("click", () => {
   state.historyLimit += HISTORY_LIMIT;
   renderHistory();
 });
 $("tools-refresh").addEventListener("click", loadTools);
-$("profile-save").addEventListener("click", saveProfile);
-$("profile-test").addEventListener("click", testProfile);
-$("profile-activate").addEventListener("click", () => activateProfile());
-$("profile-delete").addEventListener("click", deleteProfile);
-$("about-save").addEventListener("click", saveAboutMe);
-$("profile-preset").addEventListener("change", (event) => {
-  const filled = L.presetFill(state.presets, event.target.value);
-  if (filled.api_base) $("profile-api-base").value = filled.api_base;
-  if (filled.model) $("profile-model").value = filled.model;
-});
 $("theme-toggle").addEventListener("click", () => {
   applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
-});
-$("presentation-toggle").addEventListener("click", () => {
-  applySize(document.documentElement.dataset.size !== "presentation");
 });
 $("banner").addEventListener("click", () => {
   state.noticeDismissed = true;
   banner("", false);
 });
+
+/* Shared surface for the chat, settings and tutorial modules. */
+window.AthenaUi = {
+  api,
+  toast,
+  text,
+  $,
+  showView,
+  applyTheme,
+  applySize,
+  openRun,
+  refreshHealth,
+  isBusy: () => isLocked() || state.busy || Boolean(state.activeRun),
+  currentView: () => state.view,
+};
 
 /* boot: theme, size, deep links */
 try {
@@ -1872,6 +1672,22 @@ try {
   applyTheme("dark");
   applySize(false);
 }
+try {
+  let storedSidebar = localStorage.getItem("athena.sidebar");
+  const startCollapsed = window.innerWidth <= 680
+    ? true
+    : storedSidebar === "collapsed";
+  setSidebar(startCollapsed, false);
+} catch (_) {
+  setSidebar(window.innerWidth <= 680, false);
+}
+let narrowViewport = window.innerWidth <= 680;
+window.addEventListener("resize", () => {
+  const narrow = window.innerWidth <= 680;
+  if (narrow && !narrowViewport) setSidebar(true, false);
+  narrowViewport = narrow;
+  updateSidebarBackdrop();
+});
 
 function parseHash() {
   const raw = (window.location.hash || "").replace(/^#/, "");
@@ -1901,8 +1717,15 @@ if (boot.view.startsWith("replay=")) {
   const name = boot.view.slice(7);
   const at = boot.params.at === undefined ? 1 : Number(boot.params.at);
   openReplay(name, { at: Number.isFinite(at) ? at : 1, tab: bootTab });
+} else if (boot.view === "chat") {
+  showView("chat");
 } else if (["settings", "how", "documents"].includes(boot.view) || boot.view === "details") {
-  showView(boot.view);
+  if (boot.view === "settings") {
+    showView("run");
+    setTimeout(() => window.AthenaSettings?.open(), 0);
+  } else {
+    showView(boot.view);
+  }
 } else if (bootTab !== "answer") {
   showView("details");
   setTab(bootTab);

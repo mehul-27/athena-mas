@@ -492,6 +492,189 @@
     return rows.slice(0, 6).map((row) => row.agent + " " + row.status).join(" \u00b7 ");
   }
 
+  /* ------------------------------------------------------------ chat helpers */
+
+  function sseParser() {
+    let buffer = "";
+    function parseBlock(block) {
+      const lines = block.split(/\r?\n/);
+      let event = "message";
+      let id = "";
+      const data = [];
+      lines.forEach((line) => {
+        if (!line || line.startsWith(":")) return;
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+        else if (line.startsWith("id:")) id = line.slice(3).trim();
+      });
+      if (!data.length) return null;
+      return { event, id, data: data.join("\n") };
+    }
+    function drain(final) {
+      const out = [];
+      let match = /\r?\n\r?\n/.exec(buffer);
+      while (match) {
+        const block = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
+        const parsed = parseBlock(block);
+        if (parsed) out.push(parsed);
+        match = /\r?\n\r?\n/.exec(buffer);
+      }
+      if (final && buffer.trim()) {
+        const parsed = parseBlock(buffer);
+        if (parsed) out.push(parsed);
+        buffer = "";
+      }
+      return out;
+    }
+    return {
+      push(chunk) { buffer += String(chunk == null ? "" : chunk); return drain(false); },
+      flush() { return drain(true); },
+    };
+  }
+
+  function usageLabel(usage) {
+    if (!usage) return "";
+    const input = Number(usage.tokens_in || 0);
+    const output = Number(usage.tokens_out || 0);
+    if (!input && !output) return "";
+    const reasoning = Number(usage.reasoning_tokens || 0);
+    return input.toLocaleString() + " in \u00b7 " + output.toLocaleString() + " out"
+      + (reasoning ? " \u00b7 " + reasoning.toLocaleString() + " reasoning" : "");
+  }
+
+  function toolSummary(events) {
+    const rows = Array.isArray(events) ? events : [];
+    if (!rows.length) return "";
+    const failed = rows.filter((row) => row.status === "error" || row.status === "failed").length;
+    const label = rows.length + " tool" + (rows.length === 1 ? "" : "s");
+    return failed ? label + " \u00b7 " + failed + " failed" : label + " \u00b7 " + rows.length + " ok";
+  }
+
+  function sourceLabel(source) {
+    if (!source) return "";
+    if (source.kind === "web") {
+      try { return new URL(source.url).hostname.replace(/^www\./, ""); } catch (_) {
+        return source.title || source.url || "web";
+      }
+    }
+    if (source.kind === "document") {
+      return String(source.document || "document") + (source.page ? " \u00b7 p" + source.page : "");
+    }
+    return String(source.title || source.document || source.url || "source");
+  }
+
+  function filterSettingsSections(sections, query) {
+    const rows = Array.isArray(sections) ? sections : [];
+    const needle = String(query == null ? "" : query).trim().toLowerCase();
+    if (!needle) return rows.map((section) => section.id);
+    return rows.filter((section) => {
+      const hay = [section.label, section.id].concat(section.keywords || []).join(" ").toLowerCase();
+      return hay.includes(needle);
+    }).map((section) => section.id);
+  }
+
+  function nextFocusIndex(count, current, shift) {
+    const total = Math.max(0, Number(count) || 0);
+    if (!total) return 0;
+    const step = shift ? -1 : 1;
+    return (Number(current || 0) + step + total) % total;
+  }
+
+  /* ------------------------------------------------------- Capillary options */
+
+  // The exact requested background configuration, kept in one place. The GPU
+  // preset has no public field for `bayer4` (that belonged to the retired canvas
+  // templates), and Capillary's simulation owns the scene/text/dither, so those
+  // requested values are documented here but not passed as fake API options.
+  const CAPILLARY_REQUESTED = Object.freeze({
+    renderStyle: "original", look: "", algorithm: "bayer4", dither: 0,
+    scheme: "dark", ink: "#f2f0ea", speed: 1, size: 10, opacity: 1,
+    characters: "detailed", word: "ASCIIFY", scene: "flow", hover: "lantern", mark: "glyph",
+  });
+
+  function capillaryOptions(clear) {
+    return {
+      palette: "var(--capillary-ink, #f2f0ea)",
+      speed: CAPILLARY_REQUESTED.speed,
+      cellSize: CAPILLARY_REQUESTED.size,
+      opacity: CAPILLARY_REQUESTED.opacity,
+      charset: CAPILLARY_REQUESTED.characters,
+      cursor: CAPILLARY_REQUESTED.hover,
+      mark: CAPILLARY_REQUESTED.mark,
+      dither: CAPILLARY_REQUESTED.dither,
+      text: CAPILLARY_REQUESTED.word,
+      look: { scene: CAPILLARY_REQUESTED.scene },
+      clear: clear || null,
+      globalLook: false,
+      lazy: true,
+    };
+  }
+
+  /* -------------------------------------------------------- tutorial helpers */
+
+  function tutorialPlacement(target, card, viewport, preferred) {
+    const pad = 12;
+    const gap = 12;
+    const vw = Math.max(1, Number(viewport && viewport.width) || 1024);
+    const vh = Math.max(1, Number(viewport && viewport.height) || 768);
+    const tw = Math.max(1, Number(target && target.width) || 0);
+    const th = Math.max(1, Number(target && target.height) || 0);
+    const cw = Math.min(Number(card && card.width) || 340, vw - pad * 2);
+    const ch = Math.min(Number(card && card.height) || 220, vh - pad * 2);
+    const left = Number(target && target.left) || 0;
+    const top = Number(target && target.top) || 0;
+    if (vw <= 640) {
+      return { placement: "bottom", mobile: true, left: pad, top: Math.max(pad, vh - ch - pad), width: vw - pad * 2 };
+    }
+    const space = {
+      bottom: vh - (top + th) - pad,
+      top: top - pad,
+      right: vw - (left + tw) - pad,
+      left: left - pad,
+    };
+    const fits = (place) => (place === "top" || place === "bottom"
+      ? space[place] >= ch + gap
+      : space[place] >= cw + gap);
+    let placement = ["top", "bottom", "left", "right"].includes(preferred) ? preferred : "bottom";
+    if (!fits(placement)) {
+      placement = ["bottom", "top", "right", "left"].find(fits) || "bottom";
+    }
+    let x = left + tw / 2 - cw / 2;
+    let y = top + th + gap;
+    if (placement === "top") y = top - ch - gap;
+    if (placement === "right") { x = left + tw + gap; y = top + th / 2 - ch / 2; }
+    if (placement === "left") { x = left - cw - gap; y = top + th / 2 - ch / 2; }
+    x = Math.max(pad, Math.min(vw - cw - pad, x));
+    y = Math.max(pad, Math.min(vh - ch - pad, y));
+    return { placement, mobile: false, left: x, top: y, width: cw };
+  }
+
+  function tutorialProgress(index, total) {
+    return "Step " + (Number(index) + 1) + " of " + total;
+  }
+
+  function parseTutorialState(raw) {
+    if (!raw) return null;
+    try {
+      const value = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (value && (value.status === "done" || value.status === "skipped")) {
+        return { status: value.status, step: Math.max(0, Number(value.step) || 0) };
+      }
+    } catch (_) { /* unreadable storage is the same as no state */ }
+    return null;
+  }
+
+  function shouldAutoStartTutorial(boot, state, busy) {
+    if (state) return false;
+    if (busy) return false;
+    const view = String(boot && boot.view || "run");
+    if (view.startsWith("replay=")) return false;
+    if (["settings", "details", "how"].includes(view)) return false;
+    if (boot && boot.params && boot.params.at !== undefined) return false;
+    return true;
+  }
+
   const api = {
     frameworkOf, reduceTimeline, a2aBytes, duration, bytes, tokens,
     relativeTime, groupHistory, tabReducer, progressStrip,
@@ -500,6 +683,9 @@
     PATTERNS, DEFAULT_PATTERN, patternValue, validRunId,
     metricRows, metricValue,
     diagramFor, diagramState, NODES, PATTERN_EDGES,
+    sseParser, usageLabel, toolSummary, sourceLabel, filterSettingsSections, nextFocusIndex,
+    CAPILLARY_REQUESTED, capillaryOptions,
+    tutorialPlacement, tutorialProgress, parseTutorialState, shouldAutoStartTutorial,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AthenaLogic = api;

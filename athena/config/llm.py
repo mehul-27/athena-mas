@@ -41,7 +41,7 @@ MAX_RETRIES = 3
 ROLE_MAX_TOKENS = {
     "planner": 1500,
     "researcher": 2000,
-    "analyst": 1500,
+    "analyst": 3000,
     "writer": 3000,
     "critic": 3000,
 }

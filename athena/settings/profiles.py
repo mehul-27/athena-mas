@@ -19,10 +19,53 @@ PROFILES_FILE = Path("data/settings/profiles.json")
 PRESETS_FILE = Path("data/presets.json")
 ACTIVE_FILE = Path("data/settings/active_profile.json")
 
-SEARCH_PROVIDERS = ("duckduckgo", "searxng", "brave", "tavily")
+# Only providers the web tool actually implements. Brave/Tavily used to be
+# accepted by validation but always returned "unsupported SEARCH_PROVIDER".
+SEARCH_PROVIDERS = ("duckduckgo", "searxng")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 ENV_KEYS = ("LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL", "LLM_REASONING_EFFORT",
-            "SEARCH_PROVIDER", "SEARXNG_INSTANCE", "BRAVE_API_KEY", "TAVILY_API_KEY")
+            "SEARCH_PROVIDER", "SEARXNG_INSTANCE")
+
+# `data/presets.json` is the user-editable list, but a fresh clone must still
+# offer presets (the file is under `data/`, which is gitignored). This fallback
+# is the shipped list; it is used when the file is missing or malformed.
+DEFAULT_PRESETS = [
+    {
+        "id": "commandcode",
+        "name": "Command Code",
+        "api_base": "https://api.commandcode.ai/provider/v1",
+        "model": "openai/deepseek/deepseek-v4.1-flash",
+        "notes": "The gateway used for the live runs in this project.",
+    },
+    {
+        "id": "groq",
+        "name": "Groq",
+        "api_base": "https://api.groq.com/openai/v1",
+        "model": "groq/qwen/qwen3.8-27b",
+        "notes": "Free tier; input and output tokens are metered per minute.",
+    },
+    {
+        "id": "openrouter",
+        "name": "OpenRouter",
+        "api_base": "https://openrouter.ai/api/v1",
+        "model": "openrouter/meta-llama/llama-3.1-70b-instruct",
+        "notes": "Many models behind one key.",
+    },
+    {
+        "id": "openai",
+        "name": "OpenAI",
+        "api_base": "https://api.openai.com/v1",
+        "model": "openai/gpt-4o-mini",
+        "notes": "Direct OpenAI.",
+    },
+    {
+        "id": "custom",
+        "name": "Custom OpenAI-compatible",
+        "api_base": "",
+        "model": "",
+        "notes": "Any endpoint that speaks /chat/completions. https, or http for localhost only.",
+    },
+]
 
 
 class ProfileError(ValueError):
@@ -85,8 +128,13 @@ class Profile:
 
 def presets() -> list[dict]:
     if PRESETS_FILE.exists():
-        return json.loads(PRESETS_FILE.read_text(encoding="utf-8"))
-    return []
+        try:
+            data = json.loads(PRESETS_FILE.read_text(encoding="utf-8"))
+        except ValueError:
+            data = None
+        if isinstance(data, list) and data:
+            return data
+    return list(DEFAULT_PRESETS)
 
 
 def load_profiles(path: Path | None = None) -> list[Profile]:
@@ -163,7 +211,4 @@ def env_for_profile(profile_id: str, vault: SecretStore | None = None,
     env["SEARCH_PROVIDER"] = profile.search_provider
     if profile.search_endpoint:
         env["SEARXNG_INSTANCE"] = profile.search_endpoint
-    search_key = store.get(key_name(profile.id, "search"))
-    if search_key:
-        env["BRAVE_API_KEY" if profile.search_provider == "brave" else "TAVILY_API_KEY"] = search_key
     return env

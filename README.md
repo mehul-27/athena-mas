@@ -31,6 +31,58 @@ Repository: <https://github.com/mehul-27/athena-mas>
 - Supports `sequential`, `parallel`, `hierarchical`, and `p2p` orchestration.
 - Streams progress over Server-Sent Events (SSE), including safe reconnection.
 - Persists run history, event metrics, heatmaps, logs, and final summaries.
+- Adds a separate **Chat** surface with persisted conversations, token streaming,
+  stop, model selection, opt-in RAG/web grounding, selected tools, sources and
+  usage — without starting a research run.
+- Opens **Settings** as a floating modal with provider profiles, the encrypted
+  vault, chat defaults, appearance, RAG/library status and read-only MCP status.
+- Draws a local **Capillary** background behind Chat and Research, uses the
+  supplied **Circum** icon pack, and offers a first-run guided tour.
+
+---
+
+## Chat and Settings
+
+Chat and Research are deliberately separate:
+
+- **Chat** sends one message to the selected LLM profile and streams the answer.
+  It does not launch CrewAI/ADK, create a run, or write to the Blackboard.
+- **Documents** and **Web search** are explicit opt-in capabilities. When on,
+  Chat retrieves through the same MAS tools and shows numbered sources. When
+  off, no retrieval happens.
+- **Tools** are selected per message from the server catalogue. The model may
+  call only those tools, in bounded rounds, and each call appears in the
+  transcript. Unknown or unselected tool names never execute.
+- Conversations persist in `data/chat.db`; the research event store and
+  Blackboard are untouched.
+
+Settings is a modal over whichever view is active. It covers Add model, Models,
+AI Defaults, Appearance, Library, MCP, Personalisation and About. MCP status is
+read-only because MAS ships three fixed local stdio servers; arbitrary server
+management is not supported (it would execute arbitrary commands). Library shows
+the real RAG index, corpus, rebuild control and recent research; saved chat
+documents are not part of MAS.
+
+The Capillary background is loaded from the vendored official
+`asciify-engine@4.32.8` kit after first paint. Its host is the `.main` surface, so
+the simulation receives pointer coordinates and the lantern lights the veins,
+while the generated canvas stays behind the controls with `pointer-events:none`.
+It is one renderer, pauses when Settings covers it and when the tab is hidden,
+follows the system reduced-motion setting, and fails safely if the module or
+WebGL2 is unavailable. Its exact requested configuration, the text-line clear
+map and the few values with no public API equivalent are documented in
+[docs/SINGLE_CHAT_SETTINGS_INTEGRATION.md](docs/SINGLE_CHAT_SETTINGS_INTEGRATION.md).
+
+The interface uses a neutral black/white token system (with a light theme), Geist
+for interface and prose and Geist Mono only for technical values. The appbar
+wordmark and the new-chat heading use a mono-editorial treatment — lowercase
+Geist Mono with wide tracking and a 1px dotted baseline; the logo image is
+removed and the heading emphasizes `athena` over the muted surrounding words. The
+new-chat subtitle stays in Geist for readability. Visible UI copy uses lowercase
+`athena`. The left sidebar collapses and persists its state; on Chat it shows
+Chats, while Research shows Research history and Recordings. On narrow screens it
+is an overlay drawer. The header keeps only help and theme; Settings is the
+sidebar item. The display-size preference is in Settings → Appearance.
 
 ---
 
@@ -229,22 +281,30 @@ See [.env.example](.env.example) for the complete list and defaults.
 
 ### Settings UI alternative
 
-After starting the app, open **Settings** in the UI. You can create a provider
-profile with:
+After starting the app, open **Settings** from the sidebar Settings item. It
+floats over the current view and has internal categories:
 
-- model string,
-- API base URL,
-- API key,
-- reasoning effort,
-- search provider.
+- **Add model** — profile name, preset, model string, API base URL, API key,
+  reasoning effort, search provider, model discovery, save & test.
+- **Models** — profile cards with key status, Test, Edit, Activate for research,
+  and Delete.
+- **AI Defaults** — the default profile Chat uses when a conversation has no
+  explicit model.
+- **Appearance** — theme, presentation size, and the Capillary background toggle.
+- **Library** — real RAG index/corpus status, rebuild, and recent research.
+- **MCP** — read-only status for the three built-in servers and their tools.
+- **Personalisation** — the 800-character About Me instruction.
+- **About** — architecture, limitations, and a button to restart the tour.
 
 Keys saved through Settings are stored in the local encrypted vault under
 `data/settings/`, which is ignored by Git. The app checks only whether a key is
-present; it never prints the value. **Test connection** validates the profile
-without displaying the secret.
+present; it never prints the value. **Save & test** validates the profile without
+displaying the secret.
 
-The active profile can override `.env` values for subsequent runs. If you are
-unsure which configuration is in use, check the header/status strip in the UI.
+The active profile can override `.env` values for research runs. Chat uses the
+profile selected in its header, falling back to AI Defaults and then the active
+profile. If you are unsure which configuration is in use, check the header/status
+strip in the UI.
 
 ---
 
@@ -441,7 +501,16 @@ The demo server listens on `127.0.0.1:8000` by default.
 | `GET /api/runs/{run_id}/heatmap.png` | Rendered metrics heatmap. |
 | `GET /api/compare?run=id1,id2` | Comparison rows. |
 | `GET /api/replay` | Recorded demo bundles. |
-| `/api/settings/*` | Provider profiles, activation, and connection test. |
+| `/api/settings/*` | Provider profiles, activation, connection test, About Me, defaults, model discovery, library/RAG status, and read-only MCP status. |
+| `GET /api/chat/models` | Usable chat profiles and the resolved default. |
+| `GET /api/chat/capabilities` | RAG/web availability for the selected profile. |
+| `GET /api/chat/tools` | The server-side chat tool catalogue. |
+| `GET/POST /api/chat/conversations` | List or create conversations. |
+| `GET/PATCH/DELETE /api/chat/conversations/{id}` | Reopen, rename or delete a conversation. |
+| `PUT /api/chat/conversations/{id}/model` | Select the profile for a conversation. |
+| `POST /api/chat/messages` | Send a message; returns an SSE stream (`meta`, `delta`, `tool`, `sources`, `usage`, `note`, `done`). |
+| `POST /api/chat/conversations/{id}/stop` | Cancel the active reply. |
+| `GET /api/chat/conversations/{id}/transcript` | Plain-text transcript for copy. |
 
 SSE clients receive:
 
@@ -456,7 +525,8 @@ the stream has started, Athena emits a terminal **failed** summary rather than
 raising an HTTP error into an already-open response.
 
 Only one live run is allowed at a time. A second start returns HTTP 409 while the
-active run is still working.
+active run is still working. Chat uses its own stream and storage, so a chat reply
+does not occupy the research run slot and a research run does not block chat.
 
 ---
 
@@ -473,7 +543,10 @@ python -m pytest -q
 ```
 
 The FastAPI tests, pipeline tests, event-store tests, Blackboard tests, MCP tool
-tests, and streaming regressions are included.
+tests, and streaming regressions are included. The chat/settings work adds tests
+for conversation persistence, SSE chat contracts, the bounded tool loop,
+grounding/source numbering, settings defaults/library/MCP, the vendored Asciify
+closure, the Circum sprite, and the tutorial/UI contracts.
 
 Frontend logic tests need Node.js:
 
@@ -481,6 +554,16 @@ Frontend logic tests need Node.js:
 node athena/api/static/logic.test.js
 node athena/api/static/app.composer.test.js
 ```
+
+The Circum sprite is reproducible from the supplied pack:
+
+```powershell
+.\.venv\Scripts\python scripts\build_circum_icons.py --check
+```
+
+If the local Chroma build cannot open a temporary index directory, the four
+`tests/test_tools_rag.py` tests error during setup; that is an environment issue
+unrelated to the chat path. The rest of the suite is offline.
 
 Opt-in end-to-end tests require a live provider and/or running A2A server:
 
@@ -510,11 +593,15 @@ Everything is local by default:
 |---|---|
 | `data/blackboard.db` | Blackboard sections and append-only history. |
 | `data/events.db` | Append-only observability event log. |
+| `data/chat.db` | Chat conversations, messages, tool activity, sources and usage. |
 | `.run/runs/` | Per-run logs and `.summary.json` files. |
 | `.run/crew_a2a.pid` / `.log` | CrewAI A2A server process and log. |
 | `data/chroma/` | Local RAG vector index. |
 | `data/corpus/` | Local source PDFs (not committed). |
 | `data/settings/` | Encrypted profile vault; ignored by Git. |
+| `data/settings/defaults.json` | Default chat profile (non-secret). |
+| `data/settings/preferences.json` | About Me / personalisation (non-secret). |
+| `data/presets.json` | Provider presets (committed). |
 | `data/demo/replay/` | Recorded demo bundles (committed). |
 
 These paths are ignored by `.gitignore` where appropriate. The event log and
@@ -602,6 +689,11 @@ python scripts/demo.py --port 8001
   boundaries for the model prompts.
 - `fetch_page` validates URLs, blocks private/internal targets, follows redirects
   safely, and enforces time and size limits.
+- Chat validates every tool name against the server catalogue; unselected,
+  unknown, or disabled tools never execute, and tool rounds/calls are bounded.
+- Chat never returns stored keys; provider errors pass through redaction.
+- The Capillary and Circum assets are local. `asciify-engine` is MIT; Circum is
+  MPL-2.0 with its license and selected sources under `assets/circum/`.
 - The demo API has **no authentication**. Keep it bound to `127.0.0.1`.
 - Do not paste real keys into issues, logs, screenshots, or recorded bundles.
 
@@ -612,32 +704,39 @@ python scripts/demo.py --port 8001
 ```text
 athena/
   agents/          ADK/CrewAI roles, A2A stage, evidence, routing, sufficiency
-  api/             FastAPI app, run registry, SSE, replay, settings routes
+  api/             FastAPI app, run registry, SSE, replay, settings and chat routes
   blackboard/      Pydantic schemas, SQLite store, validation
+  chat/            chat store, target resolution, prompts, grounding, tools, LLM loop
   config/          LLM factories, caps, rate limiting, endpoint guard
   observability/   events, metrics, heatmap, redaction, recording
   patterns/        sequential, parallel, hierarchical, p2p
-  settings/        provider profiles and encrypted vault
-  tools/           MCP servers and tool implementations
+  settings/        provider profiles, encrypted vault, defaults, preferences
+  tools/           MCP servers, tool implementations and RAG status
   api/static/      browser UI (HTML/CSS/vanilla JS)
-scripts/           demo launcher, A2A lifecycle, ingestion, diagnostics
-tests/             offline pytest suite and streaming regressions
+    assets/circum/ selected Circum sprite, sources and MPL-2.0 license
+    vendor/asciify/ official Capillary module closure, MIT license and hashes
+scripts/           demo launcher, A2A lifecycle, ingestion, diagnostics, icon build
+tests/             offline pytest suite, chat/settings/assets contracts, node tests
 data/
   corpus/          local PDFs (not committed)
   eval/            small evaluation CSVs (committed)
   demo/replay/     recorded demo runs (committed)
-docs/              architecture and design notes
+  chat.db          chat conversations (local, ignored)
+docs/              architecture, integration note and verification screenshots
 ```
 
 ---
 
 ## Design notes
 
+- [End-to-end run flow](docs/FLOW.md)
 - [Blackboard](docs/BLACKBOARD.md)
 - [Patterns](docs/PATTERNS.md)
 - [Demo walkthrough](docs/DEMO.md)
 - [Observability](docs/OBSERVABILITY.md)
 - [Agent roles](docs/AGENTS.md)
+- [Single Chat, Settings, Capillary, Circum and onboarding](docs/SINGLE_CHAT_SETTINGS_INTEGRATION.md)
+- Verification screenshots: `docs/screenshots/`
 
 Some documents describe earlier stages of the build; the README above reflects
 the current runnable system.
@@ -660,8 +759,16 @@ the current runnable system.
   SearXNG is more reliable if you run one.
 - **RAG quality depends on the corpus.** An unrelated corpus is rejected as
   evidence rather than forced into the answer.
-- **No partial token streaming.** The UI streams pipeline events and status, not
-  model tokens.
+- **Research does not stream partial model output.** It streams pipeline events
+  and status. Chat does stream model tokens over its own SSE contract.
+- **Chat is intentionally plain text.** There is no Markdown renderer, saved
+  document store, Compact, PDF export, LLM judge or visual report in Chat; those
+  old Athena features were not ported.
+- **MCP management is read-only.** MAS ships three fixed local stdio servers and
+  does not accept arbitrary server commands.
+- **Capillary needs WebGL2.** Without it (or if the vendored module fails) the app
+  runs on its normal surface. The GPU preset has no public `bayer4` field; the
+  requested value and the preset-inert fields are documented rather than faked.
 - **No cloud deployment, multi-user mode, cost accounting, or OpenTelemetry
   tracing** yet.
 - **The UI is intentionally lightweight vanilla HTML/CSS/JS**, not a separate

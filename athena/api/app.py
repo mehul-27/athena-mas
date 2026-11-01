@@ -32,6 +32,7 @@ QUESTIONS_CSV = Path("data/eval/nasa_rag_40_questions.csv")
 DEMO_QUESTIONS = Path("data/demo/questions.json")
 STREAM_POLL_S = 0.3
 STREAM_MAX_S = 1800
+STREAM_EXIT_WAIT_S = 5.0
 
 REGISTRY = RunRegistry()
 
@@ -43,6 +44,22 @@ class RunRequest(BaseModel):
 
 def _store() -> SQLiteEventStore:
     return SQLiteEventStore()
+
+
+def _evidence_attribution(run_id: str) -> dict[str, list[str]]:
+    """Map a run to the roles that recorded its evidence.
+
+    The metrics table attributes evidence through these entries. Passing an
+    empty map made every row show ``evidence_items=0`` even though the
+    Blackboard contained evidence writes.
+    """
+    found = Blackboard.open(run_id).read("evidence")
+    return {
+        run_id: [
+            item.retrieved_by
+            for item in (found[0] if found else [])
+        ]
+    }
 
 
 def _crew_server_up(timeout: float = 1.0) -> bool:
@@ -60,7 +77,7 @@ def _event_payload(event) -> dict:
     return data
 
 
-def _snapshot(run_id: str) -> dict:
+def _snapshot(run_id: str, runs: RunRegistry | None = None) -> dict:
     blackboard = Blackboard.open(run_id)
     if blackboard.read("task") is None:
         raise HTTPException(status_code=404, detail=f"no run {run_id}")
@@ -74,7 +91,7 @@ def _snapshot(run_id: str) -> dict:
     evidence = blackboard.read("evidence")
     return {
         "run_id": run_id,
-        "summary": _summary(run_id),
+        "summary": _summary(run_id, runs),
         "task": section("task"),
         "plan": section("plan"),
         "analysis": section("analysis"),
@@ -94,7 +111,7 @@ def _snapshot(run_id: str) -> dict:
     }
 
 
-def _summary(run_id: str) -> dict:
+def _summary(run_id: str, runs: RunRegistry | None = None) -> dict:
     for event in reversed(_store().events(run_id)):
         if event.payload_summary and event.payload_summary.startswith("run_summary"):
             summary = dict(event.extra)
@@ -133,8 +150,51 @@ def _summary(run_id: str) -> dict:
                         summary["outcome"] = "incomplete"
                     if summary["outcome"] != "approved":
                         summary["degraded"] = True
-            return summary
+            return _with_process_status(summary, run_id, runs)
     return {}
+
+
+def _safe_refresh(runs: RunRegistry | None) -> object | None:
+    try:
+        return (runs or REGISTRY).refresh()
+    except Exception:  # noqa: BLE001 - status lookup must not break a response
+        return None
+
+
+def _with_process_status(
+    summary: dict, run_id: str, runs: RunRegistry | None
+) -> dict:
+    """Make a run_summary agree with the subprocess's actual terminal state."""
+    active = _safe_refresh(runs)
+    if active is None or getattr(active, "run_id", None) != run_id:
+        return summary
+
+    result = dict(summary)
+    if not getattr(active, "finished", False):
+        # A summary event was written, but the process has not exited yet. Do
+        # not call that a confirmed success; the SSE path waits briefly and
+        # then renders this as an incomplete completion.
+        if not result.get("failed"):
+            result["degraded"] = True
+            result["outcome"] = "incomplete"
+            result["stage_errors"] = list(result.get("stage_errors") or []) + [
+                "run summary is present but the process has not exited"
+            ]
+        return result
+
+    exit_code = getattr(active, "exit_code", None)
+    if exit_code not in (None, 0) and not result.get("failed"):
+        detail = f"run process exited with code {exit_code} after run summary"
+        result["failed"] = True
+        result["degraded"] = True
+        result["outcome"] = "failed"
+        result["stage_errors"] = list(result.get("stage_errors") or []) + [detail]
+        # A run summary may contain a critic approval recorded before the
+        # process exit. Do not present it as an approved result after failure.
+        result["approved"] = None
+        result["severity"] = None
+        result["critique_reason"] = detail + "; this is not an approval"
+    return result
 
 
 def create_app(registry: RunRegistry | None = None) -> FastAPI:
@@ -178,16 +238,20 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
 
     @app.get("/api/runs/{run_id}")
     def snapshot(run_id: str) -> dict:
-        return _snapshot(run_id)
+        return _snapshot(run_id, runs)
 
     @app.get("/api/runs/{run_id}/metrics")
     def metrics(run_id: str) -> dict:
-        rows = agent_metrics([run_id], {run_id: _store().events(run_id)}, {})
+        rows = agent_metrics(
+            [run_id], {run_id: _store().events(run_id)}, _evidence_attribution(run_id)
+        )
         return {"run_id": run_id, "rows": [row.as_dict() for row in rows]}
 
     @app.get("/api/runs/{run_id}/heatmap.png")
     def heatmap(run_id: str):
-        rows = agent_metrics([run_id], {run_id: _store().events(run_id)}, {})
+        rows = agent_metrics(
+            [run_id], {run_id: _store().events(run_id)}, _evidence_attribution(run_id)
+        )
         target = Path(".run/api") / f"{run_id}.png"
         render_heatmap(rows, target, f"Athena {run_id[:8]}")
         return FileResponse(target, media_type="image/png")
@@ -217,14 +281,14 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     @app.get("/api/compare")
     def compare(run: str = "") -> dict:
         ids = [value for value in run.split(",") if value] if run else []
-        return {"rows": [_compare_row(run_id) for run_id in ids]}
+        return {"rows": [_compare_row(run_id, runs) for run_id in ids]}
 
     @app.get("/api/runs")
     def history() -> dict:
         store = _store()
         runs = []
         for run_id in store.runs():
-            summary = _summary(run_id)
+            summary = _summary(run_id, runs)
             if not summary:
                 continue
             task = Blackboard.open(run_id).read("task")
@@ -262,14 +326,36 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled(_request, exc: Exception):  # noqa: ANN001 - FastAPI hook
-        return JSONResponse(status_code=500,
-                            content={"detail": f"{type(exc).__name__}: {exc}"[:300]})
+        detail = redact(f"{type(exc).__name__}: {exc}") or "internal error"
+        return JSONResponse(status_code=500, content={"detail": detail[:300]})
 
+    from athena.api.chat_routes import router as chat_router
+    from athena.api.library_routes import router as library_router
     from athena.api.settings_routes import router as settings_router
 
     app.include_router(settings_router)
+    app.include_router(chat_router)
+    app.include_router(library_router)
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
     return app
+
+
+async def _wait_for_exit(
+    runs: RunRegistry, run_id: str, timeout: float
+) -> None:
+    """Wait briefly for the subprocess after its run_summary event.
+
+    Without this, a process that writes its summary and then crashes could be
+    reported as successful before its nonzero exit code is visible.
+    """
+    deadline = time.monotonic() + max(0.0, timeout)
+    while time.monotonic() < deadline:
+        active = _safe_refresh(runs)
+        if active is None or getattr(active, "run_id", None) != run_id:
+            return
+        if getattr(active, "finished", False):
+            return
+        await asyncio.sleep(0.05)
 
 
 async def _events(run_id: str, runs: RunRegistry | None = None, last_event_id: int = 0):
@@ -304,7 +390,7 @@ async def _events(run_id: str, runs: RunRegistry | None = None, last_event_id: i
             yield f"id: {event.seq}\ndata: {json.dumps(_event_payload(event))}\n\n"
 
         try:
-            snapshot = _snapshot(run_id)
+            snapshot = _snapshot(run_id, registry)
         except HTTPException:
             try:
                 active = registry.refresh()
@@ -338,8 +424,9 @@ async def _events(run_id: str, runs: RunRegistry | None = None, last_event_id: i
             for event in events
         )
         if done:
+            await _wait_for_exit(registry, run_id, STREAM_EXIT_WAIT_S)
             try:
-                summary = _summary(run_id)
+                summary = _summary(run_id, registry)
             except Exception as exc:  # noqa: BLE001 - never raise after headers
                 try:
                     active = registry.refresh()
@@ -395,8 +482,8 @@ def _eval_questions() -> list[dict]:
             for index, row in enumerate(rows)]
 
 
-def _compare_row(run_id: str) -> dict:
-    summary = _summary(run_id)
+def _compare_row(run_id: str, runs: RunRegistry | None = None) -> dict:
+    summary = _summary(run_id, runs)
     return {
         "run_id": run_id,
         "pattern": summary.get("pattern"),
