@@ -82,7 +82,10 @@ new-chat subtitle stays in Geist for readability. Visible UI copy uses lowercase
 `athena`. The left sidebar collapses and persists its state; on Chat it shows
 Chats, while Research shows Research history and Recordings. On narrow screens it
 is an overlay drawer. The header keeps only help and theme; Settings is the
-sidebar item. The display-size preference is in Settings → Appearance.
+sidebar item. The display-size preference is in Settings → Appearance. Research
+uses a grouped, scrollable example popover, a Geist listbox pattern picker, and
+per-pattern SVG architecture diagrams that scroll inside their panel at narrow
+widths instead of shrinking labels or widening the page.
 
 ---
 

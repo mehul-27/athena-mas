@@ -340,10 +340,54 @@ development helper, not part of the application runtime.
   autocomplete suggestion for an input; the one transient
   `ERR_CONNECTION_REFUSED` was a health poll during a deliberate server restart.
 
+### Research controls and live diagrams
+
+- **More examples root cause:** the old panel was a `<ul>` with inherited
+  centered text, no grouping, a 300px cap and an absolute `top: 26px`; it opened
+  into the composer and long questions had no scan structure.
+- **More examples fix:** a fixed, viewport-contained popover below the appbar/banner,
+  with a title/count, a scrollable list, a subtle mono identifier column, wrapped
+  question text, selected/hover/focus states, arrow-key navigation, Escape,
+  outside-click close and focus return.
+- **Pattern selector root cause:** the control was a native select styled as a
+  rounded pill, so its open menu could not share the app's typography or spacing.
+- **Pattern selector fix:** a custom listbox with the native select retained as a
+  hidden state value for the existing submit path and tests. The trigger, four
+  options, selected check, hover/focus states and keyboard navigation all use
+  Geist; Enter/Space select, Escape closes and returns focus, Tab leaves the menu.
+- **Diagram root cause:** one fixed `0 0 900 460` coordinate map and fixed
+  `NODE_POS` were reused for every pattern. Bezier edges went center-to-center
+  with no obstacle or label checks, and nodes extended past the ADK/MCP lanes.
+- **Diagram fix:** `diagram.js` now builds a 1200×570 layout from four explicit
+  lane containers (ADK, CrewAI/A2A, MCP, Blackboard), per-pattern node positions,
+  node/label bounds, orthogonal connector routing with node/lane/label collision
+  scoring, distinct target ports, arrowheads and label backgrounds. p2p moves the
+  RAG worker into the A2A chain; parallel fans the three researchers; hierarchical
+  keeps the parent/worker and revision relation; sequential keeps the single
+  RAG progression. Rendering is cached by layout signature so unrelated events
+  do not rebuild the SVG. At narrow widths the diagram stays at a readable
+  minimum width and scrolls inside its panel with a visible hint.
+- **Verification:** 566 passed, 1 skipped, 2 xfailed, 4 deselected; the same four
+  pre-existing Chroma setup errors remain. Node suites: 35 logic, 6 composer,
+  6 diagram. Real replay bundles for all four patterns pass the layout contract.
+
 ### Screenshots
 
 | File | Verifies |
 |---|---|
+| `docs/screenshots/research-examples-dark-1440.png` | Grouped More examples popover, 17 questions, scrolling, focus/selection, dark 1440. |
+| `docs/screenshots/research-examples-light-1440.png` | Same popover in light theme. |
+| `docs/screenshots/research-examples-dark-390.png` | 390px popover inside the viewport, above the composer, below the appbar. |
+| `docs/screenshots/research-pattern-dark-1440.png` | Custom pattern listbox, selected/focus states, dark 1440. |
+| `docs/screenshots/research-pattern-light-1440.png` | Custom pattern listbox in light theme. |
+| `docs/screenshots/research-pattern-dark-390.png` | 390px pattern trigger/menu with the supporting note stacked below. |
+| `docs/screenshots/research-diagram-sequential-1440.png` | Sequential topology with all 13 nodes and all lane/edge labels. |
+| `docs/screenshots/research-diagram-parallel-1440.png` | Parallel researcher fan-out and tool branches. |
+| `docs/screenshots/research-diagram-hierarchical-1440.png` | Hierarchical parent/worker flow and revision edge. |
+| `docs/screenshots/research-diagram-p2p-1440.png` | p2p A2A chain and audit-only blackboard. |
+| `docs/screenshots/research-diagram-light-1440.png` | Diagram in the light theme. |
+| `docs/screenshots/research-diagram-sequential-390.png` | Mobile diagram with internal horizontal scrolling and its hint. |
+| `docs/screenshots/research-diagram-live-parallel-1440.png` | Replay-driven live states, active edge, tool counts, durations and A2A byte labels. |
 | `docs/screenshots/chat-desktop.png` | Final mono-editorial wordmark and empty state at 1440px, Chats-only sidebar, Capillary. |
 | `docs/screenshots/chat-mobile.png` | Final wordmark and empty state at 390px with the drawer closed. |
 | `docs/screenshots/wordmark-dark-1440.png` | Wordmark/heading in dark theme at 1440px. |

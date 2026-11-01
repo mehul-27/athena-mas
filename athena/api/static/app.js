@@ -210,6 +210,14 @@ function updateLockedControls() {
       ? (state.playback ? "Wait for the recording to finish." : "Wait for the current research task to finish.")
       : "";
   }
+  const patternTrigger = $("pattern-trigger");
+  if (patternTrigger) {
+    patternTrigger.disabled = locked;
+    patternTrigger.title = locked
+      ? (state.playback ? "Wait for the recording to finish." : "Wait for the current research task to finish.")
+      : "";
+    if (locked) closePatternMenu(false);
+  }
   document.querySelectorAll("#pattern-chips .chip").forEach((chip) => {
     chip.disabled = locked;
     chip.classList.toggle("locked", locked);
@@ -451,24 +459,153 @@ function emptyItem(host, message) {
   host.appendChild(empty);
 }
 
+const EXAMPLE_PANEL_MAX = 440;
+let examplePositionFrame = 0;
+
+function exampleOptions() {
+  return Array.from(document.querySelectorAll("#examples-list .example-item"));
+}
+
+function closeExamples(focusToggle = false) {
+  const panel = $("examples-popover");
+  const toggle = $("examples-toggle");
+  if (!panel) return;
+  panel.classList.add("hidden");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", "false");
+    if (focusToggle) toggle.focus();
+  }
+}
+
+function positionExamples() {
+  const panel = $("examples-popover");
+  const toggle = $("examples-toggle");
+  if (!panel || !toggle || panel.classList.contains("hidden")) return;
+  const margin = 12;
+  const gap = 8;
+  const trigger = toggle.getBoundingClientRect();
+  const appbar = document.querySelector(".appbar");
+  const banner = $("banner");
+  const appbarBottom = appbar ? appbar.getBoundingClientRect().bottom : 0;
+  const bannerBottom = banner && !banner.classList.contains("hidden")
+    ? banner.getBoundingClientRect().bottom : appbarBottom;
+  const topBoundary = Math.max(margin, appbarBottom + 8, bannerBottom + 4);
+  const width = Math.min(EXAMPLE_PANEL_MAX, window.innerWidth - margin * 2);
+  panel.style.width = width + "px";
+  panel.style.maxHeight = "none";
+  const natural = panel.getBoundingClientRect().height;
+  const spaceAbove = trigger.top - topBoundary - gap;
+  const spaceBelow = window.innerHeight - trigger.bottom - margin - gap;
+  const preferredAbove = spaceAbove >= natural || spaceAbove >= spaceBelow;
+  const available = Math.max(100, Math.min(EXAMPLE_PANEL_MAX, preferredAbove ? spaceAbove : spaceBelow));
+  panel.style.maxHeight = available + "px";
+  const rect = panel.getBoundingClientRect();
+  const top = preferredAbove ? trigger.top - rect.height - gap : trigger.bottom + gap;
+  const left = Math.min(
+    Math.max(margin, trigger.right - rect.width),
+    window.innerWidth - margin - rect.width,
+  );
+  panel.style.left = left + "px";
+  panel.style.top = Math.max(topBoundary, Math.min(top, window.innerHeight - margin - rect.height)) + "px";
+}
+
+function scheduleExamplePosition() {
+  const panel = $("examples-popover");
+  if (!panel || panel.classList.contains("hidden")) return;
+  cancelAnimationFrame(examplePositionFrame);
+  examplePositionFrame = requestAnimationFrame(positionExamples);
+}
+
+function updateExampleSelection() {
+  const question = $("question") ? $("question").value : "";
+  exampleOptions().forEach((option) => {
+    option.setAttribute("aria-selected", option.dataset.question === question ? "true" : "false");
+  });
+}
+
+function openExamples() {
+  const panel = $("examples-popover");
+  const toggle = $("examples-toggle");
+  if (!panel || !toggle || !exampleOptions().length) return;
+  closePatternMenu(false);
+  panel.classList.remove("hidden");
+  toggle.setAttribute("aria-expanded", "true");
+  updateExampleSelection();
+  positionExamples();
+  const selected = exampleOptions().find((option) => option.getAttribute("aria-selected") === "true");
+  (selected || exampleOptions()[0]).focus({ preventScroll: true });
+}
+
+function handleExamplesKey(event) {
+  const options = exampleOptions();
+  const index = options.indexOf(document.activeElement);
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeExamples(true);
+    return;
+  }
+  if (event.key === "Tab") {
+    closeExamples(true);
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!options.length) return;
+    event.preventDefault();
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const next = index < 0
+      ? (step > 0 ? 0 : options.length - 1)
+      : (index + step + options.length) % options.length;
+    options[next].focus();
+    return;
+  }
+  if (event.key === "Home" || event.key === "End") {
+    if (!options.length) return;
+    event.preventDefault();
+    options[event.key === "Home" ? 0 : options.length - 1].focus();
+    return;
+  }
+  if (event.key === "Enter" || event.key === " ") {
+    if (index < 0) return;
+    event.preventDefault();
+    options[index].click();
+  }
+}
+
 function chooseQuestion(value) {
-  $("question").value = String(value || "");
+  const input = $("question");
+  if (!input) return;
+  input.value = String(value || "");
   autoGrow();
-  $("examples-popover").classList.add("hidden");
-  $("examples-toggle").setAttribute("aria-expanded", "false");
-  $("question").focus();
+  closeExamples(false);
+  input.focus();
 }
 
 async function loadQuestions() {
   const data = await api("/api/questions");
-  const popover = $("examples-popover");
-  popover.replaceChildren();
-  (data.demo || []).concat((data.eval || []).slice(0, 12)).forEach((item) => {
+  const list = $("examples-list");
+  const count = $("examples-count");
+  if (!list) return;
+  list.replaceChildren();
+  const items = (data.demo || []).concat((data.eval || []).slice(0, 12));
+  if (count) text(count, items.length + (items.length === 1 ? " question" : " questions"));
+  items.forEach((item, index) => {
     const row = document.createElement("li");
+    row.className = "example-item";
+    row.id = "example-option-" + index;
+    row.dataset.question = String(item.text);
     row.setAttribute("role", "option");
-    text(row, (item.id ? item.id + " - " : "") + String(item.text));
+    row.setAttribute("aria-selected", "false");
+    row.tabIndex = -1;
+    const id = document.createElement("span");
+    id.className = "example-id";
+    text(id, item.id ? String(item.id) : "");
+    const question = document.createElement("span");
+    question.className = "example-text";
+    text(question, String(item.text));
+    row.appendChild(id);
+    row.appendChild(question);
     row.addEventListener("click", () => chooseQuestion(item.text));
-    popover.appendChild(row);
+    list.appendChild(row);
   });
 
   const suggestions = $("empty-suggestions");
@@ -581,10 +718,52 @@ function setPattern(value, render = true) {
   state.pattern = next;
   const select = $("composer-pattern");
   if (select) select.value = next;
+  syncPatternPicker(next);
   document.querySelectorAll("#pattern-chips .chip").forEach((chip) => {
     chip.classList.toggle("selected", chip.dataset.pattern === next);
   });
   if (render) renderLiveMap();
+}
+
+function syncPatternPicker(next) {
+  const current = $("pattern-current");
+  if (current) text(current, next);
+  document.querySelectorAll("#pattern-menu .pattern-option").forEach((option) => {
+    const selected = option.dataset.pattern === next;
+    option.classList.toggle("selected", selected);
+    option.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+}
+
+function patternMenuOptions() {
+  return Array.from(document.querySelectorAll("#pattern-menu .pattern-option"));
+}
+
+function closePatternMenu(focusTrigger) {
+  const menu = $("pattern-menu");
+  if (!menu) return;
+  menu.classList.add("hidden");
+  const trigger = $("pattern-trigger");
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+  if (focusTrigger && trigger) trigger.focus();
+}
+
+function openPatternMenu() {
+  const menu = $("pattern-menu");
+  const trigger = $("pattern-trigger");
+  if (!menu || !trigger || trigger.disabled) return;
+  closeExamples(false);
+  menu.classList.remove("hidden");
+  trigger.setAttribute("aria-expanded", "true");
+  const options = patternMenuOptions();
+  const selected = options.find((option) => option.getAttribute("aria-selected") === "true");
+  (selected || options[0])?.focus();
+}
+
+function choosePatternOption(option) {
+  if (!option) return;
+  setPattern(option.dataset.pattern);
+  closePatternMenu(true);
 }
 
 function pattern() {
@@ -1084,10 +1263,23 @@ function renderTimeline() {
   });
 }
 
+function updateDiagramScrollHints() {
+  [["live-map", "live-scroll-hint"], ["how-diagram", "how-scroll-hint"]].forEach(([hostId, hintId]) => {
+    const host = $(hostId);
+    const hint = $(hintId);
+    if (!host || !hint) return;
+    const scrollable = host.scrollWidth > host.clientWidth + 1;
+    hint.classList.toggle("hidden", !scrollable);
+    if (scrollable) host.setAttribute("aria-describedby", hintId);
+    else host.removeAttribute("aria-describedby");
+  });
+}
+
 function renderLiveMap() {
   const spec = L.diagramFor(state.pattern);
   const view = L.diagramState(state.events, state.pattern);
   D.render($("live-map"), spec, view, { compact: true });
+  updateDiagramScrollHints();
 }
 
 /* ---------------------------------------------------------------- replay */
@@ -1539,6 +1731,7 @@ async function loadTools() {
 function renderHowDiagram() {
   const spec = L.diagramFor(state.pattern);
   D.render($("how-diagram"), spec, { nodes: {}, edges: {} }, {});
+  updateDiagramScrollHints();
   const legend = $("diagram-legend");
   legend.replaceChildren();
   ["ADK agents plan and gather evidence",
@@ -1557,6 +1750,61 @@ function renderHowDiagram() {
 $("composer-pattern").addEventListener("change", (event) => {
   setPattern(event.target.value);
 });
+const patternTrigger = $("pattern-trigger");
+const patternMenu = $("pattern-menu");
+if (patternTrigger) {
+  patternTrigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (patternMenu && patternMenu.classList.contains("hidden")) openPatternMenu();
+    else closePatternMenu(false);
+  });
+  patternTrigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      openPatternMenu();
+    }
+    if (event.key === "Escape") closePatternMenu(false);
+  });
+}
+if (patternMenu) {
+  patternMenu.addEventListener("keydown", (event) => {
+    const options = patternMenuOptions();
+    const index = options.indexOf(document.activeElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePatternMenu(true);
+      return;
+    }
+    if (event.key === "Tab") {
+      closePatternMenu(true);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!options.length) return;
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const next = index < 0
+        ? (step > 0 ? 0 : options.length - 1)
+        : (index + step + options.length) % options.length;
+      options[next].focus();
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      if (!options.length) return;
+      event.preventDefault();
+      options[event.key === "Home" ? 0 : options.length - 1].focus();
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      if (index < 0) return;
+      event.preventDefault();
+      choosePatternOption(options[index]);
+    }
+  });
+  patternMenu.querySelectorAll(".pattern-option").forEach((option) => {
+    option.addEventListener("click", () => choosePatternOption(option));
+  });
+}
 document.querySelectorAll("#pattern-chips .chip").forEach((chip) => {
   chip.addEventListener("click", () => {
     setPattern(chip.dataset.pattern);
@@ -1593,7 +1841,10 @@ $("composer").addEventListener("submit", (event) => {
   event.preventDefault();
   startRun();
 });
-$("question").addEventListener("input", autoGrow);
+$("question").addEventListener("input", () => {
+  autoGrow();
+  if (!$("examples-popover").classList.contains("hidden")) updateExampleSelection();
+});
 $("question").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
@@ -1602,11 +1853,53 @@ $("question").addEventListener("keydown", (event) => {
 });
 
 $("compare-all").addEventListener("click", compareAll);
-$("examples-toggle").addEventListener("click", () => {
-  const popover = $("examples-popover");
-  const open = popover.classList.toggle("hidden");
-  $("examples-toggle").setAttribute("aria-expanded", open ? "false" : "true");
+$("examples-toggle").addEventListener("click", (event) => {
+  event.stopPropagation();
+  const panel = $("examples-popover");
+  if (panel.classList.contains("hidden")) openExamples();
+  else closeExamples(false);
 });
+$("examples-toggle").addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    openExamples();
+  }
+  if (event.key === "Escape") closeExamples(false);
+});
+$("examples-list").addEventListener("keydown", handleExamplesKey);
+document.addEventListener("pointerdown", (event) => {
+  const panel = $("examples-popover");
+  const toggle = $("examples-toggle");
+  if (panel && !panel.classList.contains("hidden")
+      && !panel.contains(event.target) && !toggle.contains(event.target)) {
+    closeExamples(false);
+  }
+  const picker = $("pattern-picker");
+  const menu = $("pattern-menu");
+  if (picker && menu && !menu.classList.contains("hidden") && !picker.contains(event.target)) {
+    closePatternMenu(false);
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  const panel = $("examples-popover");
+  if (panel && !panel.classList.contains("hidden")) {
+    event.preventDefault();
+    closeExamples(true);
+    return;
+  }
+  const menu = $("pattern-menu");
+  if (menu && !menu.classList.contains("hidden")) {
+    event.preventDefault();
+    closePatternMenu(true);
+  }
+});
+document.addEventListener("athena:view", () => {
+  closeExamples(false);
+  closePatternMenu(false);
+});
+window.addEventListener("resize", scheduleExamplePosition);
+document.querySelector(".main")?.addEventListener("scroll", scheduleExamplePosition, { passive: true });
 $("replay-toggle").addEventListener("click", () => {
   const panel = $("replay-panel");
   const hidden = panel.classList.toggle("hidden");
@@ -1687,6 +1980,7 @@ window.addEventListener("resize", () => {
   if (narrow && !narrowViewport) setSidebar(true, false);
   narrowViewport = narrow;
   updateSidebarBackdrop();
+  updateDiagramScrollHints();
 });
 
 function parseHash() {

@@ -196,9 +196,15 @@
               <div class="empty-suggestions" id="empty-suggestions" aria-label="Example research questions"></div>
               <div class="empty-actions">
                 <span class="hint">Need another starting point?</span>
-                <div class="popover-host">
-                  <button class="link-button" id="examples-toggle" type="button" aria-expanded="false">More examples</button>
-                  <ul class="popover hidden" id="examples-popover" role="listbox"></ul>
+                <div class="popover-host examples-host">
+                  <button class="link-button" id="examples-toggle" type="button" aria-expanded="false" aria-haspopup="listbox" aria-controls="examples-popover">More examples</button>
+                  <div class="examples-popover hidden" id="examples-popover">
+                    <div class="examples-popover-head">
+                      <span class="examples-title" id="examples-title">Example questions</span>
+                      <span class="examples-count" id="examples-count"></span>
+                    </div>
+                    <ul class="examples-list" id="examples-list" role="listbox" aria-labelledby="examples-title"></ul>
+                  </div>
                 </div>
               </div>
             </div>
@@ -249,13 +255,37 @@
 
           <form class="composer" id="composer" autocomplete="off">
             <div class="composer-pattern">
-              <label for="composer-pattern">Pattern</label>
-              <select id="composer-pattern" aria-label="Orchestration pattern for the next research run">
-                <option value="sequential">sequential</option>
-                <option value="parallel">parallel</option>
-                <option value="hierarchical" selected>hierarchical</option>
-                <option value="p2p">p2p</option>
-              </select>
+              <span class="composer-pattern-label" id="pattern-label">Pattern</span>
+              <div class="pattern-picker" id="pattern-picker">
+                <select id="composer-pattern" class="pattern-native" tabindex="-1" aria-hidden="true">
+                  <option value="sequential">sequential</option>
+                  <option value="parallel">parallel</option>
+                  <option value="hierarchical" selected>hierarchical</option>
+                  <option value="p2p">p2p</option>
+                </select>
+                <button class="pattern-trigger" id="pattern-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="pattern-menu" aria-labelledby="pattern-label pattern-current">
+                  <span id="pattern-current">hierarchical</span>
+                  <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-chevron-down"></use></svg>
+                </button>
+                <ul class="pattern-menu hidden" id="pattern-menu" role="listbox" aria-labelledby="pattern-label">
+                  <li class="pattern-option" id="pattern-option-sequential" role="option" data-pattern="sequential" aria-selected="false" tabindex="-1">
+                    <span>sequential</span>
+                    <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-check"></use></svg>
+                  </li>
+                  <li class="pattern-option" id="pattern-option-parallel" role="option" data-pattern="parallel" aria-selected="false" tabindex="-1">
+                    <span>parallel</span>
+                    <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-check"></use></svg>
+                  </li>
+                  <li class="pattern-option selected" id="pattern-option-hierarchical" role="option" data-pattern="hierarchical" aria-selected="true" tabindex="-1">
+                    <span>hierarchical</span>
+                    <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-check"></use></svg>
+                  </li>
+                  <li class="pattern-option" id="pattern-option-p2p" role="option" data-pattern="p2p" aria-selected="false" tabindex="-1">
+                    <span>p2p</span>
+                    <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-check"></use></svg>
+                  </li>
+                </ul>
+              </div>
               <span class="composer-pattern-note">applies to the next run</span>
             </div>
             <div class="composer-row">
@@ -296,6 +326,7 @@
 
           <div class="tab-panel hidden" id="panel-activity">
             <div class="live-map" id="live-map"></div>
+            <p class="diagram-scroll-hint hidden" id="live-scroll-hint">Scroll horizontally to inspect the full live diagram.</p>
             <table class="table" id="timeline-table">
               <thead><tr><th>agent</th><th>framework</th><th>status</th><th>duration</th><th>tokens</th><th>stop</th></tr></thead>
               <tbody id="timeline-body"></tbody>
@@ -361,6 +392,7 @@
               analyst, writer and critic live in a separate CrewAI process reached over A2A. They share a
               blackboard, and every step is recorded as an event. Chat runs separately on a direct LLM call.</p>
             <div class="diagram-full" id="how-diagram"></div>
+            <p class="diagram-scroll-hint hidden" id="how-scroll-hint">Scroll horizontally to inspect the full architecture.</p>
             <ul class="legend" id="diagram-legend"></ul>
           </section>
           <section class="card">

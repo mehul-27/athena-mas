@@ -125,6 +125,26 @@ def test_diagram_has_live_state_styles_and_reduced_motion() -> None:
     assert "prefers-reduced-motion" in css
 
 
+def test_diagram_layout_is_responsive_and_scrollable() -> None:
+    html = _read("index.html")
+    css = _read("style.css")
+    source = _read("diagram.js")
+    app = _read("app.js")
+
+    assert 'id="how-scroll-hint"' in html and 'id="live-scroll-hint"' in html
+    assert ".diagram-full, .live-map" in css
+    assert "overflow-x: auto" in css
+    assert ".diagram { width: 100%; min-width: 960px; height: auto;" in css
+    assert ".diagram-scroll-hint" in css
+    for token in ("buildLayout", "layoutSignature", "PATTERN_POS", "targetPortPenalty",
+                  "segmentsOverlap", "approachPenalty"):
+        assert token in source
+    assert "0 0 900 460" not in source, "the diagram must use its calculated viewBox"
+    assert 'viewBox: "0 0 " + layout.width' in source
+    assert "updateDiagramScrollHints" in app
+    assert "host.scrollWidth > host.clientWidth" in app
+
+
 # --- page contract ----------------------------------------------------------
 
 
@@ -346,9 +366,44 @@ def test_composer_pattern_selector_has_exactly_the_supported_options() -> None:
 
     assert values == ["sequential", "parallel", "hierarchical", "p2p"]
     assert selected == ["hierarchical"]
-    assert 'for="composer-pattern"' in html
+    assert 'id="pattern-label"' in html and 'id="pattern-trigger"' in html
+    assert 'id="pattern-menu"' in html and 'role="listbox"' in html
+    assert html.count('class="pattern-option') == 4
+    assert 'class="pattern-option selected"' in html
+    assert 'aria-haspopup="listbox"' in html and 'aria-expanded="false"' in html
+    assert 'aria-controls="pattern-menu"' in html
     assert "applies to the next run" in html
     assert 'class="chip selected" data-pattern="hierarchical"' in html
+
+
+def test_custom_pattern_picker_has_keyboard_and_focus_states() -> None:
+    source = _read("app.js")
+    css = _read("style.css")
+    for token in ("openPatternMenu", "closePatternMenu", "choosePatternOption",
+                  "syncPatternPicker", "ArrowDown", "ArrowUp", "Escape", "Enter"):
+        assert token in source
+    assert ".pattern-trigger" in css and ".pattern-menu" in css
+    assert '.pattern-option[aria-selected="true"]' in css
+    assert ".pattern-option:focus-visible" in css
+
+
+def test_examples_popover_is_grouped_scrollable_and_anchored() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+    css = _read("style.css")
+
+    assert 'id="examples-popover"' in html and 'id="examples-list"' in html
+    assert 'id="examples-title"' in html and 'id="examples-count"' in html
+    assert 'aria-haspopup="listbox"' in html and 'aria-controls="examples-popover"' in html
+    assert 'role="listbox"' in html and 'aria-labelledby="examples-title"' in html
+    assert ".examples-popover" in css and "position: fixed" in css
+    assert "max-height: min(440px, calc(100vh - 24px))" in css
+    assert ".examples-list" in css and "overflow-y: auto" in css
+    for token in ("positionExamples", "updateExampleSelection", "example-id",
+                  "aria-selected", "ArrowDown", "ArrowUp", "Escape", "topBoundary"):
+        assert token in source
+    assert "(data.eval || []).slice(0, 12)" in source
+    assert "row.appendChild(id)" in source and "row.appendChild(question)" in source
 
 
 def test_composer_pattern_is_sent_and_locked_during_an_active_run() -> None:
@@ -358,6 +413,7 @@ def test_composer_pattern_is_sent_and_locked_during_an_active_run() -> None:
     assert 'body: JSON.stringify({ question: submittedQuestion, pattern: state.pattern })' in source
     assert "const patternSelect = $(\"composer-pattern\")" in source
     assert "patternSelect.disabled = locked" in source
+    assert "patternTrigger.disabled = locked" in source
     assert "chip.disabled = locked" in source
 
     new_chat = source[source.index("function newChat()"):source.index("async function startRun()")]
