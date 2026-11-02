@@ -194,7 +194,8 @@ def build_role_researcher(
         description=f"The {role} worker.",
         instruction=(
             f"You are the {role}. {ROLE_INSTRUCTIONS[role]}\n{TOOL_DISCIPLINE}\n"
-            f"{research_tool_guidance()}\n{source_guidance(text)}\n{finding_requirement(text)}\n"
+            "Only use the single selected tool attached to this worker. The planner assigns one worker for each explicitly selected tool.\n"
+            f"{source_guidance(text)}\n{finding_requirement(text)}\n"
             f"The task:\n{text}\nReply DONE when finished."
         ),
         tools=[build_toolset(SERVERS[ROLE_SERVER[role]])],
