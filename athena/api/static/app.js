@@ -1859,7 +1859,6 @@ document.querySelectorAll("#run-tabs .tab").forEach((tab) => {
 
 $("new-chat").addEventListener("click", newChat);
 $("reconnect-run").addEventListener("click", reconnectRun);
-$("exchange-details").addEventListener("click", () => showView("details"));
 $("previous-run-dismiss").addEventListener("click", () => {
   state.previousRun = null;
   renderStatus();
