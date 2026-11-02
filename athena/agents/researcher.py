@@ -11,6 +11,7 @@ which reads the actual response.
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
 
@@ -83,6 +84,37 @@ SERVERS = {
     "calc": "athena.tools.calc_server",
 }
 
+ALL_RESEARCH_TOOLS = ("rag", "web", "calc")
+
+
+def enabled_research_tools() -> tuple[str, ...]:
+    """Return the tools explicitly enabled for this run; default is all."""
+    raw = os.getenv("ATHENA_RESEARCH_TOOLS", "all").strip().lower()
+    if not raw or raw == "all":
+        return ALL_RESEARCH_TOOLS
+    selected = tuple(key for key in raw.split(",") if key in ALL_RESEARCH_TOOLS)
+    return selected or ALL_RESEARCH_TOOLS
+
+
+def research_tool_guidance() -> str:
+    """Make explicit tool selections constraints rather than mere suggestions."""
+    raw = os.getenv("ATHENA_RESEARCH_TOOLS", "all").strip().lower()
+    if not raw or raw == "all":
+        return (
+            "All research tools are available. Choose tools that fit the question; "
+            "for web claims fetch primary pages, for local-document questions use RAG, "
+            "and for arithmetic or forecasts use the calculator."
+        )
+    selected = enabled_research_tools()
+    names = {"rag": "Documents/RAG", "web": "Web search and page fetch", "calc": "Calculator/forecast"}
+    return (
+        "The user explicitly selected these research tools: "
+        + ", ".join(names[key] for key in selected)
+        + ". You MUST use every selected tool at least once during this research run, "
+        "and MUST NOT use unselected tools. If a selected tool cannot answer the task, "
+        "record that limitation instead of silently substituting another tool."
+    )
+
 ROLE_SERVER = {
     "rag_researcher": "rag",
     "web_researcher": "web",
@@ -132,10 +164,10 @@ def build_researcher(
         model=get_adk_model("researcher"),
         description="Gathers evidence with the RAG, web and calculator tools.",
         instruction=(
-            f"{INSTRUCTION}\n{TOOL_DISCIPLINE}\n{source_guidance(text)}\n"
-            f"{finding_requirement(text)}\nThe task:\n{text}\n"
+            f"{INSTRUCTION}\n{TOOL_DISCIPLINE}\n{research_tool_guidance()}\n"
+            f"{source_guidance(text)}\n{finding_requirement(text)}\nThe task:\n{text}\n"
         ),
-        tools=[build_toolset(SERVERS[key]) for key in ("rag", "web", "calc")],
+        tools=[build_toolset(SERVERS[key]) for key in enabled_research_tools()],
         before_model_callback=before_model,
         before_tool_callback=before_tool,
         after_tool_callback=make_evidence_recorder(run_id, store, sink=sink),
@@ -162,7 +194,7 @@ def build_role_researcher(
         description=f"The {role} worker.",
         instruction=(
             f"You are the {role}. {ROLE_INSTRUCTIONS[role]}\n{TOOL_DISCIPLINE}\n"
-            f"{source_guidance(text)}\n{finding_requirement(text)}\n"
+            f"{research_tool_guidance()}\n{source_guidance(text)}\n{finding_requirement(text)}\n"
             f"The task:\n{text}\nReply DONE when finished."
         ),
         tools=[build_toolset(SERVERS[ROLE_SERVER[role]])],
@@ -187,10 +219,11 @@ class AssignedWorker(BaseAgent):
     async def _run_async_impl(self, ctx: InvocationContext):
         plan = bb_io.section(Blackboard.open(self.run_id, self.store), "plan")
         assigned = {step.assigned_to for step in plan.steps} if plan else set()
-        if self.role not in assigned:
+        role_tool = ROLE_SERVER.get(self.role)
+        if self.role not in assigned or role_tool not in enabled_research_tools():
             yield Event(
                 author=self.name,
-                custom_metadata={"skipped": True, "reason": "no plan step"},
+                custom_metadata={"skipped": True, "reason": "tool not selected" if role_tool not in enabled_research_tools() else "no plan step"},
             )
             return
         async for event in self.worker.run_async(ctx):
