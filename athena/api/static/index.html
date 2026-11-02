@@ -85,10 +85,6 @@
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-research"></use></svg>
           <span>Research</span>
         </button>
-        <button class="nav-item" data-view="details" type="button" id="nav-details">
-          <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-run-details"></use></svg>
-          <span>Run details</span>
-        </button>
         <button class="nav-item" data-view="how" type="button" id="nav-how">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-how"></use></svg>
           <span>Architecture</span>
@@ -229,6 +225,10 @@
                     <h2 id="result-title">athena</h2>
                     <div class="card-head-actions">
                       <span class="badge hidden" id="replay-badge">REPLAY</span>
+                      <button class="ghost" id="result-details" type="button" aria-label="Open run details">
+                        <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-run-details"></use></svg>
+                        <span>Run details</span>
+                      </button>
                       <button class="ghost" id="copy-markdown" type="button">Copy Markdown</button>
                     </div>
                   </div>
@@ -285,6 +285,21 @@
                     <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-check"></use></svg>
                   </li>
                 </ul>
+              </div>
+              <div class="research-tools" id="research-tools" role="group" aria-label="Research tools">
+                <span class="research-tools-label">Tools</span>
+                <button class="research-tool-pill selected" data-tool="all" type="button" aria-pressed="true">
+                  <span class="tool-check" aria-hidden="true"></span><span>All tools</span>
+                </button>
+                <button class="research-tool-pill" data-tool="rag" type="button" aria-pressed="false">
+                  <span class="tool-check" aria-hidden="true"></span><span>Documents</span>
+                </button>
+                <button class="research-tool-pill" data-tool="web" type="button" aria-pressed="false">
+                  <span class="tool-check" aria-hidden="true"></span><span>Web</span>
+                </button>
+                <button class="research-tool-pill" data-tool="calc" type="button" aria-pressed="false">
+                  <span class="tool-check" aria-hidden="true"></span><span>Calculator</span>
+                </button>
               </div>
               <span class="composer-pattern-note">applies to the next run</span>
             </div>
