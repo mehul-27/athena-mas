@@ -8,6 +8,7 @@ structured and validated, never a paragraph the supervisor has to parse.
 from __future__ import annotations
 
 import json
+import os
 import re
 
 from google.adk.agents import LlmAgent
@@ -83,6 +84,38 @@ def parse_plan_text(text: str) -> list[PlanStep]:
     return parse_steps([str(item) for item in raw])
 
 
+
+def enforce_selected_tools(raw_steps: list[str], question: str) -> list[PlanStep]:
+    """Constrain a plan to the user's selected tools and include each selection."""
+    raw = os.getenv("ATHENA_RESEARCH_TOOLS", "all").strip().lower()
+    steps = ensure_step_texts(raw_steps, question)
+    if not raw or raw == "all":
+        return parse_steps(steps)
+    selected = tuple(key for key in raw.split(",") if key in {"rag", "web", "calc"})
+    role_to_tool = {
+        "rag_researcher": "rag",
+        "web_researcher": "web",
+        "calc_researcher": "calc",
+    }
+    parsed = parse_steps(steps)
+    filtered = [
+        f"{step.assigned_to}: {step.description}"
+        for step in parsed
+        if role_to_tool.get(step.assigned_to) in selected
+    ]
+    existing = {role_to_tool.get(step.assigned_to) for step in parse_steps(filtered)}
+    for tool in selected:
+        if tool not in existing:
+            role = {"rag": "rag_researcher", "web": "web_researcher", "calc": "calc_researcher"}[tool]
+            description = {
+                "rag": "Search the local document corpus and record relevant passages",
+                "web": "Search the web and fetch relevant primary-source pages",
+                "calc": "Use the calculator or forecast tool for the requested numbers",
+            }[tool]
+            filtered.append(f"{role}: {description}")
+    return parse_steps(filtered[:MAX_STEPS])
+
+
 def build_plan_writer(
     run_id: str, store: BlackboardStore | None = None, question: str = ""
 ):
@@ -92,7 +125,7 @@ def build_plan_writer(
         Args:
             steps: 2-4 steps, each formatted as "owner: description".
         """
-        plan = Plan(steps=parse_steps(ensure_step_texts(steps, question)))
+        plan = Plan(steps=enforce_selected_tools(steps, question))
         version = Blackboard.open(run_id, store).write("plan", plan, author="planner")
         return f"Plan with {len(plan.steps)} steps recorded at version {version}."
 
@@ -120,6 +153,12 @@ def build_planner(
     requirement = finding_requirement(text)
     if requirement:
         base = f"{base}\n{requirement}\nPlan one primary-source investigation per finding."
+    raw_tools = os.getenv("ATHENA_RESEARCH_TOOLS", "all").strip().lower()
+    if raw_tools and raw_tools != "all":
+        base += (
+            "\nUser-selected tool constraint: only use these tools: " + raw_tools +
+            ". Include one plan step for every selected tool and do not assign unselected tools."
+        )
     if message_mode:
         instruction = (
             f"{base}\nThe task:\n{text}\n\n"
