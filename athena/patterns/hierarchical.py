@@ -17,7 +17,7 @@ from google.adk.events import Event
 from google.genai import types
 
 from athena.agents import bb_io
-from athena.agents.researcher import build_role_researcher
+from athena.agents.researcher import build_role_researcher, enabled_research_tools
 from athena.agents.routing import classify, critique_needs_research
 from athena.agents.supervisor import timed_stage
 from athena.blackboard import Blackboard
@@ -86,9 +86,14 @@ class HierarchicalAgent(BaseAgent):
                     f"{bb_io.task_text(blackboard)}\n\n"
                     f"CRITIC GAPS TO RESOLVE WITH NEW PRIMARY EVIDENCE:\n{gap_text}"
                 )
-                role = "rag_researcher" if classify(
+                route_role = "rag_researcher" if classify(
                     task.question if task else ""
                 ).kind == "local" else "web_researcher"
+                role_to_tool = {"rag_researcher": "rag", "web_researcher": "web", "calc_researcher": "calc"}
+                selected = enabled_research_tools()
+                role = route_role if role_to_tool[route_role] in selected else {
+                    "rag": "rag_researcher", "web": "web_researcher", "calc": "calc_researcher"
+                }[selected[0]]
                 worker = build_role_researcher(
                     role, self.run_id, self.store, task_text=recovery_task
                 )
