@@ -19,10 +19,9 @@ from google.genai import types
 
 from athena.agents.a2a_client import build_payload, send_role_request
 from athena.agents.a2a_stage import DEFAULT_CARD_URL, INSTRUCTIONS
-from athena.agents.planner import build_planner, parse_plan_text, parse_steps
+from athena.agents.planner import build_planner, enforce_selected_tools, parse_plan_text
 from athena.agents.report_sanitize import evidence_ids_for, sanitize_report
 from athena.agents.researcher import build_researcher
-from athena.agents.routing import ensure_step_texts
 from athena.agents.sufficiency import assess, gap_answer
 from athena.agents import a2a_client
 from athena.blackboard import Analysis, Blackboard, Critique, Draft, FinalReport, Plan
@@ -69,10 +68,10 @@ class P2PAgent(BaseAgent):
             yield event
             raw = _text_of(event) or raw
         plan = Plan(steps=parse_plan_text(raw))
-        plan = Plan(steps=parse_steps(ensure_step_texts(
+        plan = Plan(steps=enforce_selected_tools(
             [f"{step.assigned_to}: {step.description}" for step in plan.steps],
             self.question,
-        )))
+        ))
         context.plan = render_plan(plan)
         yield _timing("planner", started)
         self._blackboard().write("plan", plan, author="planner")  # audit
