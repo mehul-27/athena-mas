@@ -40,6 +40,7 @@ REGISTRY = RunRegistry()
 class RunRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     pattern: str = Field(default="sequential")
+    tools: list[str] = Field(default_factory=lambda: ["all"])
 
 
 def _store() -> SQLiteEventStore:
@@ -229,8 +230,13 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     def start_run(request: RunRequest) -> dict:
         if request.pattern not in VALID_PATTERNS:
             raise HTTPException(status_code=422, detail=f"unknown pattern {request.pattern!r}")
+        allowed_tools = {"all", "rag", "web", "calc"}
+        if not request.tools or any(tool not in allowed_tools for tool in request.tools):
+            raise HTTPException(status_code=422, detail="tools must contain 'all' or any of: rag, web, calc")
+        if "all" in request.tools and len(request.tools) > 1:
+            raise HTTPException(status_code=422, detail="'all' cannot be combined with individual tools")
         try:
-            return {"run_id": runs.start(request.question, request.pattern)}
+            return {"run_id": runs.start(request.question, request.pattern, request.tools)}
         except BusyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
