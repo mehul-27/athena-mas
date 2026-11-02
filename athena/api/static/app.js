@@ -16,7 +16,7 @@ const END_GRACE_MS = 1500;
 const STALL_MS = 60000;
 
 const state = {
-  view: "run", pattern: L.DEFAULT_PATTERN, runId: null, events: [],
+  view: "run", pattern: L.DEFAULT_PATTERN, selectedTools: ["all"], runId: null, events: [],
   source: null, retries: 0, replaying: false, playback: false, bundles: [], presets: [],
   profiles: [], active: "", editing: "", rawJson: false, busy: false,
   runs: [], historyLimit: HISTORY_LIMIT, speed: 1,
@@ -210,6 +210,10 @@ function updateLockedControls() {
       ? (state.playback ? "Wait for the recording to finish." : "Wait for the current research task to finish.")
       : "";
   }
+  document.querySelectorAll(".research-tool-pill").forEach((item) => {
+    item.disabled = locked;
+    item.setAttribute("aria-disabled", locked ? "true" : "false");
+  });
   const patternTrigger = $("pattern-trigger");
   if (patternTrigger) {
     patternTrigger.disabled = locked;
@@ -771,6 +775,29 @@ function pattern() {
   return L.patternValue(select ? select.value : state.pattern);
 }
 
+function selectedResearchTools() {
+  return state.selectedTools.includes("all") ? ["all"] : state.selectedTools.slice();
+}
+
+function setResearchTools(tool) {
+  const available = ["rag", "web", "calc"];
+  if (tool === "all") {
+    state.selectedTools = ["all"];
+  } else {
+    const current = state.selectedTools.includes("all") ? [] : state.selectedTools.slice();
+    const next = current.includes(tool) ? current.filter((value) => value !== tool) : current.concat(tool);
+    state.selectedTools = next.length === 0 || available.every((value) => next.includes(value))
+      ? ["all"] : next;
+  }
+  document.querySelectorAll(".research-tool-pill").forEach((button) => {
+    const selected = button.dataset.tool === "all"
+      ? state.selectedTools.includes("all")
+      : !state.selectedTools.includes("all") && state.selectedTools.includes(button.dataset.tool);
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+}
+
 function autoGrow() {
   const box = $("question");
   box.style.height = "auto";
@@ -885,7 +912,7 @@ async function startRun() {
     setBusy(true);
     const data = await api("/api/runs", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: submittedQuestion, pattern: state.pattern }),
+      body: JSON.stringify({ question: submittedQuestion, pattern: state.pattern, tools: selectedResearchTools() }),
     });
     if (!L.validRunId(data && data.run_id)) {
       throw new Error("server did not return a valid run id");
@@ -1837,6 +1864,16 @@ $("previous-run-dismiss").addEventListener("click", () => {
   state.previousRun = null;
   renderStatus();
 });
+$("research-tools").addEventListener("click", (event) => {
+  const button = event.target.closest(".research-tool-pill");
+  if (button && !button.disabled) setResearchTools(button.dataset.tool);
+});
+
+$("result-details").addEventListener("click", () => {
+  if (!state.runId) { toast("Run research first to view run details."); return; }
+  showView("details");
+});
+
 $("composer").addEventListener("submit", (event) => {
   event.preventDefault();
   startRun();
