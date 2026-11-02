@@ -59,7 +59,7 @@ class RunRegistry:
             "--pattern", pattern, "--run-id", run_id, "--json-summary", str(summary),
         ]
 
-    def start(self, question: str, pattern: str) -> str:
+    def start(self, question: str, pattern: str, tools: list[str] | None = None) -> str:
         question = question.strip()
         if not question:
             raise ValueError("question must not be empty")
@@ -75,13 +75,21 @@ class RunRegistry:
             log_path = RUN_DIR / f"{run_id}.log"
             summary_path = RUN_DIR / f"{run_id}.summary.json"
             log = log_path.open("w", encoding="utf-8")
+            selected = list(tools or ["all"])
+            allowed = {"rag", "web", "calc"}
+            if selected == ["all"]:
+                tool_env = "all"
+            elif selected and "all" not in selected and set(selected).issubset(allowed):
+                tool_env = ",".join(dict.fromkeys(selected))
+            else:
+                raise ValueError("tools must be ['all'] or a non-empty subset of rag, web, calc")
             process = subprocess.Popen(
                 self._argv(question, pattern, run_id),
                 cwd=os.getcwd(),
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 # The active profile wins over stale shell/.env values.
-                env={**os.environ, **self._env_overrides()},
+                env={**os.environ, **self._env_overrides(), "ATHENA_RESEARCH_TOOLS": tool_env},
                 creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
             self._active = ActiveRun(run_id, pattern, question, process, log_path,
