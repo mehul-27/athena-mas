@@ -1151,3 +1151,17 @@ html[data-theme="light"] .icon-theme-dark { display: none; }
 .chat-composer textarea, #about-me {
   font-family: var(--font);
 }
+
+
+/* Research tool selector: compact, multi-select pills beside the pattern. */
+.research-tools { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.research-tools-label { color: var(--muted); font-size: .86em; margin-right: 2px; }
+.research-tool-pill { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; background: transparent; color: var(--fg-dim); cursor: pointer; font: inherit; font-size: .82em; line-height: 1.4; white-space: nowrap; }
+.research-tool-pill:hover { border-color: var(--border-strong); color: var(--fg); }
+.research-tool-pill.selected { background: var(--selected); border-color: var(--border-strong); color: var(--fg); }
+.research-tool-pill:disabled { opacity: .55; cursor: not-allowed; }
+.tool-check { width: 13px; height: 13px; flex: 0 0 13px; display: inline-grid; place-items: center; border: 1px solid var(--muted); border-radius: 50%; }
+.research-tool-pill.selected .tool-check { background: var(--accent); border-color: var(--accent); }
+.research-tool-pill.selected .tool-check::after { content: ""; width: 5px; height: 3px; border-left: 1.5px solid var(--on-accent); border-bottom: 1.5px solid var(--on-accent); transform: rotate(-45deg) translateY(-1px); }
+#result-details { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 680px) { .research-tools { flex-basis: 100%; } }
