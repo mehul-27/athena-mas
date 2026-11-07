@@ -3013,15 +3013,41 @@ function evalCell(value, formatter) {
   return cell;
 }
 
+function evalWarning(summary) {
+  /* A batch in which nothing succeeded says nothing about research quality when
+     the runs never reached a model. Say so here: a bare "0/33 (0%)" table reads
+     like a verdict on the pipeline, and that misreading is easy to make. */
+  const rows = (summary && summary.patterns) || [];
+  const recorded = Number((summary && summary.records) || 0);
+  const successes = rows.reduce((total, row) => total + (row.successes || 0), 0);
+  if (!recorded || successes > 0) return "";
+  const meta = (summary && summary.meta) || {};
+  const stopped = String(meta.stopped_reason || "").trim();
+  const parts = [
+    "This batch recorded " + recorded + " run(s) and none of them succeeded.",
+    "Read the per-run records before drawing a conclusion: a run that failed "
+      + "before any model call (an exhausted provider quota, a missing key, a "
+      + "stopped batch) also counts as failed.",
+  ];
+  if (stopped) parts.push("The harness recorded: " + stopped + ".");
+  return parts.join(" ");
+}
+
 function renderEvaluation(summary) {
   const rows = (summary && summary.patterns) || [];
   const body = $("eval-body");
   const table = $("eval-table");
   const empty = $("eval-empty");
   const charts = $("eval-charts");
+  const warning = $("eval-warning");
   if (!body || !table) return;
   body.replaceChildren();
   if (charts) charts.replaceChildren();
+  if (warning) {
+    const message = evalWarning(summary);
+    warning.classList.toggle("hidden", !message);
+    text(warning, message);
+  }
   if (!rows.length) {
     table.classList.add("hidden");
     if (empty) {
@@ -3558,7 +3584,7 @@ if (boot.view.startsWith("replay=")) {
   openReplay(name, { at: Number.isFinite(at) ? at : 1, tab: bootTab });
 } else if (boot.view === "chat") {
   showView("chat");
-} else if (["settings", "how", "documents"].includes(boot.view)) {
+} else if (["settings", "how", "documents", "eval"].includes(boot.view)) {
   if (boot.view === "settings") {
     showView("run");
     setTimeout(() => window.AthenaSettings?.open(), 0);
@@ -3571,4 +3597,17 @@ if (boot.view.startsWith("replay=")) {
 } else {
   showView("run");
 }
+
+/* The hash was only ever written, never read after boot: a deep link reloaded
+   into the right view, but a hash changed later (a link, the back button, a
+   pasted #eval) did nothing. Keep the two directions in step, and ignore the
+   hash this app itself just wrote so a normal view switch cannot loop. */
+const HASH_VIEWS = ["chat", "run", "how", "documents", "eval", "settings"];
+window.addEventListener("hashchange", () => {
+  const want = String(location.hash || "").replace(/^#/, "").split("&")[0];
+  if (!want || !HASH_VIEWS.includes(want)) return;
+  if (state.view === want) return;
+  showView(want);
+});
+
 setInterval(refreshHealth, 20000);

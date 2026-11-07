@@ -209,8 +209,18 @@ def test_page_has_no_remote_assets() -> None:
 def test_deep_links_are_supported() -> None:
     source = _read("app.js")
     assert 'boot.view.startsWith("replay=")' in source
-    assert '["settings", "how", "documents"]' in source
     assert 'params.tab' in source and 'params.at' in source
+
+    # Every routable view must be reachable from a pasted hash, both at boot and
+    # after load. This used to pin one literal list, which silently stopped
+    # covering `eval` when that view was added; check each name instead.
+    for view in ("chat", "run", "how", "documents", "eval", "settings"):
+        assert f'"{view}"' in source, f"{view} is not routable"
+    boot_block = source.split("boot.view", 1)[1][:1200]
+    assert '"eval"' in boot_block, "eval is missing from the boot-time view list"
+    assert 'addEventListener("hashchange"' in source, (
+        "a hash changed after load must switch the view"
+    )
 
 
 def test_page_is_served(client: TestClient) -> None:

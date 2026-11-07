@@ -736,6 +736,19 @@ button.primary[disabled], button.ghost[disabled] { opacity: .55; cursor: progres
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .test-result { margin-top: 12px; }
 .empty-state { color: var(--muted); font-style: italic; }
+/* A batch whose runs never reached a model is not a result. This banner keeps a
+   bare "0/33" table from being read as a verdict on the pipeline. */
+.eval-warning {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface-2, transparent);
+  color: var(--text);
+  font-size: .86em;
+  line-height: 1.5;
+}
 
 @media (max-width: 1100px) {
   .sidebar { width: 220px; flex-basis: 220px; }
