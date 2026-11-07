@@ -21,6 +21,21 @@ Results root: `evaluation/results` - 3 batch directories.
 | Cost estimates | 0 priced, 75 unpriced |
 | Total estimated cost | none recorded |
 
+## Operational vs research quality (all batches pooled)
+| measure | value | what it means |
+|---|---|---|
+| attempts | 75 | every recorded attempt |
+| model-start rate | 17/75 (23%) | at least one recorded model call; not execution success |
+| research completion | 5/75 (7%) | terminal state `completed` |
+| critic approval | 1/5 (20%) | approved / runs where the critic reached a verdict |
+| scoring success | 2/75 (3%) | scored runs meeting the success rule |
+| infrastructure failures | 69/75 (92%) | ended by the environment, not the pipeline |
+|   blocked before a model | 57/75 (76%) | no model response was ever received |
+|   interrupted after a model | 12/75 (16%) | started, then the environment stopped it |
+| research quality | 0.490 | mean rubric over valid completed runs only |
+| quality sample (n) | 5 | valid completed research runs |
+
+
 ## Batches in this report
 | batch | plan | backend | model | started | ended | stopped | records | states |
 |---|---|---|---|---|---|---|---|---|
@@ -218,7 +233,7 @@ A run can carry more than one failure label.
 - This file aggregates those same records across batches; it does not contain a number that is not in `raw.jsonl`.
 - `evaluation/results/20261106T194245Z`: 6 record(s); per-batch report at `evaluation/results/20261106T194245Z/REPORT.md` (not generated yet).
 - `evaluation/results/20261107T133000Z`: 36 record(s); per-batch report at `evaluation/results/20261107T133000Z/REPORT.md` (present).
-- `evaluation/results/20261107T150000Z`: 33 record(s); per-batch report at `evaluation/results/20261107T150000Z/REPORT.md` (not generated yet).
+- `evaluation/results/20261107T150000Z`: 33 record(s); per-batch report at `evaluation/results/20261107T150000Z/REPORT.md` (present).
 
 ## Reproduce
 

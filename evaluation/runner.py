@@ -56,7 +56,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from evaluation import __version__, schema
+from evaluation import __version__, outcomes, schema
 from evaluation.schema import (
     AttemptAccounting,
     EvalDataset,
@@ -693,20 +693,39 @@ def merge_run_facts(
     stage_errors = list(summary.get("stage_errors") or [])
     failed = bool(summary.get("failed"))
     has_answer = bool((capture["final_answer"] or "").strip())
-    # An empty summary plus a harness-level error is an *infrastructure* failure
-    # (the child never reported), not a pipeline verdict, so it is labelled as
-    # such: only that class is eligible for a retry. A summary that says "failed"
-    # or a run that produced no report under a real summary is a result.
-    if failed:
-        terminal = "failed"
-    elif has_answer:
+
+    # Decide the terminal state from the *cause*, not from the fact that a
+    # summary exists. The old rule only reached `infra_error` when the child
+    # wrote no summary at all, so a run killed by an exhausted provider quota
+    # still reported a summary with failed=True and was recorded as an ordinary
+    # pipeline failure - which made an availability outage look like a research
+    # verdict. `outcomes.classify` reads the recorded error text and names the
+    # cause; only a genuine infrastructure cause becomes `infra_error`.
+    provisional = {
+        "terminal_state": "completed" if has_answer and not failed else "failed",
+        "final_answer": capture["final_answer"],
+        "critic_approved": approved,
+        "model_calls": totals.get("model_calls") if totals else None,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "errors": list(errors),
+        "stage_errors": stage_errors,
+        "notes": list(notes),
+    }
+    classification = outcomes.classify(provisional)
+
+    if has_answer and not failed:
         terminal = "completed"
-    elif errors and not summary:
+    elif classification.is_infrastructure:
         terminal = "infra_error"
+    elif classification.failure_class == "budget":
+        terminal = "budget_stopped"
     else:
         terminal = "failed"
         if not errors:
             errors = errors + ["no final report was written"]
+
+    record.update(classification.as_record_fields())
 
     record.update(
         {
@@ -728,6 +747,9 @@ def merge_run_facts(
             "recovery_rounds": summary.get("recovery_rounds"),
             "revision_rounds": summary.get("revision_rounds"),
             "evidence_count": len(capture["evidence"]),
+            # Written from the citations actually captured, so a record can
+            # never claim no citations while carrying a non-empty list.
+            "citation_count": len(capture["citations"]),
             "terminal_state": terminal,
             "outcome": summary.get("outcome"),
             "critic_status": summary.get("critic_status"),

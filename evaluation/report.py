@@ -310,6 +310,43 @@ def build_overview(
     ]
     lines.append(analyze._table(("Measure", "Value"), headline))
 
+    # --- operational vs research quality -------------------------------
+    # Pooled across batches, so it must be read as an environment summary
+    # rather than one experiment. The quality row is explicitly undefined when
+    # no run in any pooled batch completed - a pooled 0 would be a false claim.
+    pooled = analyze.summarise_group(merged.records_with_scores())
+    lines.append("\n## Operational vs research quality (all batches pooled)\n")
+    lines.append(analyze._table(
+        ("measure", "value", "what it means"),
+        [
+            ("attempts", pooled["attempts"], "every recorded attempt"),
+            ("model-start rate", analyze._rate_text(pooled["model_start"]),
+             "at least one recorded model call; not execution success"),
+            ("research completion", analyze._rate_text(pooled["research_completion"]),
+             "terminal state `completed`"),
+            ("critic approval",
+             analyze._rate_text(pooled["critic_evaluable_approval"])
+             or analyze.RATE_UNDEFINED,
+             "approved / runs where the critic reached a verdict"),
+            ("scoring success", analyze._rate_text(pooled["scoring_success"]),
+             "scored runs meeting the success rule"),
+            ("infrastructure failures",
+             analyze._rate_text(pooled["infrastructure_failure"]),
+             "ended by the environment, not the pipeline"),
+            ("  blocked before a model",
+             analyze._rate_text(pooled["infrastructure_blocked"]),
+             "no model response was ever received"),
+            ("  interrupted after a model",
+             analyze._rate_text(pooled["interrupted_after_model"]),
+             "started, then the environment stopped it"),
+            ("research quality", analyze.quality_mean_text(pooled["research_quality"]),
+             "mean rubric over valid completed runs only"),
+            ("quality sample (n)", pooled["research_quality"].n,
+             "valid completed research runs"),
+        ],
+    ))
+    lines.append("\n")
+
     # --- batches -------------------------------------------------------
     lines.append("\n## Batches in this report\n")
     batch_rows = []

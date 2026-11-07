@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from evaluation import __version__, schema, scoring
+from evaluation import __version__, outcomes, schema, scoring
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = REPO_ROOT / "evaluation" / "dataset.json"
@@ -245,6 +245,30 @@ def summarise_group(rows: Sequence[tuple[dict[str, Any], Any]]) -> dict[str, Any
     approvals = [score.critic_acceptance == "approved" for score in scores]
     rejections = [score.critic_acceptance == "rejected" for score in scores]
 
+    # --- operational versus quality (see evaluation.outcomes) --------------
+    # These answer different questions and must never be pooled into one rate:
+    # "could the provider be reached" is not "was the research any good".
+    started = [outcomes.model_started(record) for record in records]
+    infra = [outcomes.classify(record).is_infrastructure for record in records]
+    blocked = [outcomes.blocked_before_model(record) for record in records]
+    interrupted = [outcomes.interrupted_after_model(record) for record in records]
+    evaluable = [outcomes.critic_evaluable(record) for record in records]
+    critic_evaluable_approvals = [
+        record.get("critic_approved") is True
+        for record in records
+        if outcomes.critic_evaluable(record)
+    ]
+    valid = [outcomes.is_valid_completed(record) for record in records]
+    # Quality is measured only over runs that actually produced research. When
+    # none did, the mean is *undefined* - not 0.0, which would read as "the
+    # pipeline scored zero" instead of "nothing was measured".
+    valid_scores = [
+        score.rubric_score
+        for (record, score) in rows
+        if score is not None and outcomes.is_valid_completed(record)
+    ]
+    quality = summarise(valid_scores)
+
     return {
         "runs": len(records),
         "scored": len(scores),
@@ -262,6 +286,18 @@ def summarise_group(rows: Sequence[tuple[dict[str, Any], Any]]) -> dict[str, Any
         "success": rate(successes),
         "critic_approved": rate(approvals),
         "critic_rejected": rate(rejections),
+        # --- the six explicit metrics ---
+        "attempts": len(records),
+        "model_start": rate(started),
+        "research_completion": rate(completions),
+        "critic_evaluable": (sum(evaluable), len(evaluable), None),
+        "critic_evaluable_approval": rate(critic_evaluable_approvals),
+        "scoring_success": rate(successes),
+        "infrastructure_failure": rate(infra),
+        "infrastructure_blocked": rate(blocked),
+        "interrupted_after_model": rate(interrupted),
+        "valid_completed": (sum(valid), len(valid), None),
+        "research_quality": quality,
     }
 
 
@@ -307,6 +343,11 @@ RUN_COLUMNS = (
 
 PATTERN_COLUMNS = (
     "pattern", "runs", "scored", "completed_rate", "success_rate",
+    "model_start_rate", "research_completion_rate", "critic_approval_rate",
+    "scoring_success_rate", "infrastructure_failure_rate",
+    "infrastructure_blocked_rate", "interrupted_after_model_rate",
+    "critic_evaluable_n", "valid_completed_n", "research_quality_mean",
+    "research_quality_n", "research_quality_note",
     "latency_n", "latency_median", "latency_p25", "latency_p75",
     "tokens_n", "tokens_median", "cost_n", "cost_median", "cost_missing",
     "tool_calls_median", "rubric_median", "rubric_n", "answer_key_median",
@@ -388,6 +429,7 @@ def pattern_rows(analysis: Analysis) -> list[dict[str, Any]]:
                 "scored": stats["scored"],
                 "completed_rate": _rate_text(stats["completed"]),
                 "success_rate": _rate_text(stats["success"]),
+                **_metric_cells(stats),
                 "latency_n": stats["latency"].n,
                 "latency_median": _round(stats["latency"].median),
                 "latency_p25": _round(stats["latency"].p25),
@@ -447,6 +489,57 @@ def _rate_text(triple: tuple[int, int, float | None]) -> str:
     if not total:
         return ""
     return f"{hits}/{total} ({value * 100:.0f}%)"
+
+
+#: Printed wherever a quality figure has no valid sample. Never "0".
+QUALITY_UNDEFINED = "N/A - no valid completed research runs"
+#: Printed when a rate had no eligible denominator at all.
+RATE_UNDEFINED = "n/a (0 eligible)"
+
+
+def quality_mean_text(stats: Stats) -> str:
+    """The mean rubric over valid completed runs, or an explicit undefined.
+
+    A batch in which no research run completed has *no* quality measurement. A
+    zero there reads as "the pipeline scored nothing", which is a different and
+    false claim, so this returns text rather than a number in that case.
+
+    A *measured* zero is formatted explicitly as ``0.000`` so it cannot be
+    mistaken for the undefined case, which is spelled out in words.
+    """
+    if stats.n == 0:
+        return QUALITY_UNDEFINED
+    return f"{stats.mean:.3f}"
+
+
+def _metric_cells(stats: Mapping[str, Any]) -> dict[str, Any]:
+    """The operational-versus-quality block every row carries."""
+    hits, total, _ = stats["critic_evaluable"]
+    vhits, vtotal, _ = stats["valid_completed"]
+    quality = stats["research_quality"]
+
+    def rate_or_undefined(triple: tuple[int, int, float | None]) -> str:
+        # An empty denominator is "we could not measure this", not 0%.
+        return _rate_text(triple) or RATE_UNDEFINED
+
+    return {
+        "model_start_rate": rate_or_undefined(stats["model_start"]),
+        "research_completion_rate": rate_or_undefined(stats["research_completion"]),
+        "critic_approval_rate": rate_or_undefined(stats["critic_evaluable_approval"]),
+        "scoring_success_rate": rate_or_undefined(stats["scoring_success"]),
+        "infrastructure_failure_rate": rate_or_undefined(stats["infrastructure_failure"]),
+        "infrastructure_blocked_rate": rate_or_undefined(stats["infrastructure_blocked"]),
+        "interrupted_after_model_rate": rate_or_undefined(stats["interrupted_after_model"]),
+        "critic_evaluable_n": hits if total else 0,
+        "valid_completed_n": vhits if vtotal else 0,
+        "research_quality_mean": quality_mean_text(quality),
+        "research_quality_n": quality.n,
+        "research_quality_note": (
+            "no valid completed research run: quality is undefined, not zero"
+            if quality.n == 0
+            else ""
+        ),
+    }
 
 
 # --- Charts ----------------------------------------------------------------
@@ -903,6 +996,50 @@ def build_report(analysis: Analysis, dataset: schema.EvalDataset,
         f"score >= {scoring.SUCCESS_THRESHOLD}, no citation that resolves to nothing, the "
         "item's required evidence cited (or the gap stated honestly), and no security "
         "violation.\n"
+    )
+
+    # --- operational versus research quality ---
+    # Reported before the quality tables on purpose: a reader must know whether
+    # the pipeline was even reachable before reading a success rate as a verdict
+    # on the pipeline.
+    lines.append("\n## Operational vs research quality\n")
+    overall = summarise_group(analysis.records_with_scores())
+    lines.append(_table(
+        ("measure", "value", "what it means"),
+        [
+            ("attempts", overall["attempts"], "every recorded attempt"),
+            ("model-start rate", _rate_text(overall["model_start"]),
+             "runs with at least one recorded model call"),
+            ("research completion", _rate_text(overall["research_completion"]),
+             "terminal state `completed`"),
+            ("critic approval", _rate_text(overall["critic_evaluable_approval"])
+             or RATE_UNDEFINED,
+             "approved / runs where the critic reached a verdict"),
+            ("scoring success", _rate_text(overall["scoring_success"]),
+             "scored runs that met the success rule"),
+            ("infrastructure failures", _rate_text(overall["infrastructure_failure"]),
+             "attempts ended by the environment, not the pipeline"),
+            ("  blocked before a model", _rate_text(overall["infrastructure_blocked"]),
+             "no model response was ever received"),
+            ("  interrupted after a model", _rate_text(overall["interrupted_after_model"]),
+             "started, then the environment stopped it"),
+            ("research quality", quality_mean_text(overall["research_quality"]),
+             "mean rubric over valid completed runs only"),
+            ("quality sample (n)", overall["research_quality"].n,
+             "valid completed research runs"),
+        ],
+    ))
+    lines.append("\n")
+    if overall["research_quality"].n == 0:
+        lines.append(
+            "**Research quality is undefined for this batch, not zero.** No run "
+            "completed with a final report, so there is no quality measurement to "
+            "report. The zero success rate above is an operational result, not a "
+            "finding about research quality.\n"
+        )
+    lines.append(
+        "Model-start rate is not execution success: a single model call does not "
+        "establish that meaningful research happened.\n"
     )
 
     # --- per pattern ---

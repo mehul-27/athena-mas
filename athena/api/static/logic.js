@@ -1723,6 +1723,50 @@
     return Number.isFinite(value) && value > 0 ? String(value) : "";
   }
 
+  /* --- evaluation: operational vs research quality ------------------------
+     These three are pure so the dashboard's measurement rules are testable.
+     The rule they encode: an absent denominator or an absent sample is
+     "not measurable", never 0%. */
+  function evalPercent(metric) {
+    if (!metric || typeof metric !== "object") return "\u2014";
+    if (metric.rate == null) return Number(metric.n) ? "\u2014" : "not measurable";
+    const pct = Math.round(Number(metric.rate) * 1000) / 10;
+    return pct + "% (" + metric.hits + "/" + metric.n + ")";
+  }
+
+  function evalQualityLabel(operational) {
+    const quality = (operational && operational.research_quality) || {};
+    if (!quality.measurable) {
+      return quality.display || "N/A - no valid completed research runs";
+    }
+    return Number(quality.mean).toFixed(3) + " (n=" + quality.n + ")";
+  }
+
+  function evalOperationalRows(operational) {
+    if (!operational || !operational.attempts) return [];
+    const terminal = operational.terminal_states || {};
+    const causes = operational.failure_codes || {};
+    const joiner = (object) => {
+      const keys = Object.keys(object);
+      return keys.length ? keys.map((key) => key + "=" + object[key]).join(", ") : "\u2014";
+    };
+    return [
+      ["Attempts", String(operational.attempts)],
+      ["Terminal states", joiner(terminal)],
+      ["Failure causes", joiner(causes)],
+      ["Model-start rate", evalPercent(operational.model_start)],
+      ["Research completion", evalPercent(operational.research_completion)],
+      ["Critic approval", evalPercent(operational.critic_approval)
+        + " \u00b7 " + (operational.critic_evaluable_runs || 0) + " critic-evaluable"],
+      ["Scoring success", evalPercent(operational.scoring_success)],
+      ["Infrastructure failures", evalPercent(operational.infrastructure_failure)],
+      ["  Blocked before any model", evalPercent(operational.infrastructure_blocked)],
+      ["  Interrupted after a model", evalPercent(operational.interrupted_after_model)],
+      ["Research quality", evalQualityLabel(operational)
+        + " \u00b7 " + (operational.valid_completed_runs || 0) + " valid completed"],
+    ];
+  }
+
   const api = {
     frameworkOf, reduceTimeline, a2aBytes, duration, bytes, tokens,
     relativeTime, groupHistory, tabReducer, progressStrip,
@@ -1742,6 +1786,7 @@
     tutorialPlacement, tutorialProgress, parseTutorialState, shouldAutoStartTutorial,
     EVENT_LOG_KINDS, eventLogEntry, eventLogText,
     answerSegments, citationKey,
+    evalPercent, evalQualityLabel, evalOperationalRows,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AthenaLogic = api;

@@ -27,7 +27,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from athena.api.guards import guard
-from evaluation import analyze, report, schema
+from evaluation import analyze, outcomes, report, schema
 
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
@@ -142,6 +142,11 @@ def _pattern_rows(analysis: analyze.Analysis) -> list[dict[str, Any]]:
     for name, group in analyze.group_by_pattern(analysis).items():
         stats = analyze.summarise_group(group)
         hits, _total, share = stats["success"]
+        cells = analyze._metric_cells(stats)
+        # The operational block is reported next to `success_rate`, never in
+        # place of it: a batch that could not reach a provider still shows its
+        # zero success rate, and additionally says why that zero is not a
+        # research finding.
         rows.append(
             {
                 "pattern": name,
@@ -153,9 +158,34 @@ def _pattern_rows(analysis: analyze.Analysis) -> list[dict[str, Any]]:
                 "tokens_median": _number(stats["tokens"].median, 1),
                 "cost_median_usd": _number(stats["cost"].median, 6),
                 "citation_precision_median": _number(stats["citation_precision"].median),
+                # --- operational versus quality ---
+                "attempts": stats["attempts"],
+                "model_start": _metric(stats["model_start"]),
+                "research_completion": _metric(stats["research_completion"]),
+                "critic_approval": _metric(stats["critic_evaluable_approval"]),
+                "critic_evaluable_runs": cells["critic_evaluable_n"],
+                "scoring_success": _metric(stats["scoring_success"]),
+                "infrastructure_failure": _metric(stats["infrastructure_failure"]),
+                "infrastructure_blocked": _metric(stats["infrastructure_blocked"]),
+                "interrupted_after_model": _metric(stats["interrupted_after_model"]),
+                "valid_completed_runs": cells["valid_completed_n"],
+                "research_quality_mean": _number(stats["research_quality"].mean),
+                "research_quality_n": stats["research_quality"].n,
+                "research_quality_text": cells["research_quality_mean"],
+                "quality_measured": stats["research_quality"].n > 0,
             }
         )
     return rows
+
+
+def _metric(triple: tuple[int, int, float | None]) -> dict[str, Any]:
+    """One rate as counts *and* a share, with an explicit undefined.
+
+    ``rate`` stays ``null`` when the denominator is zero so the dashboard can
+    print "not measurable" instead of a fabricated 0%.
+    """
+    hits, total, share = triple
+    return {"hits": hits, "n": total, "rate": _number(share)}
 
 
 def _charts(directory: Path) -> list[dict[str, str]]:
@@ -236,11 +266,13 @@ def summary(request: Request, run: str = "") -> dict:
 
     analysis, problems = _analysis(directory)
     meta = analysis.meta or {}
+    operational = _operational_summary(analysis)
     return {
         "run": directory.name,
         "records": len(analysis.records),
         "scored": len(analysis.scores),
         "patterns": _pattern_rows(analysis),
+        "operational": operational,
         "charts": _charts(directory),
         "problems": problems[:MAX_PROBLEMS],
         "note": analyze.NO_SIGNIFICANCE_NOTE,
@@ -251,6 +283,46 @@ def summary(request: Request, run: str = "") -> dict:
             "started_at": str(meta.get("started_at") or ""),
             "ended_at": str(meta.get("ended_at") or ""),
             "stopped_reason": str(meta.get("stopped_reason") or ""),
+        },
+    }
+
+
+def _operational_summary(analysis: analyze.Analysis) -> dict[str, Any]:
+    """Batch-wide operational versus quality block.
+
+    ``research_quality_measurable`` is the flag the dashboard keys off: when it
+    is false the batch had no valid completed research run, so quality must be
+    displayed as unavailable rather than as a score.
+    """
+    stats = analyze.summarise_group(analysis.records_with_scores())
+    cells = analyze._metric_cells(stats)
+    terminal: dict[str, int] = {}
+    causes: dict[str, int] = {}
+    for record in analysis.records:
+        state = str(record.get("terminal_state") or "unknown")
+        terminal[state] = terminal.get(state, 0) + 1
+        classification = outcomes.classify(record)
+        if classification.failure_code != "none":
+            causes[classification.failure_code] = causes.get(classification.failure_code, 0) + 1
+    quality = stats["research_quality"]
+    return {
+        "attempts": stats["attempts"],
+        "terminal_states": dict(sorted(terminal.items())),
+        "failure_codes": dict(sorted(causes.items(), key=lambda pair: (-pair[1], pair[0]))),
+        "model_start": _metric(stats["model_start"]),
+        "research_completion": _metric(stats["research_completion"]),
+        "critic_approval": _metric(stats["critic_evaluable_approval"]),
+        "critic_evaluable_runs": cells["critic_evaluable_n"],
+        "scoring_success": _metric(stats["scoring_success"]),
+        "infrastructure_failure": _metric(stats["infrastructure_failure"]),
+        "infrastructure_blocked": _metric(stats["infrastructure_blocked"]),
+        "interrupted_after_model": _metric(stats["interrupted_after_model"]),
+        "valid_completed_runs": cells["valid_completed_n"],
+        "research_quality": {
+            "mean": _number(quality.mean),
+            "n": quality.n,
+            "measurable": quality.n > 0,
+            "display": cells["research_quality_mean"],
         },
     }
 

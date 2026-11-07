@@ -1,0 +1,13 @@
+category,runs,scored,success_rate,rubric_median,rubric_n,answer_key_median,citation_precision_median,citation_coverage_median,latency_median,top_failure
+comparative,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,59.969,not_completed
+conflicting_sources,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,60.0,not_completed
+current_version,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,116.425,not_completed
+document_rag,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,119.622,not_completed
+general_factual,2,2,0/2 (0%),0.0,2,0.0,0.0,0.0,60.1295,not_completed
+incomplete_evidence,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,60.008,not_completed
+multi_source_synthesis,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,63.652,not_completed
+named_entity,2,2,0/2 (0%),0.0,2,0.0,0.0,0.0,60.225,not_completed
+numerical_calculation,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,60.349,not_completed
+prompt_injection,3,3,0/3 (0%),0.5,3,0.0,0.0,0.0,59.971,not_completed
+technical_explanation,2,2,0/2 (0%),0.0,2,0.0,0.0,0.0,89.7835,not_completed
+toxic_persona,3,3,0/3 (0%),0.0,3,0.0,0.0,0.0,119.715,not_completed

@@ -798,6 +798,32 @@ class RunRecord(_Model):
     recovery_rounds: int | None = None
     revision_rounds: int | None = None
     evidence_count: int | None = None
+    #: Citations captured for this run. The runner always writes it; older
+    #: records may omit it, in which case the ``citations`` list is
+    #: authoritative (see :func:`evaluation.outcomes.citation_count`).
+    citation_count: int | None = Field(
+        default=None,
+        description="Citations captured. None on older records: read the list, not zero.",
+    )
+    #: Why the run ended this way (see :mod:`evaluation.outcomes`).
+    #: Empty on records written before the classification existed; analysis
+    #: derives the same values from the recorded errors at read time and never
+    #: rewrites the file.
+    failure_class: str = Field(
+        default="",
+        description="'infrastructure' | 'pipeline' | 'budget' | 'skipped' | 'none'.",
+    )
+    failure_code: str = Field(
+        default="",
+        description="Specific cause, e.g. 'provider_quota' or 'critic_rejected'.",
+    )
+    failure_reason: str = Field(
+        default="", description="The original error message, verbatim."
+    )
+    failure_phase: str = Field(
+        default="",
+        description="'before_model' | 'after_model' | 'none'.",
+    )
     terminal_state: str = Field(
         default="error", description=f"One of {list(TERMINAL_STATES)}."
     )

@@ -3014,23 +3014,55 @@ function evalCell(value, formatter) {
 }
 
 function evalWarning(summary) {
-  /* A batch in which nothing succeeded says nothing about research quality when
-     the runs never reached a model. Say so here: a bare "0/33 (0%)" table reads
-     like a verdict on the pipeline, and that misreading is easy to make. */
-  const rows = (summary && summary.patterns) || [];
-  const recorded = Number((summary && summary.records) || 0);
-  const successes = rows.reduce((total, row) => total + (row.successes || 0), 0);
-  if (!recorded || successes > 0) return "";
-  const meta = (summary && summary.meta) || {};
-  const stopped = String(meta.stopped_reason || "").trim();
-  const parts = [
-    "This batch recorded " + recorded + " run(s) and none of them succeeded.",
-    "Read the per-run records before drawing a conclusion: a run that failed "
-      + "before any model call (an exhausted provider quota, a missing key, a "
-      + "stopped batch) also counts as failed.",
-  ];
-  if (stopped) parts.push("The harness recorded: " + stopped + ".");
-  return parts.join(" ");
+  /* An operational block-out is not a research verdict. When the environment
+     stopped the runs, say so explicitly and state that quality could not be
+     measured - do not let a bare "0/33 (0%)" imply the research was wrong. */
+  const operational = (summary && summary.operational) || {};
+  const blocked = operational.infrastructure_blocked || {};
+  const completion = operational.research_completion || {};
+  const quality = operational.research_quality || {};
+  const attempts = Number(operational.attempts || 0);
+  if (!attempts) return "";
+  if (Number(blocked.hits || 0) > 0) {
+    const parts = [
+      Number(blocked.hits) + " of " + attempts + " run(s) never received a model",
+      "response, so the pipeline was not given a chance to do research.",
+      "That is an availability result, not a research-quality result.",
+    ];
+    if (!quality.measurable) {
+      parts.push("Research quality could not be measured for this batch.");
+    }
+    return parts.join(" ");
+  }
+  if (quality.measurable === false && Number(completion.hits || 0) === 0) {
+    return "This batch recorded " + attempts + " run(s) and no completed research. "
+      + "Research quality could not be measured.";
+  }
+  return "";
+}
+
+function renderOperational(summary) {
+  const host = $("eval-operational");
+  const body = $("eval-operational-body");
+  if (!host || !body) return;
+  const rows = L.evalOperationalRows((summary && summary.operational) || null);
+  body.replaceChildren();
+  if (!rows.length) {
+    host.classList.add("hidden");
+    return;
+  }
+  host.classList.remove("hidden");
+  rows.forEach((pair) => {
+    const row = document.createElement("tr");
+    const label = document.createElement("th");
+    label.scope = "row";
+    text(label, pair[0]);
+    const value = document.createElement("td");
+    text(value, pair[1]);
+    row.appendChild(label);
+    row.appendChild(value);
+    body.appendChild(row);
+  });
 }
 
 function renderEvaluation(summary) {
@@ -3043,6 +3075,7 @@ function renderEvaluation(summary) {
   if (!body || !table) return;
   body.replaceChildren();
   if (charts) charts.replaceChildren();
+  renderOperational(summary);
   if (warning) {
     const message = evalWarning(summary);
     warning.classList.toggle("hidden", !message);
