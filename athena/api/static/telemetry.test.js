@@ -332,6 +332,49 @@ test("provenance states why there is nothing to show", () => {
   assert.equal(T.provenanceUnavailable(null), "provenance unavailable");
 });
 
+test("a recorded heatmap PNG is only rendered when it really is base64 PNG", () => {
+  /* The 1x1 transparent PNG every recording should carry. */
+  const good = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const ok = T.pngBase64(good);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.url, "data:image/png;base64," + good);
+  assert.equal(ok.reason, "");
+
+  /* A data URL prefix is accepted, so a caller may pass either shape. */
+  assert.equal(T.pngBase64("data:image/png;base64," + good).url, ok.url);
+
+  /* This is the shape the demo recordings actually shipped: base64 with the
+     literal characters "[REDACTED]" substituted into its body. */
+  const corrupt = good.slice(0, 20) + "[REDACTED]" + good.slice(30);
+  const bad = T.pngBase64(corrupt);
+  assert.equal(bad.ok, false, "a payload with stray characters must never reach img.src");
+  assert.equal(bad.url, "");
+  assert.match(bad.reason, /not valid base64/);
+  assert.match(bad.reason, /2 characters/, "both the bracket characters are named");
+});
+
+test("a truncated or non-PNG recorded heatmap is refused with a reason", () => {
+  const good = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  const truncated = T.pngBase64(good.slice(0, good.length - 5));
+  assert.equal(truncated.ok, false);
+  assert.match(truncated.reason, /truncated/);
+
+  /* Valid base64, valid length, but the bytes are not a PNG signature. */
+  const notPng = Buffer.from("GIF89a-not-a-png").toString("base64");
+  const refused = T.pngBase64(notPng);
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason, /not a PNG/);
+
+  /* Nothing recorded is not an error, just an unavailable image. */
+  ["", "   ", null, undefined, 42, {}].forEach((value) => {
+    const empty = T.pngBase64(value);
+    assert.equal(empty.ok, false);
+    assert.equal(empty.url, "");
+    assert.match(empty.reason, /no heatmap image/);
+  });
+});
+
 test("this module never touches the DOM", () => {
   const source = require("node:fs").readFileSync(require("node:path").join(__dirname, "telemetry.js"), "utf8");
   ["document.", "window.", "innerHTML", "getElementById"].forEach((token) => {

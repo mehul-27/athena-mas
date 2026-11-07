@@ -105,6 +105,77 @@
     return METRIC_LABELS[name] || String(name || "");
   }
 
+  /* ------------------------------------------------- recorded heatmap PNG
+   * A replay bundle carries the heatmap it recorded as base64 PNG. That blob
+   * is untrusted storage: a recording written by an older build can hold
+   * characters outside the base64 alphabet, a truncated body, or bytes that
+   * are not a PNG at all. Handing such a string straight to `img.src` renders
+   * a broken image and logs a console error, so the payload is sniffed here
+   * and the caller only ever sees either a usable data URL or a reason to say
+   * the image is unavailable.
+   */
+
+  const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  /* The eight-byte PNG signature, as decimal so it survives minifiers. */
+  const PNG_SIGNATURE = Object.freeze([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  function base64Head(text, count) {
+    const bytes = [];
+    let buffer = 0;
+    let bits = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      const value = BASE64_ALPHABET.indexOf(text[index]);
+      if (value < 0) return null;
+      buffer = (buffer << 6) | value;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        bytes.push((buffer >> bits) & 0xff);
+        if (bytes.length >= count) break;
+      }
+    }
+    return bytes;
+  }
+
+  function pngBase64(payload) {
+    if (typeof payload !== "string" || !payload.trim()) {
+      return { ok: false, url: "", reason: "this recording stored no heatmap image" };
+    }
+    const body = payload.trim().replace(/^data:image\/png;base64,/, "");
+    if (!body) {
+      return { ok: false, url: "", reason: "this recording stored no heatmap image" };
+    }
+    const stray = [];
+    for (const char of body) {
+      if (BASE64_ALPHABET.indexOf(char) < 0 && char !== "=" && !stray.includes(char)) {
+        stray.push(char);
+      }
+    }
+    if (stray.length) {
+      return {
+        ok: false,
+        url: "",
+        reason: "the recorded heatmap is not valid base64 (it contains "
+          + stray.length + " character" + (stray.length === 1 ? "" : "s")
+          + " outside the base64 alphabet)",
+      };
+    }
+    if (body.length % 4 !== 0) {
+      return {
+        ok: false,
+        url: "",
+        reason: "the recorded heatmap base64 is truncated (its length is not a multiple of 4)",
+      };
+    }
+    const head = base64Head(body, PNG_SIGNATURE.length);
+    if (!head || head.length < PNG_SIGNATURE.length
+        || PNG_SIGNATURE.some((byte, position) => head[position] !== byte)) {
+      return { ok: false, url: "", reason: "the recorded heatmap bytes are not a PNG" };
+    }
+    return { ok: true, url: "data:image/png;base64," + body, reason: "" };
+  }
+
   /* ------------------------------------------------------------ shaping */
 
   function shapeTelemetry(payload) {
@@ -516,6 +587,7 @@
     shapeTelemetry, telemetrySummary,
     heatLevel, heatColour,
     metricGrid, bucketGrid,
+    pngBase64,
     waterfallGeometry,
     cellsQuery, cellsUrl, eventRows, cellListTitle,
     provenanceHops, provenanceUnavailable,

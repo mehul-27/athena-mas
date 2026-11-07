@@ -1845,11 +1845,13 @@ async function openReplay(name, options) {
       if (final) renderReport(final.value, bundle.blackboard.critique);
     }
     if (!state.hasReport && at >= 1) resetReport("No report is available for this recording.");
-    if (bundle.heatmap_png) {
-      $("heatmap").src = "data:image/png;base64," + bundle.heatmap_png;
-      $("heatmap").classList.remove("hidden");
-      text($("metrics-note"), "recorded replay heatmap; per-agent table is not stored in this recording");
-    }
+    /* A replay bundle is a recorded run, so its real metrics, heat grids and
+     * waterfall are served by the same endpoints as any other run. Loading
+     * them keeps the Metrics tab truthful for recordings instead of showing
+     * only the archived PNG. The archived blob is then a fallback for
+     * recordings whose event log yields no per-agent table. */
+    const metricRows = await loadMetrics(bundle.run_id);
+    if (!metricRows && bundle.heatmap_png) showRecordedHeatmap(bundle.heatmap_png);
     if (at < 1) {
       addLog("replay", "paused at " + Math.round(at * 100) + "% of the recording");
       if (opts.keepRunning !== false) setRunning(true);
@@ -2392,28 +2394,64 @@ function showMetricsEmpty(message) {
   text(empty, message);
 }
 
+/* A replay bundle's archived PNG is untrusted: an older recording can hold a
+ * corrupt base64 body. Validate it first, and when it cannot be decoded show
+ * the honest unavailable state instead of a broken image. */
+function showRecordedHeatmap(payload) {
+  const heatmap = $("heatmap");
+  const note = $("heatmap-empty");
+  if (!heatmap || !note) return false;
+  const T = telemetryKit();
+  const checked = T
+    ? T.pngBase64(payload)
+    : { ok: false, url: "", reason: "telemetry helpers did not load" };
+  if (!checked.ok) {
+    heatmap.classList.add("hidden");
+    heatmap.removeAttribute("src");
+    text(note, "This recording's heatmap image is unavailable: " + checked.reason
+      + ". The heat grids below are built from the stored events and remain accurate.");
+    note.classList.remove("hidden");
+    text($("metrics-note"), "recorded replay heatmap unavailable");
+    return false;
+  }
+  heatmap.onerror = () => {
+    heatmap.classList.add("hidden");
+    heatmap.removeAttribute("src");
+    const failed = $("heatmap-empty");
+    failed.textContent = "The recorded heatmap image could not be decoded; "
+      + "the heat grids below are built from the stored events and remain accurate.";
+    failed.classList.remove("hidden");
+  };
+  heatmap.src = checked.url;
+  heatmap.classList.remove("hidden");
+  note.classList.add("hidden");
+  text(note, "");
+  text($("metrics-note"), "recorded replay heatmap; per-agent table is not stored in this recording");
+  return true;
+}
+
 async function loadMetrics(runId) {
   if (!runId) {
     resetMetrics("");
     showMetricsEmpty("No run selected. Open a run to see recorded metrics.");
     resetTelemetry("");
     showTelemetryEmpty("No run selected. Open a run to see its cost, heat grid and waterfall.");
-    return;
+    return 0;
   }
   const token = state.navToken;
   resetMetrics("loading recorded metrics\u2026");
   loadTelemetry(runId);
   try {
     const data = await api("/api/runs/" + encodeURIComponent(runId) + "/metrics");
-    if (token !== state.navToken) return;
-    if (state.runId && state.runId !== runId) return;
+    if (token !== state.navToken) return 0;
+    if (state.runId && state.runId !== runId) return 0;
     const rows = L.metricRows(data && data.rows);
     if (!rows.length) {
       text($("metrics-note"), "derived from the run event log");
       showMetricsEmpty(
         "No per-agent metrics were recorded for this run. Metrics are derived from event-log stage, model, tool, and A2A events; a run without those events has nothing to chart.",
       );
-      return;
+      return 0;
     }
     const body = $("agent-metrics-body");
     body.replaceChildren();
@@ -2440,10 +2478,12 @@ async function loadMetrics(runId) {
     heatmap.src = "/api/runs/" + encodeURIComponent(runId) + "/heatmap.png?t=" + Date.now();
     heatmap.classList.remove("hidden");
     $("heatmap-empty").classList.add("hidden");
+    return rows.length;
   } catch (error) {
-    if (token !== state.navToken) return;
+    if (token !== state.navToken) return 0;
     text($("metrics-note"), "metrics unavailable");
     showMetricsEmpty("Could not load per-agent metrics: " + error.message);
+    return 0;
   }
 }
 
@@ -2467,14 +2507,27 @@ function hideTelemetryNote(id) {
   text(node, "");
 }
 
+/* The drill-down panel is a container, not a note: emptying its text would
+ * also delete its heading, close control and event list, so a cell could never
+ * show its events. It is hidden and its list is cleared instead. */
+function hideTelemetryCells() {
+  const box = $("telemetry-cells");
+  if (box) box.classList.add("hidden");
+  const list = $("telemetry-cell-list");
+  if (list) list.replaceChildren();
+  const title = $("telemetry-cells-title");
+  if (title) text(title, "Cell events");
+  hideTelemetryNote("telemetry-cells-empty");
+}
+
 function resetTelemetry(message) {
-  ["telemetry-metric-grid", "telemetry-bucket-grid", "telemetry-waterfall",
-   "telemetry-cell-list"].forEach((id) => {
+  ["telemetry-metric-grid", "telemetry-bucket-grid", "telemetry-waterfall"].forEach((id) => {
     const node = $(id);
     if (node) node.replaceChildren();
   });
+  hideTelemetryCells();
   ["telemetry-metric-caption", "telemetry-bucket-caption", "telemetry-empty",
-   "telemetry-waterfall-empty", "telemetry-cells-empty", "telemetry-cells"].forEach(hideTelemetryNote);
+   "telemetry-waterfall-empty", "telemetry-cells-empty"].forEach(hideTelemetryNote);
   const download = $("heatmap-download");
   if (download) {
     download.classList.add("hidden");

@@ -70,12 +70,48 @@ TERMINAL_STATES: tuple[str, ...] = (
     "failed",  # the pipeline reported failure (cap reached, stage aborted)
     "timeout",  # the harness cancelled the run
     "error",  # the harness caught an exception
+    "infra_error",  # the execution substrate failed (no child summary, spawn, OOM)
     "budget_stopped",  # the batch refused to start the run (budget)
     "skipped",  # the run was already recorded (resume)
 )
 
+#: States that mean "the pipeline did its job or refused to answer" - a
+#: re-attempt would only buy a different sample, not a working run. Only the
+#: remaining states are *transient infrastructure* failures, and only those are
+#: retried by the runner. A critic rejection or thin evidence is a result, not an
+#: infrastructure fault, so it is never retried.
+FINAL_RUN_STATES: tuple[str, ...] = ("completed", "failed")
+TRANSIENT_INFRA_STATES: tuple[str, ...] = ("infra_error", "error", "timeout")
+
+#: Does the pipeline forward a `seed` to the model provider? It does **not**:
+#: ``athena.run.run_one`` takes ``(question, pattern, run_id, tools)``,
+#: ``athena.config.llm`` builds every model without a ``seed`` argument, and no
+#: stage passes one through. A plan ``seed`` is therefore recorded provenance
+#: ("which trial was this") and nothing more. A plan that claims otherwise is
+#: rejected rather than allowed to imply a determinism that is not implemented.
+SEED_PROPAGATED_TO_PROVIDER = False
+
+#: Minimum dataset size. This is a property of ``dataset.json`` alone and has
+#: nothing to do with how large a *plan* has to be, so a small focused plan can
+#: still draw on the full prompt set.
 MIN_ITEMS = 44
+
+#: Minimum plan size for the full four-pattern matrix in ``config.json``.
 MIN_PLAN_RUNS = 48
+
+#: Minimum plan size for a focused single-pattern plan (e.g. the 36-run
+#: hierarchical plan). Keeping this separate is what lets a deliberate,
+#: smaller experiment be a first-class citizen instead of a validation error.
+MIN_PLAN_RUNS_FOCUSED = 30
+
+#: ``Plan.scope`` selects which minimum applies. It is the only switch: there is
+#: no other "small plan" escape hatch, so a plan cannot be short *and* claim to
+#: be the full matrix.
+PLAN_SCOPES: tuple[str, ...] = ("full", "focused")
+PLAN_MINIMUM_RUNS: dict[str, int] = {
+    "full": MIN_PLAN_RUNS,
+    "focused": MIN_PLAN_RUNS_FOCUSED,
+}
 
 # --- Machine-checkable rubric grammar --------------------------------------
 
@@ -381,7 +417,14 @@ class Matrix(_Model):
     context_sharing: list[str] = Field(
         default_factory=lambda: list(CONTEXT_SHARING_MODES)
     )
-    seeds: list[int] = Field(default_factory=lambda: [0, 1])
+    seeds: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Recorded trial labels only. The pipeline does not pass a seed to the "
+            "provider (SEED_PROPAGATED_TO_PROVIDER is False), so an empty list is "
+            "the honest default and a variance tier is stochastic, not seeded."
+        ),
+    )
     repeats: int = Field(default=2, ge=1)
     tool_selection: list[str] | None = Field(
         default=None, description="None means every research tool."
@@ -449,7 +492,14 @@ class PlanEntry(_Model):
     prompt_id: str = Field(min_length=1)
     pattern: str
     context_sharing: str
-    seed: int = 0
+    seed: int | None = Field(
+        default=None,
+        description=(
+            "Trial label, or null when no seed is claimed. Nothing forwards this "
+            "to the provider, so a value here documents which repeat it was, not "
+            "a reproducibility guarantee."
+        ),
+    )
     repeat: int = 0
     tier: Literal["core", "breadth", "variance"] = "core"
     note: str = ""
@@ -473,17 +523,43 @@ class PlanEntry(_Model):
 
 
 class Plan(_Model):
-    """The materialised stratified plan."""
+    """The materialised stratified plan.
+
+    ``scope`` decides which minimum applies: ``full`` keeps the four-pattern
+    matrix floor (:data:`MIN_PLAN_RUNS`), ``focused`` allows a deliberate
+    single-pattern plan down to :data:`MIN_PLAN_RUNS_FOCUSED`. Everything else -
+    unique run keys, ``target_runs`` matching the real entry count, tiers,
+    context sharing - is validated identically for both.
+    """
 
     id: str = "stratified"
-    target_runs: int = Field(default=MIN_PLAN_RUNS, ge=MIN_PLAN_RUNS)
+    scope: Literal["full", "focused"] = Field(
+        default="full",
+        description="'full' = the four-pattern matrix; 'focused' = a deliberate subset.",
+    )
+    target_runs: int | None = Field(
+        default=None,
+        description=(
+            "The number of runs the plan declares. None means 'use len(entries)'. "
+            "When set it must equal len(entries) exactly."
+        ),
+    )
+    note: str = Field(
+        default="", description="What this plan is for, in one or two sentences."
+    )
     entries: list[PlanEntry] = Field(default_factory=list)
+
+    @property
+    def minimum_runs(self) -> int:
+        return PLAN_MINIMUM_RUNS[self.scope]
 
     @model_validator(mode="after")
     def _stratified(self) -> "Plan":
-        if len(self.entries) < MIN_PLAN_RUNS:
+        minimum = PLAN_MINIMUM_RUNS[self.scope]
+        if len(self.entries) < minimum:
             raise ValueError(
-                f"plan needs >= {MIN_PLAN_RUNS} runs, found {len(self.entries)}"
+                f"plan needs >= {minimum} runs for scope {self.scope!r}, "
+                f"found {len(self.entries)}"
             )
         keys = [entry.run_key for entry in self.entries]
         if len(set(keys)) != len(keys):
@@ -491,7 +567,17 @@ class Plan(_Model):
             raise ValueError(f"duplicate run_keys: {duplicates[:5]}")
         if not {"core", "variance"} <= {entry.tier for entry in self.entries}:
             raise ValueError("plan needs both a 'core' tier and a 'variance' tier")
+        if self.target_runs is not None and self.target_runs != len(self.entries):
+            raise ValueError(
+                f"plan declares target_runs={self.target_runs} but has "
+                f"{len(self.entries)} entries; the two must agree"
+            )
         return self
+
+    @property
+    def target(self) -> int:
+        """The effective target: the declared value, or the real entry count."""
+        return self.target_runs if self.target_runs is not None else len(self.entries)
 
     def patterns(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -516,6 +602,17 @@ class ExperimentConfig(_Model):
     budget: Budget = Field(default_factory=Budget)
     pricing: Pricing = Field(default_factory=Pricing)
     plan: Plan = Field(default_factory=Plan)
+    note: str = Field(
+        default="", description="What this batch is and what it may not claim."
+    )
+    claims_seeded_reproduction: bool = Field(
+        default=False,
+        description=(
+            "Set only if the pipeline really forwards a seed to the provider. It "
+            "does not (SEED_PROPAGATED_TO_PROVIDER is False), so claiming it is a "
+            "load-time error rather than a footnote somebody will not read."
+        ),
+    )
 
     @model_validator(mode="after")
     def _cross_checks(self) -> "ExperimentConfig":
@@ -531,6 +628,12 @@ class ExperimentConfig(_Model):
             )
         if self.budget.max_runs < 1:
             raise ValueError("budget.max_runs must be positive")
+        if self.claims_seeded_reproduction and not SEED_PROPAGATED_TO_PROVIDER:
+            raise ValueError(
+                "this config claims seeded reproduction, but the pipeline never passes a "
+                "seed to the provider; seeds are trial labels only. Record stochastic "
+                "replicates instead (plan note, matrix.seeds = [])."
+            )
         return self
 
     def entries(self) -> list[PlanEntry]:
@@ -557,10 +660,109 @@ class CitationRecord(_Model):
     quote_or_summary: str = ""
 
 
+class ModelProvenance(_Model):
+    """Which model actually served which half of the pipeline.
+
+    The pipeline is split across two processes: the ADK stages (planner and
+    researchers) run in ``athena.run``, and the CrewAI stages (analyst, writer,
+    critic) run in the ``scripts/dev_up.py`` server. They read the *same*
+    environment variables but the server's environment is the active settings
+    profile merged over the shell environment, so the two halves can legitimately
+    be on different models. Recording one label for both is how B1 happened, so
+    both are recorded here, separately, always.
+
+    Nothing in this model may carry a secret: ``api_host`` is a redacted endpoint,
+    and there is no field for a key at all.
+    """
+
+    adk_model: str = Field(default="", description="Model the ADK stages call.")
+    crew_model: str = Field(default="", description="Model the CrewAI stages call.")
+    provider: str = Field(default="", description="Provider prefix, e.g. 'groq'.")
+    crew_provider: str = Field(default="", description="Provider prefix for the crew side.")
+    api_host: str = Field(
+        default="", description="Redacted endpoint (scheme+host+path), never a key."
+    )
+    crew_api_host: str = Field(
+        default="", description="Redacted endpoint the CrewAI stages use."
+    )
+    profile_applied: bool = Field(
+        default=False, description="True when a settings profile supplied the env."
+    )
+    profile_id: str = Field(default="", description="Active profile id, if any.")
+    profile_name: str = Field(default="", description="Active profile name, if any.")
+    env_source: str = Field(
+        default="env",
+        description="'profile' when the profile env was merged in, else 'env'.",
+    )
+    models_differ: bool = Field(
+        default=False,
+        description="True when ADK and crew resolved to different models (B1).",
+    )
+    note: str = Field(default="", description="How this provenance was resolved.")
+
+
+class PricingRecord(_Model):
+    """Whether this run's cost is a real number or genuinely unknown.
+
+    ``est_cost_usd is None`` with ``priced=False`` means "we do not know", which
+    is different from "it was free". Summing a batch's costs across unpriced runs
+    therefore cannot bound real spend, and ``budget_usd_enforceable`` says so.
+    """
+
+    priced: bool = Field(default=False)
+    unpriced_models: list[str] = Field(default_factory=list)
+    basis: str = Field(
+        default="unknown",
+        description="How the number (or the null) was arrived at. Never a guess.",
+    )
+    currency: str = "USD"
+
+
+class AttemptAccounting(_Model):
+    """How many executions a batch planned, started, and finished.
+
+    An *attempt* is one real execution. A retried run produces a second record
+    with a new ``attempt_id``; the earlier attempt is kept, never overwritten, so
+    ``attempted > completed + failed + timeout + infra_errors`` is impossible to
+    hide behind a single row per run key.
+    """
+
+    planned: int = 0
+    attempted: int = 0
+    completed: int = 0
+    failed: int = 0
+    timeout: int = 0
+    infra_errors: int = 0
+    skipped: int = 0
+    retries: int = 0
+    hard_max_attempts: int = 1
+
+    @model_validator(mode="after")
+    def _counts_agree(self) -> "AttemptAccounting":
+        if self.hard_max_attempts < 1:
+            raise ValueError("hard_max_attempts must be positive")
+        if self.attempted > self.hard_max_attempts:
+            raise ValueError(
+                f"{self.attempted} attempts exceeds the hard cap {self.hard_max_attempts}"
+            )
+        graded = self.completed + self.failed + self.timeout + self.infra_errors
+        if graded > self.attempted:
+            raise ValueError(
+                f"terminal counts ({graded}) exceed attempted ({self.attempted})"
+            )
+        return self
+
+
 class RunRecord(_Model):
     """One line of ``raw.jsonl``. Exactly one real attempt per record."""
 
     run_key: str
+    #: Unique per *execution*. A retry gets a new id; the previous attempt's
+    #: record is never rewritten, so the file is an append-only audit trail.
+    attempt_id: str = ""
+    attempt: int = Field(
+        default=1, ge=1, description="1 for the first execution of this run_key."
+    )
     run_id: str | None = None
     prompt_id: str
     category: str
@@ -568,13 +770,17 @@ class RunRecord(_Model):
     persona: str
     pattern: str
     context_sharing: str
-    seed: int = 0
+    seed: int | None = Field(
+        default=None,
+        description="Trial label; null when no seed is claimed. Never sent to the provider.",
+    )
     repeat: int = 0
     tier: str = "core"
     backend: str = "in_process"
     config: dict[str, Any] = Field(
         default_factory=dict, description="The settings actually applied to this run."
     )
+    provenance: ModelProvenance = Field(default_factory=ModelProvenance)
     started_at: str = ""
     ended_at: str = ""
     latency_s: float | None = None
@@ -585,8 +791,9 @@ class RunRecord(_Model):
     est_cost_usd: float | None = None
     cost_basis: str = Field(
         default="unknown",
-        description="'priced:<model>' when priced, 'unknown_model' when not, 'not_run'.",
+        description="'priced:<model>' when priced, 'unpriced:<model>'/'unknown_model' when not.",
     )
+    pricing: PricingRecord = Field(default_factory=PricingRecord)
     tool_calls: int | None = None
     recovery_rounds: int | None = None
     revision_rounds: int | None = None
@@ -615,6 +822,29 @@ class RunRecord(_Model):
             raise ValueError(f"unknown terminal_state {value!r}")
         return value
 
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_pricing(cls, data: Any) -> Any:
+        """Fill ``pricing`` from ``est_cost_usd``/``cost_basis`` when it is absent.
+
+        The runner always supplies an explicit block. This derivation exists so an
+        older or hand-written record still has to state the distinction rather
+        than defaulting to "priced": a null cost with no real basis is unpriced.
+        """
+        if not isinstance(data, dict) or "pricing" in data:
+            return data
+        cost = data.get("est_cost_usd")
+        basis = str(data.get("cost_basis") or "").strip()
+        priced = isinstance(cost, (int, float))
+        data = dict(data)
+        data["pricing"] = {
+            "priced": priced,
+            "unpriced_models": [],
+            "basis": basis or ("priced" if priced else "unknown"),
+            "currency": "USD",
+        }
+        return data
+
     @model_validator(mode="after")
     def _honest(self) -> "RunRecord":
         if self.terminal_state == "completed" and not (self.final_answer or "").strip():
@@ -625,7 +855,17 @@ class RunRecord(_Model):
             raise ValueError(f"record {self.run_key!r}: a real run needs a latency")
         if self.est_cost_usd is not None and self.cost_basis.startswith("not_run"):
             raise ValueError(f"record {self.run_key!r}: a cost needs a real run")
+        if self.est_cost_usd is not None and not self.pricing.priced:
+            raise ValueError(
+                f"record {self.run_key!r}: a cost estimate requires pricing.priced=True; "
+                "an unpriced run records cost null rather than a number"
+            )
         return self
+
+    @property
+    def retryable_infra_failure(self) -> bool:
+        """True only for a transient infrastructure fault (never a critic verdict)."""
+        return self.terminal_state in TRANSIENT_INFRA_STATES
 
 
 # --- Loading ---------------------------------------------------------------

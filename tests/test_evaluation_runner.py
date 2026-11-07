@@ -470,9 +470,12 @@ def test_subprocess_backend_refuses_to_invent_a_summary(tmp_path, monkeypatch):
     )
     entry = CONFIG.entries()[0]
     record = runner.SubprocessExecutor(spec)(entry, DATASET.by_id(entry.prompt_id))
-    assert record["terminal_state"] == "failed"
+    # A child that never wrote a summary is an *infrastructure* failure, not a
+    # pipeline verdict: that is the only class the runner may retry.
+    assert record["terminal_state"] == "infra_error"
     assert record["final_answer"] is None
     assert any("without writing a summary" in error for error in record["errors"])
+    assert schema.RunRecord.model_validate(record).retryable_infra_failure is True
 
 
 # --- pricing from the repo's bundled table ---------------------------------

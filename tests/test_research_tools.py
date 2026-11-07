@@ -235,7 +235,7 @@ def test_planner_prompt_lists_enabled_and_disabled_tools(tmp_path) -> None:
 def test_researcher_toolsets_are_filtered_before_adk_sees_them(monkeypatch) -> None:
     captured: list[tuple] = []
 
-    def fake_build(module, timeout=120.0, tools=None):
+    def fake_build(module, timeout=120.0, tools=None, **_health):
         captured.append((module, tuple(tools or ())))
         return module
 
@@ -639,7 +639,7 @@ def test_calc_worker_receives_only_calc_tools(monkeypatch, tmp_path) -> None:
     board = Blackboard.create(Task(question="q", tools=ALL), store=store)
     captured: list[tuple] = []
 
-    def fake_build(module, timeout=120.0, tools=None):
+    def fake_build(module, timeout=120.0, tools=None, **_health):
         captured.append((module, tuple(tools or ())))
         return module
 

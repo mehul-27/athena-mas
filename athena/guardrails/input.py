@@ -33,8 +33,12 @@ from athena.guardrails.injection import (
     scan_injection,
     strip_directives,
 )
+from athena.observability.guardrail_events import describe_match, record_flags
 
 STAGE = "input"
+#: ``screen`` on the emitted event, and the pipeline stage it names.
+SCREEN = "screen_input"
+PIPELINE_STAGE = "input"
 
 CATEGORY_TOXIC = "toxic"
 CATEGORY_ABUSIVE = "abusive"
@@ -229,14 +233,26 @@ def has_research_intent(text: str) -> bool:
     return bool(_RESEARCH_INTENT.search(text or ""))
 
 
-def _snippet(match: re.Match[str]) -> str:
-    return re.sub(r"\s+", " ", match.group(0)).strip()[:120]
-
-
-def screen_input(text: str | None, *, stage: str = STAGE) -> InputVerdict:
+def screen_input(
+    text: str | None,
+    *,
+    stage: str = STAGE,
+    emit: bool = True,
+    run_id: str | None = None,
+    agent: str | None = None,
+) -> InputVerdict:
     """Screen one input string. Never raises.
 
     ``stage`` only relabels the emitted flags (the chat path keeps ``input``).
+
+    Each flag is also written as one ``guardrail`` event, because screening the
+    incoming text is the decision. Emission needs an active recorder: the API's
+    ``POST /api/runs`` creates the run *after* screening, so it has no recorder
+    yet and records the flags itself once the run id exists — no duplicate rows.
+    The event carries the rule, the action and a redacted, non-echoing detail
+    (:func:`athena.observability.guardrail_events.describe_match`), never the
+    input text: a short message *is* its own excerpt, so the match is measured
+    and dropped rather than quoted.
     """
     if not text:
         return InputVerdict(model_text="")
@@ -249,7 +265,7 @@ def screen_input(text: str | None, *, stage: str = STAGE) -> InputVerdict:
     flags: list[GuardrailFlag] = []
     hits = scan_injection(body)
     for hit in hits:
-        flags.append(_flag(hit.rule, "sanitized", f"{hit.category}: {hit.excerpt}"))
+        flags.append(_flag(hit.rule, "sanitized", describe_match(hit.category, hit.excerpt)))
 
     categories = list(injection_categories(hits))
     research = has_research_intent(body)
@@ -260,17 +276,17 @@ def screen_input(text: str | None, *, stage: str = STAGE) -> InputVerdict:
         if not match:
             continue
         categories.append(category)
-        snippet = _snippet(match)
+        detail = describe_match(category, match.group(0))
         if research or not env.blocking_enabled():
             flags.append(
                 _flag(
                     rule,
                     "warned",
-                    f"{category}: {snippet} (research framing; answered with a warning)",
+                    f"{detail} (research framing; answered with a warning)",
                 )
             )
             continue
-        flags.append(_flag(rule, "blocked", f"{category}: {snippet}"))
+        flags.append(_flag(rule, "blocked", detail))
         blocking = True
 
     for rule, category, severity, pattern in _TOXIC:
@@ -282,7 +298,9 @@ def screen_input(text: str | None, *, stage: str = STAGE) -> InputVerdict:
         if action == "blocked" and not env.blocking_enabled():
             action = "warned"
         blocking = blocking or action == "blocked"
-        flags.append(_flag(rule, action, f"{category} ({severity}): {_snippet(match)}"))
+        flags.append(
+            _flag(rule, action, f"{describe_match(category, match.group(0))} ({severity})")
+        )
 
     if stage != STAGE:
         flags = [flag.model_copy(update={"stage": stage}) for flag in flags]
@@ -299,7 +317,7 @@ def screen_input(text: str | None, *, stage: str = STAGE) -> InputVerdict:
             "assistant, which was ignored. No request remains."
         )
 
-    return InputVerdict(
+    verdict = InputVerdict(
         flags=flags,
         blocking=blocking,
         categories=sorted(dict.fromkeys(categories)),
@@ -307,6 +325,15 @@ def screen_input(text: str | None, *, stage: str = STAGE) -> InputVerdict:
         remainder=remainder,
         model_text=model_text,
     )
+    if emit and flags:
+        record_flags(
+            flags,
+            screen=SCREEN,
+            pipeline_stage=PIPELINE_STAGE,
+            run_id=run_id,
+            **({"agent": agent} if agent else {}),
+        )
+    return verdict
 
 
 def legit_remainder(text: str | None) -> str:

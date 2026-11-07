@@ -78,27 +78,24 @@ def emit_retry(
 
     ``inferred`` is set when no code path reported a retry and the attempt was
     deduced from event order; it keeps a deduction distinguishable from a fact.
+
+    Thin wrapper over :func:`athena.observability.retry_events.note_retry` so
+    every retry site writes the same ``extra`` shape (``retry_type``,
+    ``attempt``, ``of``, ``reason``, ``token_budget`` …). ``attempt_kind`` is
+    carried as ``retry_type`` when no explicit type is given.
     """
-    recorder = get_recorder()
-    if recorder is None:
-        return
-    payload = dict(extra)
-    if attempt is not None:
-        payload["attempt"] = attempt
-    if of is not None:
-        payload["of"] = of
-    if attempt_kind:
-        payload["attempt_kind"] = attempt_kind
-    if inferred:
-        payload["inferred"] = True
-    recorder.emit(
-        "retry",
-        agent or "supervisor",
-        framework or framework_for(agent),
-        ok=False,
+    from athena.observability.retry_events import note_retry
+
+    note_retry(
+        agent,
+        reason,
+        (extra.pop("retry_type", None) or attempt_kind or "other"),
+        framework,
+        attempt=attempt,
+        of=of,
         error_type=error_type,
-        payload_summary=f"retry: {reason}"[:300],
-        extra=payload,
+        inferred=inferred,
+        **extra,
     )
 
 
@@ -112,20 +109,21 @@ def emit_guardrail(
     stage: str = "",
     **extra,
 ) -> None:
-    """Record one guardrail decision (a clamp, a block, a repair)."""
-    recorder = get_recorder()
-    if recorder is None:
-        return
-    payload = {"rule": rule, "action": action, **extra}
-    if stage:
-        payload["stage"] = stage
-    recorder.emit(
-        "guardrail",
-        agent or "supervisor",
-        framework or framework_for(agent),
-        ok=action not in {"block", "reject", "fail"},
-        payload_summary=f"guardrail {rule}: {action} {detail}".strip()[:300],
-        extra=payload,
+    """Record one guardrail decision (a clamp, a block, a repair).
+
+    Thin wrapper over :func:`athena.observability.guardrail_events.record_decision`,
+    which redacts and truncates ``detail`` and never stores the payload.
+    """
+    from athena.observability.guardrail_events import record_decision
+
+    record_decision(
+        stage=stage or "guardrail",
+        rule=rule,
+        action=action,
+        detail=detail,
+        screen=extra.pop("screen", "emit_guardrail"),
+        agent=agent or "supervisor",
+        framework=framework,
     )
 
 

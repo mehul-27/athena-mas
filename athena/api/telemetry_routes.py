@@ -45,7 +45,10 @@ from athena.observability.store import SQLiteEventStore
 router = APIRouter(prefix="/api/runs", tags=["telemetry"])
 
 RUN_SUMMARY_PREFIX = "run_summary"
-#: Errors that the pipeline itself retries (config/reply_guard.py, crew_writer).
+#: Errors that older pipeline code retried *without* a ``retry`` event. They are
+#: the fallback signal for a retry that no call site reported; once an explicit
+#: ``retry`` event exists for the same agent and type, the error is not counted
+#: again (see :func:`_retry_counts`).
 INFERRED_RETRY_ERRORS = ("empty_reply", "runaway_output")
 SNIPPET_CHARS = 240
 
@@ -140,6 +143,19 @@ def _iso_of(start_ms: float, offset_ms: float | None) -> str | None:
 
 
 # --------------------------------------------------------------------- context
+def retry_type_of(event: Event) -> str:
+    """The retry's own type label, readable for events written either way."""
+    extra = event.extra or {}
+    return str(
+        extra.get("retry_type") or extra.get("attempt_kind") or event.error_type or ""
+    )
+
+
+def is_inferred_retry(event: Event) -> bool:
+    """True when the retry was deduced (event order), not reported by a call site."""
+    return bool((event.extra or {}).get("inferred"))
+
+
 class Context:
     """Everything the shaping functions share, computed once per request."""
 
@@ -157,6 +173,47 @@ class Context:
         for event in self.events:
             if event.kind == "blackboard_write" and (event.extra or {}).get("section") == "evidence":
                 self.evidence_write_events.setdefault(event.agent, []).append(event)
+        # Which retry metric each event belongs to, so explicit and inferred
+        # retries are never added together and the same retry is never counted
+        # twice (once as an error, once as a retry event).
+        self.retry_metric: dict[str, str] = {}
+        self._index_retries()
+
+    def _index_retries(self) -> None:
+        """Assign every retry/retry-triggering event to exactly one bucket.
+
+        ``retries``            a ``retry`` event with no ``inferred`` marker: a
+                               call site reported the retry.
+        ``retries_inferred``   a ``retry`` event carrying ``inferred`` (deduced
+                               from event order), or an ``error`` event whose
+                               type the pipeline retries and for which no call
+                               site reported a retry.
+        ``reported``           an ``error`` event whose retry *is* described by a
+                               ``retry`` event: counted once, not twice.
+        """
+        explicit: dict[tuple[str, str], int] = {}
+        for event in self.events:
+            if event.kind != "retry":
+                continue
+            if is_inferred_retry(event):
+                self.retry_metric[event.event_id] = "retries_inferred"
+                continue
+            self.retry_metric[event.event_id] = "retries"
+            key = (event.agent, retry_type_of(event))
+            explicit[key] = explicit.get(key, 0) + 1
+        remaining = dict(explicit)
+        for event in self.events:
+            if event.kind != "error" or event.error_type not in INFERRED_RETRY_ERRORS:
+                continue
+            key = (event.agent, str(event.error_type))
+            if remaining.get(key, 0) > 0:
+                remaining[key] -= 1
+                self.retry_metric[event.event_id] = "reported"
+                continue
+            self.retry_metric[event.event_id] = "retries_inferred"
+
+    def retry_bucket(self, event: Event) -> str:
+        return self.retry_metric.get(event.event_id, "")
 
     def cost_of(self, event: Event) -> CostEstimate | None:
         """The estimate for one ``model_call``, cached per event id."""
@@ -258,11 +315,10 @@ def _contribution(ctx: Context, event: Event, metric: str) -> float | None:
     if metric == "errors":
         return None if event.kind != "error" else 1.0
     if metric == "retries":
-        return None if event.kind != "retry" else 1.0
+        # Only retries a call site reported. An inferred retry is its own metric.
+        return 1.0 if ctx.retry_bucket(event) == "retries" else None
     if metric == "retries_inferred":
-        if event.kind != "error" or event.error_type not in INFERRED_RETRY_ERRORS:
-            return None
-        return 1.0
+        return 1.0 if ctx.retry_bucket(event) == "retries_inferred" else None
     if metric == "guardrails":
         return None if event.kind != "guardrail" else 1.0
     if metric == "handoffs":
@@ -350,6 +406,51 @@ def _run_terminal_state(ctx: Context) -> str:
     if any(_is_run_summary_event(event) for event in ctx.events):
         return "incomplete"
     return "running"
+
+
+def _retry_breakdown(events: Sequence[Event], ctx: Context) -> dict[str, Any]:
+    """Explicit vs inferred retries, with the reason each one gives."""
+    reported: dict[str, int] = {}
+    inferred: dict[str, int] = {}
+    for event in events:
+        bucket = ctx.retry_bucket(event)
+        if not bucket or bucket == "reported":
+            continue
+        label = retry_type_of(event) or "unspecified"
+        target = reported if bucket == "retries" else inferred
+        target[label] = target.get(label, 0) + 1
+    return {
+        # Explicit: a call site said "I am retrying this".
+        "reported": sum(reported.values()),
+        # Inferred: deduced from event order, or derived from an error type the
+        # pipeline is known to retry. Never merged into ``reported``.
+        "inferred": sum(inferred.values()),
+        "by_type": {"reported": dict(sorted(reported.items())),
+                    "inferred": dict(sorted(inferred.items()))},
+    }
+
+
+def _guardrail_breakdown(events: Sequence[Event]) -> dict[str, Any]:
+    """Guardrail events by pipeline stage and by action."""
+    by_stage: dict[str, int] = {}
+    by_action: dict[str, int] = {}
+    by_rule: dict[str, int] = {}
+    for event in events:
+        if event.kind != "guardrail":
+            continue
+        extra = event.extra or {}
+        stage = str(extra.get("pipeline_stage") or extra.get("stage") or "unspecified")
+        action = str(extra.get("action") or "unspecified")
+        rule = str(extra.get("rule") or "unspecified")
+        by_stage[stage] = by_stage.get(stage, 0) + 1
+        by_action[action] = by_action.get(action, 0) + 1
+        by_rule[rule] = by_rule.get(rule, 0) + 1
+    return {
+        "total": sum(by_stage.values()),
+        "by_stage": dict(sorted(by_stage.items())),
+        "by_action": dict(sorted(by_action.items())),
+        "by_rule": dict(sorted(by_rule.items())),
+    }
 
 
 def _evidence_contributions(ctx: Context, agent: str) -> dict[str, Any]:
@@ -469,6 +570,8 @@ def _agent_rows(ctx: Context) -> list[dict[str, Any]]:
             "limiter_wait_ms": float(metrics.get("limiter_wait_ms") or 0.0),
             "a2a_bytes": int(metrics.get("a2a_bytes") or 0),
             "evidence_contributions": _evidence_contributions(ctx, agent),
+            "retry_breakdown": _retry_breakdown(events, ctx),
+            "guardrail_breakdown": _guardrail_breakdown(events),
             "terminal_state": _agent_status(events, finished),
             "event_ids": [event.event_id for event in events],
             "event_count": len(events),
@@ -615,6 +718,9 @@ def _totals(ctx: Context, rows: list[dict[str, Any]]) -> dict[str, Any]:
             "some model calls have no model name or no list price; they are excluded "
             "from the total and counted in unpriced_calls"
         ),
+        # Explicit and inferred retries side by side, never summed together.
+        "retry_breakdown": _retry_breakdown(ctx.events, ctx),
+        "guardrail_breakdown": _guardrail_breakdown(ctx.events),
     }
 
 
@@ -654,8 +760,11 @@ def telemetry(run_id: str, request: Request) -> dict[str, Any]:
         "reason": "" if events else f"no events are stored for run {run_id}",
         "notes": [
             "every value is derived from the stored event log and blackboard",
-            "retries counts retry events; retries_inferred counts empty_reply/"
-            "runaway_output errors, which the pipeline retries without a retry event",
+            "retries counts retry events a call site reported; retries_inferred counts "
+            "retry events marked inferred plus empty_reply/runaway_output errors with no "
+            "matching retry event. The two are never summed",
+            "retry_breakdown names the retry_type behind each count; "
+            "guardrail_breakdown groups guardrail events by pipeline stage, action and rule",
             "handoffs counts handoff events and a2a_call events carrying extra.handoff",
             "cost is a list-price estimate; unpriced calls are excluded from the total",
         ],

@@ -29,6 +29,9 @@ archived without touching the blackboard. Like the blackboard history it has
 | `blackboard_write` | `Blackboard` write listener | section, version, author is the agent |
 | `limiter_wait` | `TokenLimiter.acquire` when a wait exceeds 50 ms | duration_ms, tokens requested |
 | `error` | plugin `on_model_error_callback`; `Recorder.span`; CrewAI role failure | error_type, error_message (redacted) |
+| `guardrail` | the guardrail module that made the decision (see below) | stage, pipeline_stage, rule, action, detail (redacted) |
+| `retry` | a call site that re-ran work (see below) | retry_type, attempt, of, reason, token_budget, inferred |
+| `handoff` | `MonitoringPlugin._emit_handoff`; `hooks.emit_handoff` | via, role, from, to |
 
 The final event of a run is a `stage_end` with agent `supervisor` whose `extra`
 is the whole `RunSummary` (pattern, wall_s, stage_ms, adk_tokens, a2a bytes,
@@ -82,9 +85,9 @@ aggregate.
 
 - **Distributed tracing** (OpenTelemetry spans across the A2A hop) is Step 8.
 - No live tail/TUI, no retention policy, no alerting: the event log grows.
-- Guardrail decisions are not events yet; Step 7 adds them as their own kind.
 - CrewAI's token numbers are per crew call, not per provider request: a crew
   that retries internally still reports one number.
+
 ## Reasoning models
 
 A reasoning model spends output tokens on hidden reasoning before it writes
@@ -260,28 +263,111 @@ the provider page before quoting a number and bump `as_of` when you do.**
 ### Additive event kinds
 
 `athena/observability/events.py` widened `EventKind` only — nothing was renamed
-or removed, so rows stored before these existed still validate:
+or removed, so rows stored before these existed still validate: `retry`,
+`guardrail` and `handoff`.
 
-- `retry` — one attempt was made again after a failure (`extra.attempt`,
-  `extra.reason`, `extra.stage`).
-- `guardrail` — a guardrail or clamp decision fired (`extra.rule`,
-  `extra.action`, `extra.detail`).
-- `handoff` — control moved between agents/frameworks. A `a2a_call` event that
-  carries `extra.handoff` is also counted as a handoff.
+## Guardrail events: what is implemented, tested and still missing
 
-Until an emit site exists, the telemetry view stays honest by reporting two
-things side by side: `retries` (real `retry` events) and `retries_inferred`
-(`error` events whose `error_type` is `empty_reply` or `runaway_output`, which
-the pipeline retries without a retry event). A zero in `retries` therefore never
-claims "nothing was retried".
+One row per decision, written by the module that *made* the decision. The shape
+is fixed by `athena/observability/guardrail_events.py`:
 
-**Where to emit next** (files not owned by the telemetry work):
+```json
+{"kind": "guardrail", "run_id": "...", "agent": "guardrails", "ts": "...",
+ "ok": true,
+ "extra": {"stage": "input", "pipeline_stage": "input", "rule": "injection.exfil_request",
+           "action": "sanitized", "detail": "system_prompt_exfil: matched 29 character(s)",
+           "screen": "screen_input"}}
+```
 
-| event | suggested site | fields |
-| --- | --- | --- |
-| `retry` | `athena/config/reply_guard.py`, `athena/agents/crew_writer.py` (the retry loops around empty/runaway replies) | `attempt`, `reason`, `stage` |
-| `guardrail` | `athena/guardrails/**` at each clamp/reject decision, and the output-cap wrapper | `rule`, `action`, `detail` |
-| `handoff` | the supervisor→researcher dispatch and the ADK→A2A crew hop | `from`, `to`, `reason` |
+`detail` is passed through `athena.guardrails.secrets.redact_text` (which calls
+`athena.observability.redact.redact`) and cut to 200 characters, and the
+`Event` validator redacts `extra` a second time. **`detail` never quotes the
+payload.** A short message is its own excerpt — `"Ignore all previous
+instructions"` is 31 characters — so a "bounded excerpt" would still be the
+whole untrusted text. Matches are therefore *measured and dropped*
+(`describe_match`: category + character count), and URLs are described by scheme
+and length. A test plants a real `GROQ_API_KEY` and asserts it cannot be
+reconstructed from the row.
+
+Attribution comes from the active `Recorder` or an operator-supplied run id —
+never from the data being screened. `validate_message` in particular writes to
+`audit_run_id` only: a forged message carrying `run_id: victim-run` cannot inject
+rows into another run's log.
+
+| Stage (`extra.pipeline_stage`) | Emitted by | Tested by |
+|---|---|---|
+| `input` | `guardrails/input.py::screen_input` (one row per flag) | `test_observability_guardrail_events.py::test_input_stage_*` |
+| `tool_output` | `guardrails/tool_output.py::validate_tool_output` (default label) | `...::test_tool_output_stage_*` |
+| `evidence` | label accepted by `validate_tool_output(pipeline_stage="evidence")`; the production caller `tools/adapters.py::screen_items` still uses the default — see Partial below | `...::test_tool_output_labels_the_evidence_path_separately`, `...::test_evidence_stage_reports_what_was_dropped` |
+| `interagent` | `guardrails/interagent.py::validate_message` (note: `agents/crew_server.py` calls `peer_auth_error`, not `validate_message` — see Partial below) | `...::test_interagent_*` |
+| `report_sanitize` | label accepted by `screen_output(pipeline_stage="report_sanitize")`; the production caller `agents/report_sanitize.py:361` still uses the default — see Partial below | `...::test_report_sanitize_stage_is_labelled_apart_from_the_chat_answer` |
+| `output` | `guardrails/output.py::screen_output` (default), called from `chat/service.py::_finalize` | `...::test_output_stage_*` |
+| `POST /api/runs` | `api/app.py::_record_guardrails` (screening happens before the run exists) | `test_security_integration.py::test_post_runs_records_a_guardrail_event` |
+| (all) | `test_telemetry_routes.py::test_guardrail_rows_are_visible_through_the_telemetry_endpoint` — rows reach `/api/runs/{id}/telemetry` as `guardrails`, `guardrail_breakdown` and `/cells` | that test |
+
+**Partial.** The `evidence`, `interagent` and `report_sanitize` labels are
+implemented in the emitters and covered by tests that pass the label explicitly,
+but the production call sites do not reach them yet: `tools/adapters.py:53` calls
+`validate_tool_output` without `pipeline_stage`; `agents/report_sanitize.py:361`
+calls `screen_output` without it; and `agents/crew_server.py:109` uses its own
+`peer_auth_error` instead of `validate_message`, so the A2A server's rejections
+are returned to the caller but leave no `guardrail` row. Those three files are
+outside this change's ownership; the exact patches are in `docs/SECURITY.md`
+("Still needed in code this change does not own"). Until they land, production
+tool-output rows say `tool_output` and production report rows say `output` — both
+truthful, neither as fine-grained as the model, and no A2A-rejection row exists.
+
+## Retry events: what is implemented, tested and still missing
+
+Shape, from `athena/observability/retry_events.py`:
+
+```json
+{"kind": "retry", "run_id": "...", "agent": "writer", "framework": "crewai",
+ "ts": "...", "ok": false, "error_type": "empty_reply",
+ "extra": {"retry_type": "empty_reply", "attempt": 2, "of": 2,
+           "reason": "empty reply: no visible text (finish_reason=length)…",
+           "stage": "model_call", "error_type": "empty_reply",
+           "token_budget": {"requested": 1000, "retried": 2000}}}
+```
+
+`attempt` is 1-based (the first retry after an initial attempt is `2`).
+`token_budget` is present only when the retry changed the output budget.
+`reason` is redacted and cut to 200 characters. `Event.ts` is the timestamp;
+`Event.run_id`/`agent`/`framework` carry the run, role and framework.
+
+**The rule is: never emit a retry that did not happen.** The helpers are called
+from the branch that has just decided to re-run something, never from a branch
+that suspects it might. Both directions are asserted.
+
+| Retry | Status | Where |
+|---|---|---|
+| empty reply, budget doubled | **Implemented + tested** in the helper (`retry_empty_reply`) and in the *real wrapper* (`RateLimitedLiteLlm`: `seen == [100, 200]`, at most one row) | `test_observability_retries.py::test_empty_reply_retry_emits_exactly_one_event_with_every_field`, `...::test_the_real_empty_reply_retry_never_claims_more_than_one_retry` |
+| no retry → no event | **Implemented + tested** — the real wrapper driven with a response that *has* text leaves zero `retry` rows | `...::test_an_empty_reply_that_is_not_retried_emits_no_retry_event`, `...::test_a_reply_with_visible_text_is_not_a_retry` |
+| `note_empty_reply` is not a retry | **Implemented + tested** — it stays a plain `error` row even though it runs twice | `...::test_noting_an_empty_reply_is_not_itself_a_retry` |
+| writer truncated report, writer rejected output | helper only (`retry_truncated_report`, `retry_invalid_output`), tested at the helper boundary | `...::test_the_writer_and_parse_retries_report_their_own_type` |
+| CrewAI empty reply (`LLM.call`/`acall`) | **Not emitted** — the branch exists at `athena/config/limited_models.py:159` / `:185` but has no `retry` call | counted as `retries_inferred` from its `empty_reply` error |
+| writer truncated-report retry | **Not emitted** — branch at `athena/agents/crew_writer.py:251` | counted as `retries_inferred` from `truncated_report`/error rows |
+| writer "previous output rejected" retry | **Not emitted** — branch at `athena/agents/crew_writer.py:235` | ditto |
+| ADK model/tool retry detected from event order | **Implemented** but **inferred by design**, `extra.inferred = true` and `extra.inferred_from` | `test_observability_retries.py::test_inferred_retries_are_marked_as_inferred` |
+
+The three "not emitted" rows are all in files this change does not own
+(`athena/config/**`, `athena/agents/**`). They are not silently ignored: the
+telemetry view reports them under `retries_inferred`, documented below, so a zero
+in `retries` never claims "nothing was retried". The exact patches are in
+`docs/SECURITY.md`.
+
+### Explicit vs inferred, kept as two metrics
+
+`retries` counts `retry` events a call site reported. `retries_inferred` counts
+`retry` events carrying `extra.inferred` **plus** `error` events whose
+`error_type` is `empty_reply` or `runaway_output` for which no `retry` event
+describes the same retry (`athena/api/telemetry_routes.py::Context._index_retries`,
+`INFERRED_RETRY_ERRORS`). An `error` that *is* described by a `retry` event is
+bucketed `reported` and counted once, not twice. The two totals are never summed,
+and `retry_breakdown` names the `retry_type` behind each.
+
+Tested by `test_telemetry_routes.py::test_explicit_and_inferred_retries_are_counted_separately`
+and `...::test_an_error_with_no_retry_event_is_reported_as_inferred`.
 
 ### Endpoints
 

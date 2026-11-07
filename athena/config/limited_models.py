@@ -9,6 +9,13 @@ Reasoning models spend output tokens on hidden reasoning, so a call can come
 back with no visible text and ``finish_reason == "length"``. That is retried
 once with the output budget doubled (capped at MAX_RETRY_TOKENS) before it
 counts as a failure.
+
+A provider can also *reject* a tool call before it ever reaches us
+(``tool_use_failed`` / an unknown tool name / arguments that do not match the
+schema). This is the narrowest point at which that call can actually be made
+again, so it is handled here: one bounded retry carrying a corrective
+instruction that lists the exact permitted tools, then a degraded response the
+agent can continue from. See :mod:`athena.config.tool_call_guard`.
 """
 
 from __future__ import annotations
@@ -16,6 +23,7 @@ from __future__ import annotations
 import json
 from google.adk.models.lite_llm import LiteLLMClient, LiteLlm
 
+from athena.config import tool_call_guard
 from athena.config.usage import last_reasoning, reasoning_from_usage, set_last_reasoning
 from athena.config.ratelimit import estimate_tokens, get_limiter, get_output_limiter
 from athena.config.reply_guard import (
@@ -25,6 +33,7 @@ from athena.config.reply_guard import (
     note_empty_reply,
 )
 from athena.observability.context import current_agent
+from athena.observability.retry_events import note_retry
 
 def _request_text(llm_request) -> str:
     try:
@@ -74,7 +83,20 @@ class RateLimitedLiteLlm(LiteLlm):
         limiter.acquire(estimate, agent=current_agent())
         output.acquire(reserve, agent=current_agent())
 
-        responses = await self._run(llm_request, stream)
+        try:
+            responses = await self._run(llm_request, stream)
+        except Exception as exc:
+            # A provider-side rejection of the *tool call* is one bounded
+            # degradation, not the end of the run: the evidence already on the
+            # blackboard must still reach the writer. Everything else keeps
+            # propagating untouched.
+            if not tool_call_guard.is_tool_call_validation_error(exc):
+                raise
+            responses = await self._retry_rejected_tool_call(
+                llm_request, stream, exc, limiter, output, estimate, reserve
+            )
+            if responses is None:
+                return
 
         if empty_and_truncated(responses):
             note_empty_reply("adk", reserve)
@@ -117,6 +139,72 @@ class RateLimitedLiteLlm(LiteLlm):
 
         for response in responses:
             yield response
+
+    async def _retry_rejected_tool_call(
+        self,
+        llm_request,
+        stream: bool,
+        error: BaseException,
+        limiter,
+        output,
+        estimate: int,
+        reserve: int,
+    ) -> list | None:
+        """Exactly one corrective retry for a rejected tool call.
+
+        Returns the retried responses, or ``None`` when even the retry was
+        rejected: the caller then yields the degraded response instead of
+        raising, so the stage finishes and the writer can still produce a
+        (possibly qualified) report from the evidence already gathered.
+
+        One retry, one ``retry`` event, and only after the decision to retry —
+        a rejection that is not retried never claims one.
+        """
+        agent = current_agent()
+        tool_call_guard.record_rejection(error, agent, will_retry=True, attempt=2)
+        note_retry(
+            agent,
+            "provider rejected a tool call; retrying once with the permitted tools listed",
+            "tool_call",
+            "adk",
+            attempt=2,
+            of=2,
+            stage="model_call",
+            error_type="tool_use_failed",
+            rejected_tool=tool_call_guard.offending_tool(error),
+        )
+
+        correction = tool_call_guard.corrective_message(error, llm_request)
+        retry_request = tool_call_guard.with_corrective_message(llm_request, correction)
+        retry_estimate = estimate_tokens(correction)
+        # The retry is a real model call: reserve its budget like any other, so
+        # the shared limiter and the per-run caps still see it.
+        limiter.acquire(retry_estimate, agent=agent)
+        output.acquire(reserve, agent=agent)
+
+        try:
+            responses = await self._run(retry_request, stream)
+        except Exception as exc:
+            if not tool_call_guard.is_tool_call_validation_error(exc):
+                raise
+            # Second rejection: stop calling tools, keep the run alive.
+            tool_call_guard.record_rejection(exc, agent, will_retry=False, attempt=2)
+            tool_call_guard.record_degraded(exc, agent)
+            limiter.record(estimate + retry_estimate)
+            output.record(reserve)
+            return [tool_call_guard.degraded_response(exc)]
+
+        # The retry itself happened, so its cost is measured, not estimated.
+        usage_in = usage_out = None
+        for response in responses:
+            usage = getattr(response, "usage_metadata", None)
+            if usage is None:
+                continue
+            usage_in = getattr(usage, "prompt_token_count", None) or usage_in
+            usage_out = getattr(usage, "candidates_token_count", None) or usage_out
+        limiter.record(usage_in or (estimate + retry_estimate))
+        output.record(usage_out or reserve)
+        return responses
 
 
 def make_crewai_llm_class():

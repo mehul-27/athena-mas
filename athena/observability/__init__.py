@@ -6,23 +6,34 @@ and the heatmap live behind it. Monitoring is off when ATHENA_MONITORING=0.
 
 from athena.observability.context import agent_context, current_agent
 from athena.observability.events import Event, EventKind
+from athena.observability.guardrail_events import (
+    PIPELINE_STAGES,
+    record_decision,
+    record_flags,
+)
 from athena.observability.recorder import (
     Recorder,
     get_recorder,
     monitoring_enabled,
     set_recorder,
 )
+from athena.observability.retry_events import RETRY_TYPES, note_retry
 from athena.observability.store import EventStore, SQLiteEventStore
 
 __all__ = [
     "Event",
     "EventKind",
     "EventStore",
+    "PIPELINE_STAGES",
+    "RETRY_TYPES",
     "Recorder",
     "SQLiteEventStore",
     "agent_context",
     "current_agent",
     "get_recorder",
     "monitoring_enabled",
+    "note_retry",
+    "record_decision",
+    "record_flags",
     "set_recorder",
 ]

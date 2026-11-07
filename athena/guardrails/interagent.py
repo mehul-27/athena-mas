@@ -33,6 +33,11 @@ from typing import Any, Final, Literal
 from athena.blackboard.schemas import GuardrailFlag
 from athena.guardrails import env
 from athena.guardrails.injection import scan_injection
+from athena.observability.guardrail_events import (
+    describe_match,
+    record_decision,
+    record_flags,
+)
 
 TOKEN_ENV: Final[str] = "ATHENA_A2A_SHARED_TOKEN"
 REQUIRE_SIG_ENV: Final[str] = "ATHENA_A2A_REQUIRE_SIG"
@@ -43,6 +48,9 @@ Mode = Literal["p2p", "blackboard"]
 MODES: Final[tuple[str, ...]] = ("p2p", "blackboard")
 
 STAGE = "input"
+#: ``screen`` on the emitted event, and the pipeline stage it names.
+SCREEN = "validate_message"
+PIPELINE_STAGE = "interagent"
 INSTRUCTION_LIMIT = 300
 P2P_CONTEXT_LIMIT = 9000
 RUN_ID = re.compile(r"^[A-Za-z0-9_.:\-]{1,128}$")
@@ -163,12 +171,21 @@ def validate_message(
     *,
     mode: Mode = "blackboard",
     auth: PeerAuth | None = None,
+    emit: bool = True,
+    audit_run_id: str | None = None,
 ) -> MessageVerdict:
     """Validate one inter-agent message. Never raises except for a bad ``mode``.
 
     ``mode`` is an explicit enum: ``p2p`` messages must carry an inline
     ``context``, ``blackboard`` messages must not (the blackboard is the data
     path). Unknown keys are rejected rather than ignored.
+
+    Every rejection and every flag is written as one ``guardrail`` event with
+    stage ``interagent``, because this function makes the decision. Attribution
+    uses the *active* recorder or the operator-supplied ``audit_run_id`` — never
+    the ``run_id`` inside the message, so a forged message cannot write audit
+    rows into another run's log. Only the rule, the action and a bounded reason
+    are stored: no message body, no instruction text, no token.
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
@@ -178,6 +195,12 @@ def validate_message(
 
     if not isinstance(message, dict):
         verdict.errors.append("message must be a JSON object")
+        if emit:
+            record_decision(
+                stage=PIPELINE_STAGE, rule="interagent.shape", action="blocked",
+                detail="message is not a JSON object", screen=SCREEN,
+                pipeline_stage=PIPELINE_STAGE, run_id=audit_run_id,
+            )
         return verdict
 
     allowed_keys = P2P_KEYS if mode == "p2p" else BLACKBOARD_KEYS
@@ -236,7 +259,11 @@ def validate_message(
     if isinstance(instruction, str) and instruction:
         for hit in scan_injection(instruction)[:5]:
             verdict.flags.append(
-                _flag("interagent.instruction_text", "warned", f"{hit.category}: {hit.excerpt}")
+                _flag(
+                    "interagent.instruction_text",
+                    "warned",
+                    describe_match(hit.category, hit.excerpt),
+                )
             )
     if mode == "p2p" and isinstance(message.get("context"), str):
         for hit in scan_injection(message.get("context"))[:5]:
@@ -244,11 +271,32 @@ def validate_message(
                 _flag(
                     "interagent.context_text",
                     "warned",
-                    f"{hit.category}: {hit.excerpt} (data, not instructions)",
+                    f"{describe_match(hit.category, hit.excerpt)} "
+                    "(data, not instructions)",
                 )
             )
 
     verdict.ok = not verdict.errors
+    if emit:
+        # One row per rejection (the shape errors are decisions, not flags) and
+        # one per flag. The reasons are the validator's own short strings.
+        #
+        # Attribution: ``audit_run_id`` only. ``run_id`` below is the value the
+        # *message* claims, used for shape validation and signature verification
+        # and never for attribution — passing it here is what let a forged
+        # ``run_id: victim`` write audit rows into another run's log. With no
+        # ``audit_run_id`` the row goes to the active recorder (this process's
+        # run) or nowhere.
+        for reason in verdict.errors[:5]:
+            record_decision(
+                stage=PIPELINE_STAGE, rule="interagent.message_shape",
+                action="blocked", detail=reason, screen=SCREEN,
+                pipeline_stage=PIPELINE_STAGE, run_id=audit_run_id,
+            )
+        record_flags(
+            verdict.flags, screen=SCREEN, pipeline_stage=PIPELINE_STAGE,
+            run_id=audit_run_id,
+        )
     return verdict
 
 

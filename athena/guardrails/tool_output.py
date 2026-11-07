@@ -26,8 +26,12 @@ from urllib.parse import urlparse
 from athena.blackboard.schemas import GuardrailFlag
 from athena.guardrails import env
 from athena.guardrails.injection import scan_injection
+from athena.observability.guardrail_events import record_flags
 
 STAGE = "tool_output"
+#: ``screen`` on the emitted event, and the pipeline stage it names.
+SCREEN = "validate_tool_output"
+PIPELINE_STAGE = "tool_output"
 
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 _PRIVATE_HOST_SUFFIXES = (
@@ -97,6 +101,12 @@ def _private_host(host: str) -> bool:
 
 
 def _url_flags(text: str) -> list[GuardrailFlag]:
+    """URL decisions, described by scheme/host only — never by the raw URL.
+
+    The raw match is the attacker's string (``javascript:alert(1)`` is the whole
+    payload), so the audit row keeps the decision inputs — scheme, host, and how
+    long the URL was — and drops the bytes.
+    """
     flags: list[GuardrailFlag] = []
     seen: set[str] = set()
     for match in _URL.finditer(text):
@@ -108,7 +118,7 @@ def _url_flags(text: str) -> list[GuardrailFlag]:
             seen.add(raw)
             flags.append(
                 _flag("tool_output.url_scheme", "sanitized",
-                      f"unexpected URL scheme {scheme!r}: {raw[:120]}")
+                      f"unexpected URL scheme {scheme!r} ({len(raw)} characters)")
             )
             continue
         host = urlparse(raw).hostname or ""
@@ -125,9 +135,10 @@ def _url_flags(text: str) -> list[GuardrailFlag]:
         if raw in seen:
             continue
         seen.add(raw)
+        scheme = raw.split(":", 1)[0].lower()
         flags.append(
             _flag("tool_output.url_scheme", "sanitized",
-                  f"active-content URL scheme: {raw[:120]}")
+                  f"active-content URL scheme {scheme!r} ({len(raw)} characters)")
         )
     return flags
 
@@ -137,13 +148,44 @@ def validate_tool_output(
     payload: Any,
     *,
     max_bytes: int | None = None,
+    emit: bool = True,
+    run_id: str | None = None,
+    agent: str | None = None,
+    pipeline_stage: str = PIPELINE_STAGE,
 ) -> tuple[bool, list[GuardrailFlag]]:
     """``(ok, flags)`` for one tool result. Never raises.
 
     ``ok`` is False when any flag's action is ``blocked`` or ``sanitized``: the
     caller may still forward the payload (it has been inspected, not rewritten)
     but must not treat it as clean.
+
+    Every flag is also written as one ``guardrail`` event (stage
+    ``tool_output``), because this function *is* where the tool-output decision
+    is made. ``pipeline_stage`` lets the evidence path (``tools/adapters.py::
+    screen_items``) label the same decision ``evidence``; ``emit=False``
+    suppresses the row for a caller that records the batch itself. Emission is
+    passive: it cannot change ``ok``, the flags or the payload, and with no
+    active recorder it does nothing.
     """
+    ok, flags = _screen_tool_output(tool_name, payload, max_bytes=max_bytes)
+    if emit and flags:
+        record_flags(
+            flags,
+            screen=SCREEN,
+            pipeline_stage=pipeline_stage,
+            run_id=run_id,
+            **({"agent": agent} if agent else {}),
+        )
+    return ok, flags
+
+
+def _screen_tool_output(
+    tool_name: str,
+    payload: Any,
+    *,
+    max_bytes: int | None = None,
+) -> tuple[bool, list[GuardrailFlag]]:
+    """The decision itself, with no side effects."""
     try:
         if not env.enabled():
             return True, []

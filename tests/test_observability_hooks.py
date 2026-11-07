@@ -348,3 +348,61 @@ def test_monitoring_off_means_no_events(store: SQLiteEventStore) -> None:
     recorder.emit("stage_start", "planner")
     recorder.emit("error", "planner", ok=False, error_message="x")
     assert store.events("run-off") == []
+
+
+# --- the one-line emit helpers used by the retry/guardrail call sites -------
+def test_emit_retry_writes_the_shared_retry_shape(store: SQLiteEventStore) -> None:
+    """``emit_retry`` is the call site's whole job: one row, typed fields."""
+    from athena.observability.hooks import emit_retry
+
+    set_recorder(Recorder("run-emit", store))
+    emit_retry(
+        "writer", "the answer was cut off", "crewai",
+        attempt=2, of=2, retry_type="truncated_report", stage="writer",
+    )
+
+    event = store.events("run-emit")[0]
+    assert event.kind == "retry"
+    assert event.agent == "writer"
+    assert event.framework == "crewai"
+    assert event.extra["retry_type"] == "truncated_report"
+    assert event.extra["attempt"] == 2 and event.extra["of"] == 2
+    assert event.extra["stage"] == "writer"
+    assert event.extra["reason"] == "the answer was cut off"
+    assert "inferred" not in event.extra
+
+
+def test_emit_retry_is_silent_with_no_recorder(store: SQLiteEventStore) -> None:
+    from athena.observability.hooks import emit_retry
+
+    set_recorder(None)
+    emit_retry("writer", "nothing happened", "crewai", retry_type="other")
+    assert store.events("run-emit") == []
+
+
+def test_emit_guardrail_redacts_and_labels_the_stage(store: SQLiteEventStore) -> None:
+    from athena.observability.hooks import emit_guardrail
+
+    set_recorder(Recorder("run-emit", store))
+    emit_guardrail(
+        "writer", "report.unsupported_claim", "sanitized",
+        "removed 1 unsupported claim(s)", framework="crewai",
+        stage="report_sanitize",
+    )
+
+    event = store.events("run-emit")[0]
+    assert event.kind == "guardrail"
+    assert event.extra["stage"] == "report_sanitize"
+    assert event.extra["rule"] == "report.unsupported_claim"
+    assert event.extra["action"] == "sanitized"
+    assert event.extra["screen"] == "emit_guardrail"
+    assert event.ok is True
+
+
+def test_emit_guardrail_marks_a_blocked_action_as_not_ok(store: SQLiteEventStore) -> None:
+    from athena.observability.hooks import emit_guardrail
+
+    set_recorder(Recorder("run-emit", store))
+    emit_guardrail("guardrails", "interagent.signature", "blocked", "signature mismatch")
+
+    assert store.events("run-emit")[0].ok is False

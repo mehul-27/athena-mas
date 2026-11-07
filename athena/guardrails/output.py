@@ -26,8 +26,12 @@ from athena.guardrails import env
 from athena.guardrails.injection import InjectionHit, scan_injection
 from athena.guardrails.input import HARM_LEXICON, TOXIC_LEXICON
 from athena.guardrails.secrets import contains_secret, secret_kinds
+from athena.observability.guardrail_events import record_flags
 
 STAGE = "final_output"
+#: ``screen`` on the emitted event, and the pipeline stage it names.
+SCREEN = "screen_output"
+PIPELINE_STAGE = "output"
 MAX_TEXTS = 60
 MIN_PHRASE_CHARS = 10
 _BOUNDARY_MARKER = re.compile(
@@ -99,11 +103,22 @@ def screen_output(
     *,
     injection_hits: Iterable[InjectionHit | str] = (),
     answer: str | None = None,
+    emit: bool = True,
+    run_id: str | None = None,
+    agent: str | None = None,
+    pipeline_stage: str = PIPELINE_STAGE,
 ) -> list[GuardrailFlag]:
     """Guardrail flags for one generated answer. Never raises.
 
     ``report`` may be a string, a ``FinalReport``/``Critique`` model or a plain
     dict; ``answer`` overrides the text used for the obeyed-injection check.
+
+    Each flag is also written as one ``guardrail`` event, because screening the
+    outbound text is the decision. ``pipeline_stage`` separates the chat answer
+    (``output``) from the report sanitiser (``report_sanitize``). The event
+    carries the rule, the action and a redacted detail — never the answer and
+    never the matched text. ``emit=False`` suppresses it for a caller that wants
+    the flags only.
     """
     flags: list[GuardrailFlag] = []
     try:
@@ -161,12 +176,14 @@ def screen_output(
         )
         echoed = obeyed_injection(check_text, injection_hits)
         if echoed:
+            # The echoed phrase is attacker-controlled text from a document or a
+            # web page: count it, never quote it into the audit row.
             flags.append(
                 _flag(
                     "output.obeyed_injection",
                     "warned",
-                    "the answer repeats an injected directive: "
-                    + "; ".join(phrase[:60] for phrase in echoed[:3]),
+                    f"the answer repeats {len(echoed)} injected directive(s) "
+                    f"({sum(len(p) for p in echoed[:3])} characters matched)",
                 )
             )
         elif not injection_hits and check_text:
@@ -180,7 +197,10 @@ def screen_output(
                         "the answer contains policy-override phrasing",
                     )
                 )
-        return _dedupe(flags)
+        return _recorded(
+            _dedupe(flags), emit=emit, run_id=run_id, agent=agent,
+            pipeline_stage=pipeline_stage,
+        )
     except Exception as exc:  # noqa: BLE001 - screening must not fail a run
         return [_flag("output.screen_error", "warned", f"{type(exc).__name__}: screening failed")]
 
@@ -195,3 +215,23 @@ def _dedupe(flags: list[GuardrailFlag]) -> list[GuardrailFlag]:
         seen.add(key)
         ordered.append(flag)
     return ordered
+
+
+def _recorded(
+    flags: list[GuardrailFlag],
+    *,
+    emit: bool,
+    run_id: str | None,
+    agent: str | None,
+    pipeline_stage: str,
+) -> list[GuardrailFlag]:
+    """Emit one ``guardrail`` event per flag, then hand the flags back untouched."""
+    if emit and flags:
+        record_flags(
+            flags,
+            screen=SCREEN,
+            pipeline_stage=pipeline_stage,
+            run_id=run_id,
+            **({"agent": agent} if agent else {}),
+        )
+    return flags

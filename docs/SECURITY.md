@@ -96,11 +96,82 @@ control below is invoked on the real path, and each has a test in
 | `api/app.py::_snapshot` | `redact_tree` | every blackboard section (`final_report`, `draft`, `analysis`, `plan`, `critique`, `task`) is redacted field by field before it is returned |
 | `tools/rag/ingest.py` | size/page caps | a PDF over `ATHENA_RAG_MAX_FILE_BYTES`/`ATHENA_RAG_MAX_PAGES`, or text over `ATHENA_RAG_MAX_TEXT_CHARS`, is refused (and counted in the corpus stats) instead of being truncated and half-indexed |
 
+## Guardrail audit rows: implemented, tested, partial
+
+Every guardrail decision this package makes is also written as one `guardrail`
+event, through `athena/observability/guardrail_events.py`. The row carries the
+run id (from the recorder, never from the data screened), the stage, the rule,
+the action and a redacted `detail`; it never carries the payload. Full schema and
+per-stage table: `docs/OBSERVABILITY.md`.
+
+| Control | Emits a row | Tested |
+|---|---|---|
+| `screen_input` (chat, `POST /api/runs`) | yes, one per flag, stage `input` | `test_observability_guardrail_events.py::test_input_stage_*`, `test_security_integration.py::test_post_runs_records_a_guardrail_event` |
+| `validate_tool_output` / `screen_items` | yes, one per flag, stage `tool_output` | `...::test_tool_output_stage_*`, `...::test_evidence_stage_reports_what_was_dropped` |
+| `validate_message` (A2A/p2p) | yes, one per rejection and one per flag, stage `interagent`, attributed to `audit_run_id` only | `...::test_interagent_*` (including `test_interagent_attribution_ignores_the_run_id_in_the_message`) |
+| `screen_output` (chat answer, report sanitiser) | yes, one per flag, stage `output` / `report_sanitize` | `...::test_output_stage_*`, `...::test_report_sanitize_stage_is_labelled_apart_from_the_chat_answer` |
+| `agents/crew_server.py::peer_auth_error` | **no** — the rejection is returned to the caller but not recorded as a `guardrail` row | — |
+| Rows visible through `GET /api/runs/{id}/telemetry` and `/cells` | yes | `test_telemetry_routes.py::test_guardrail_rows_are_visible_through_the_telemetry_endpoint` |
+
+`detail` deliberately does not quote the matched text. A short message is its own
+excerpt (`"Ignore all previous instructions"` is 31 characters), so the previous
+"bounded excerpt" was the payload whenever the match spanned the input. Matches
+are measured and dropped (`describe_match`: category + character count); URLs are
+described by scheme and length. Month-old rows may still contain an excerpt;
+new rows cannot.
+
+## Still needed in code this change does not own
+
+Three production call sites are one line short of the audit trail above. They
+live in `athena/agents/` and `athena/tools/`, outside this change's ownership,
+so they are listed here rather than edited. Each is passive: none changes a
+decision, a flag, or a payload.
+
+1. `athena/agents/crew_server.py:109` — the A2A server's own rejection path
+   never reaches `validate_message`, so a refused peer request leaves no row.
+
+```python
+     forged = peer_auth_error(body)
+     if forged is not None:
++        emit_guardrail("guardrails", "interagent.signature", "blocked",
++                       forged, framework="crewai", stage="interagent")
+         return _ack(ok=False, error=forged)
+```
+
+2. `athena/tools/adapters.py:53` — the evidence path uses the default stage, so
+   its rows say `tool_output` rather than `evidence`.
+
+```python
+         ok, item_flags = validate_tool_output(
+-            tool_name or item.source_type, item.content
++            tool_name or item.source_type, item.content,
++            pipeline_stage="evidence",
+         )
+```
+
+3. `athena/agents/report_sanitize.py:361` — the report sanitiser's rows say
+   `output` rather than `report_sanitize`.
+
+```python
+     screened = screen_output(
+-        {"answer": answer, "key_points": list(key_points or [])}, answer=answer
++        {"answer": answer, "key_points": list(key_points or [])}, answer=answer,
++        pipeline_stage="report_sanitize",
+     )
+```
+
+Three real retries are also unemitted (`athena/config/limited_models.py:159`,
+`:185` for the CrewAI empty reply; `athena/agents/crew_writer.py:235` and `:251`
+for the writer's rejected-output and truncated-answer retries). Until they call
+`retry_empty_reply` / `retry_invalid_output` / `retry_truncated_report`, those
+retries are reported as `retries_inferred`, never claimed as explicit. Patches
+and the exact helper signatures are in `docs/OBSERVABILITY.md`.
+
 ## Tests
 
 - `tests/test_security_adversarial.py` — six attacker personas (hostile,
   manipulative, injection-in-document, injection-in-web-snippet,
-  secret-exfiltration, tool-abuse), 37 cases, each asserting a concrete
+  secret-exfiltration, tool-abuse), 38 cases, each asserting a concrete
   behaviour: which rule fired, whether the turn was refused, exactly what the
   model was given, whether a secret survived into storage or a transcript, and
   whether a spoofed boundary marker was neutralised. It also contains the static
@@ -114,6 +185,13 @@ control below is invoked on the real path, and each has a test in
   report flags, A2A signing/verification (including the unsigned dev flow),
   tool-output validation in the evidence path, `POST /api/runs` screening and
   recording, snapshot redaction, and the ingest caps.
+- `tests/test_observability_guardrail_events.py` — the audit rows themselves:
+  one redacted row per decision for each stage, a real secret planted in the
+  payload and asserted absent from the row, a forged inter-agent `run_id` that
+  must not write into another run's log, and "a clean screening writes nothing".
+- `tests/test_telemetry_routes.py` — that those rows are visible through
+  `GET /api/runs/{id}/telemetry` (counts, `guardrail_breakdown`, `/cells`), and
+  that explicit and inferred retries land in separate metrics.
 - `tests/test_untrusted_content.py` (existing) — the research pipeline's
   boundary markers, which the chat path now reuses instead of duplicating.
 

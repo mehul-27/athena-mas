@@ -19,7 +19,7 @@ from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents import LlmAgent
 from google.adk.events import Event
-from google.adk.tools.mcp_tool import MCPToolset, StdioConnectionParams
+from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
 from mcp import StdioServerParameters
 
 from athena.agents import bb_io
@@ -27,11 +27,13 @@ from athena.agents.budget import Budget, make_budget_callbacks
 from athena.agents.evidence_recorder import make_evidence_recorder
 from athena.agents.requirements import finding_requirement
 from athena.agents.routing import preferred_roles, source_guidance
+from athena.agents.tool_args import MalformedCallGuard
+from athena.agents.toolset_health import HealthCheckedToolset
 from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import Blackboard, BlackboardStore
 from athena.config.llm import get_adk_model
 from athena.observability.recorder import get_recorder
-from athena.tools import registry
+from athena.tools import mcp_stdio, registry
 from athena.tools.settings import REPO_ROOT
 from athena.tools.web.urls import plain_http_url
 
@@ -131,15 +133,29 @@ def build_toolset(
     module: str,
     timeout: float = 120.0,
     tools: list[str] | None = None,
-) -> MCPToolset:
+    server: str = "",
+    agent: str = "researcher",
+    run_id: str = "",
+    store: Any = None,
+) -> McpToolset:
     """One stdio MCP server as an ADK toolset, filtered to ``tools``.
 
     Filtering happens before the model sees a schema, so a disabled tool is not
     merely hidden in the UI: it is never offered for a call. MCP's stdio client
     uses a restricted default environment, so search/fetch/RAG settings must be
     passed explicitly or the tool process silently falls back to defaults.
+
+    Two properties keep a lost toolset from becoming a silent zero-evidence run:
+
+    * ``errlog`` is our own never-closed file handle, not ``sys.stderr``. ADK
+      binds ``errlog=sys.stderr`` as a default *at import time*; under a
+      process-wide ``redirect_stderr`` to a log file that was later closed,
+      ``subprocess`` then failed in ``msvcrt.get_osfhandle`` before the child
+      existed, every server vanished, and the run reported "completed".
+    * The toolset records its own load outcome, so a failure is an observable
+      error event and the run is marked degraded rather than looking clean.
     """
-    return MCPToolset(
+    return HealthCheckedToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=sys.executable,
@@ -150,6 +166,13 @@ def build_toolset(
             timeout=timeout,
         ),
         tool_filter=list(tools) if tools is not None else None,
+        **mcp_stdio.toolset_kwargs(),
+    ).use_health(
+        server=server or module,
+        agent=agent,
+        required=list(tools or ()),
+        run_id=run_id,
+        store=store,
     )
 
 
@@ -203,9 +226,21 @@ def selection_guard(
     return before_tool
 
 
-def _toolsets(selection: tuple[str, ...] | None) -> list[MCPToolset]:
+def _toolsets(
+    selection: tuple[str, ...] | None,
+    agent: str = "researcher",
+    run_id: str = "",
+    store: Any = None,
+) -> list[McpToolset]:
     return [
-        build_toolset(SERVERS[server], tools=names)
+        build_toolset(
+            SERVERS[server],
+            tools=names,
+            server=server,
+            agent=agent,
+            run_id=run_id,
+            store=store,
+        )
         for server, names in registry.server_filters(selection).items()
     ]
 
@@ -225,11 +260,19 @@ def _compose_guard(
 ):
     guard = selection_guard(allowed, agent, run_enabled)
     fetch_and_budget = plain_fetch_urls(budget_guard)
+    # One allowance per worker: a second worker's first mistake is still
+    # correctable, and no worker can loop on an incomplete call.
+    malformed = MalformedCallGuard(agent)
 
     def before_tool(tool, args, tool_context):
         blocked = guard(tool, args, tool_context)
         if blocked is not None:
             return blocked
+        # Refuse an incomplete call before it reaches the MCP server, so the
+        # model gets a readable validation error instead of a transport failure.
+        invalid = malformed.check(tool, args)
+        if invalid is not None:
+            return invalid
         return fetch_and_budget(tool, args, tool_context)
 
     return before_tool
@@ -261,7 +304,7 @@ def build_researcher(
             f"{_selection_instruction(selection)}\n"
             f"{finding_requirement(text)}\nThe task:\n{text}\n"
         ),
-        tools=_toolsets(selection),
+        tools=_toolsets(selection, "researcher", run_id, store),
         before_model_callback=before_model,
         before_tool_callback=_compose_guard(
             allowed, "researcher", budget_guard, run_enabled
@@ -288,7 +331,16 @@ def build_role_researcher(
     budget = Budget.from_env(role)
     before_model, budget_guard = make_budget_callbacks(budget, get_recorder(), role)
     tools = (
-        [build_toolset(SERVERS[ROLE_SERVER[role]], tools=list(allowed_list))]
+        [
+            build_toolset(
+                SERVERS[ROLE_SERVER[role]],
+                tools=list(allowed_list),
+                server=ROLE_SERVER[role],
+                agent=role,
+                run_id=run_id,
+                store=store,
+            )
+        ]
         if allowed
         else []
     )

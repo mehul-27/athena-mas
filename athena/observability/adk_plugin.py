@@ -21,6 +21,7 @@ from google.genai import types
 from athena.observability.context import set_agent
 from athena.config.usage import last_reasoning, reasoning_from_usage
 from athena.observability.recorder import Recorder, get_recorder
+from athena.observability.retry_events import note_retry
 from athena.tools.web.urls import plain_http_url
 
 
@@ -183,18 +184,20 @@ class MonitoringPlugin(BasePlugin):
             },
         )
         if failed:
-            self._emit(
-                "retry",
+            # Inferred, not reported: no ADK callback says "this is a retry", so
+            # the event carries ``inferred`` and the reason it was deduced. It is
+            # a different metric from an explicitly reported retry.
+            note_retry(
                 agent,
-                ok=False,
+                f"model call succeeded after {failed} failed call(s) for this agent",
+                "model_call",
+                "adk",
+                attempt=failed + 1,
                 error_type="model_call_retry",
-                payload_summary=f"retry after {failed} failed model call(s)",
-                extra={
-                    "attempt": failed + 1,
-                    "attempt_kind": "model_call",
-                    "inferred": True,
-                    "inferred_from": "error then model_call for the same agent",
-                },
+                inferred=True,
+                inferred_from="error then model_call for the same agent",
+                stage="model_call",
+                recorder=self._rec(),
             )
         return None
 
@@ -316,18 +319,18 @@ class MonitoringPlugin(BasePlugin):
         self._emit("tool_call", agent_name, **fields)
         if error is None and failed_before:
             # Same agent, same tool, and the previous attempt(s) failed: this is
-            # a retry attempt caught by event order, not by a callback.
-            self._emit(
-                "retry",
+            # a retry attempt caught by event order, not by a callback — so it is
+            # marked ``inferred`` and counted separately from a reported retry.
+            note_retry(
                 agent_name,
-                ok=True,
-                payload_summary=f"retry {tool.name} after {failed_before} failed attempt(s)",
-                extra={
-                    "attempt": failed_before + 1,
-                    "attempt_kind": "tool_call",
-                    "tool": tool.name,
-                    "inferred": True,
-                    "inferred_from": "tool_call ok after failed tool_call for the same tool",
-                },
+                f"tool {tool.name} succeeded after {failed_before} failed attempt(s)",
+                "tool_call",
+                "adk",
+                attempt=failed_before + 1,
+                inferred=True,
+                inferred_from="tool_call ok after failed tool_call for the same tool",
+                stage="tool_call",
+                recorder=self._rec(),
+                tool=tool.name,
             )
         return None
