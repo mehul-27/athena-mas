@@ -824,6 +824,13 @@ class RunRecord(_Model):
         default="",
         description="'before_model' | 'after_model' | 'none'.",
     )
+    #: Which authorised provider account executed this attempt. Empty on a
+    #: single-credential batch or on records written before attribution existed.
+    #: The fingerprint is a truncated hash: it identifies the account and can
+    #: never be turned back into its key.
+    account_label: str = ""
+    account_fingerprint: str = ""
+    account_id: str = ""
     terminal_state: str = Field(
         default="error", description=f"One of {list(TERMINAL_STATES)}."
     )

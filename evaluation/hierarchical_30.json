@@ -1,0 +1,318 @@
+{
+  "version": 1,
+  "name": "athena-eval-hierarchical-30",
+  "dataset_path": "evaluation/dataset.json",
+  "note": "Focused 30-run single-pattern batch for the final research benchmark: the hierarchical pattern only, blackboard context sharing only, on 24 distinct prompts (12 core + 12 breadth) plus 6 repeats of core prompts. Twelve categories, each represented twice in core+breadth. It is a deliberate subset of the 72-run matrix in evaluation/config.json and of the 36-run plan in evaluation/hierarchical_36.json; both are preserved unchanged. Seeds are null because athena.run forwards no seed to any provider, so the variance tier is a stochastic replicate and its spread is sampling noise. Live runs use --backend subprocess: the in_process backend redirects this process's stdout/stderr, which breaks MCP stdio toolset spawning.",
+  "claims_seeded_reproduction": false,
+  "context_sharing_by_pattern": {
+    "sequential": "blackboard",
+    "parallel": "blackboard",
+    "hierarchical": "blackboard",
+    "p2p": "message_passing"
+  },
+  "matrix": {
+    "patterns": [
+      "hierarchical"
+    ],
+    "context_sharing": [
+      "blackboard"
+    ],
+    "seeds": [],
+    "repeats": 2,
+    "tool_selection": null,
+    "per_run_timeout_s": 1200.0,
+    "llm_call_cap": null,
+    "backend": "subprocess"
+  },
+  "budget": {
+    "max_total_usd": 8.0,
+    "max_run_usd": 0.6,
+    "max_runs": 36,
+    "max_total_wall_s": 86400.0,
+    "on_budget_exhausted": "stop"
+  },
+  "pricing": {
+    "currency": "USD",
+    "unit": "per_1m_tokens",
+    "models": {},
+    "note": "Deliberately empty: groq/qwen/qwen3.8-27b has no public list price and data/pricing.json lists it under 'unlisted' on purpose, so every run records est_cost_usd=null. The USD caps therefore cannot bound real spend and are inert; max_runs is the only hard attempt cap. Do not add an invented rate for this model."
+  },
+  "plan": {
+    "id": "hierarchical-30",
+    "scope": "focused",
+    "target_runs": 30,
+    "note": "12 core (one prompt per category) + 12 breadth (a second prompt in every category) + 6 variance (a repeat of six core prompts, repeat=1).",
+    "entries": [
+      {
+        "run_key": "gf-01__hierarchical__r0",
+        "prompt_id": "gf-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "te-02__hierarchical__r0",
+        "prompt_id": "te-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "ne-02__hierarchical__r0",
+        "prompt_id": "ne-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "cm-02__hierarchical__r0",
+        "prompt_id": "cm-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "cv-01__hierarchical__r0",
+        "prompt_id": "cv-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "ms-02__hierarchical__r0",
+        "prompt_id": "ms-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "cs-01__hierarchical__r0",
+        "prompt_id": "cs-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "dr-01__hierarchical__r0",
+        "prompt_id": "dr-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "nc-01__hierarchical__r0",
+        "prompt_id": "nc-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "ie-01__hierarchical__r0",
+        "prompt_id": "ie-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "pi-01__hierarchical__r0",
+        "prompt_id": "pi-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "tp-01__hierarchical__r0",
+        "prompt_id": "tp-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "core"
+      },
+      {
+        "run_key": "gf-02__hierarchical__b0",
+        "prompt_id": "gf-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "te-01__hierarchical__b0",
+        "prompt_id": "te-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "ne-01__hierarchical__b0",
+        "prompt_id": "ne-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "cm-03__hierarchical__b0",
+        "prompt_id": "cm-03",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "cv-02__hierarchical__b0",
+        "prompt_id": "cv-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "ms-04__hierarchical__b0",
+        "prompt_id": "ms-04",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "cs-04__hierarchical__b0",
+        "prompt_id": "cs-04",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "dr-04__hierarchical__b0",
+        "prompt_id": "dr-04",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "nc-03__hierarchical__b0",
+        "prompt_id": "nc-03",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "ie-03__hierarchical__b0",
+        "prompt_id": "ie-03",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "pi-03__hierarchical__b0",
+        "prompt_id": "pi-03",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "tp-04__hierarchical__b0",
+        "prompt_id": "tp-04",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 0,
+        "tier": "breadth"
+      },
+      {
+        "run_key": "gf-01__hierarchical__r1",
+        "prompt_id": "gf-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 1,
+        "tier": "variance"
+      },
+      {
+        "run_key": "te-02__hierarchical__r1",
+        "prompt_id": "te-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 1,
+        "tier": "variance"
+      },
+      {
+        "run_key": "ne-02__hierarchical__r1",
+        "prompt_id": "ne-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 1,
+        "tier": "variance"
+      },
+      {
+        "run_key": "cm-02__hierarchical__r1",
+        "prompt_id": "cm-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 1,
+        "tier": "variance"
+      },
+      {
+        "run_key": "cv-01__hierarchical__r1",
+        "prompt_id": "cv-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 1,
+        "tier": "variance"
+      },
+      {
+        "run_key": "ms-02__hierarchical__r1",
+        "prompt_id": "ms-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": null,
+        "repeat": 1,
+        "tier": "variance"
+      }
+    ]
+  }
+}

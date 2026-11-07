@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from evaluation import __version__, outcomes, schema
+from evaluation import accounts as accounts_module
 from evaluation.schema import (
     AttemptAccounting,
     EvalDataset,
@@ -166,6 +167,50 @@ def redact_host(url: str) -> str:
         return redact_url(value)
     except Exception:  # noqa: BLE001 - provenance is reported, never fatal
         return "(unredactable url; suppressed)"
+
+
+def load_accounts(names: Sequence[str]) -> tuple[Any, ...]:
+    """Resolve named settings profiles to authorised accounts.
+
+    Reads the key from the existing encrypted vault - the same store the
+    Settings UI writes - so there is one credential source, not a second one.
+    The key is carried only into the child's environment; it is never logged,
+    recorded or returned in a description.
+
+    Raises :class:`evaluation.accounts.AccountError` when a profile is missing,
+    has no key, or when the set would not run comparable science.
+    """
+    if not names:
+        return ()
+    from athena.settings import profiles as profile_store
+    from athena.settings.vault import default_vault
+
+    vault = default_vault()
+    found = []
+    for name in names:
+        label = name.strip()
+        if not label:
+            continue
+        profile = next(
+            (p for p in profile_store.load_profiles() if p.name == label), None
+        )
+        if profile is None:
+            raise accounts_module.AccountError(f"no settings profile named {label!r}")
+        key = vault.get(profile_store.key_name(profile.id, "llm"))
+        if not key:
+            raise accounts_module.AccountError(
+                f"profile {label!r} has no stored API key"
+            )
+        found.append(
+            accounts_module.Account(
+                label=label,
+                key=key,
+                api_base=profile.api_base,
+                model=profile.model,
+            )
+        )
+    accounts_module.verify_same_conditions(found)
+    return tuple(found)
 
 
 def active_profile_env() -> tuple[dict[str, str], str]:
@@ -790,6 +835,18 @@ class ExecutorSpec:
     #: Resolved once per batch: which model each half of the pipeline calls.
     #: Passed in rather than recomputed per run so one batch cannot drift.
     provenance: ModelProvenance = field(default_factory=ModelProvenance)
+    #: The account each run key was assigned, decided before the batch starts.
+    #: Empty for a single-credential batch. A run looks itself up here and never
+    #: re-decides its account in response to a quota error.
+    allocations: Mapping[str, str] = field(default_factory=dict)
+    #: Authorised accounts by label. Never written to a record: only
+    #: ``Account.public()`` is.
+    accounts: Mapping[str, Any] = field(default_factory=dict)
+
+    def account_for(self, run_key: str) -> Any:
+        """The account for this attempt, or None for an undeclared batch."""
+        label = self.allocations.get(run_key)
+        return self.accounts.get(label) if label else None
 
 
 class InProcessExecutor:
@@ -907,12 +964,25 @@ class SubprocessExecutor:
         started = time.perf_counter()
         timed_out = False
         returncode: int | None = None
+        # Attribute the attempt to its pre-assigned account and give the child
+        # that account's credential. The account was chosen before the batch
+        # started (see evaluation.accounts); it is never re-chosen in response to
+        # a quota error, which would be rotating to evade enforcement.
+        account = self.spec.account_for(entry.run_key)
+        child_env = dict(os.environ)
+        if account is not None:
+            child_env["LLM_API_KEY"] = account.key
+            child_env["GROQ_API_KEY"] = account.key
+            child_env["LLM_MODEL"] = account.model
+            if account.api_base:
+                child_env["LLM_API_BASE"] = account.api_base
+            record.update(account.public())
         try:
             with log_path.open("a" if attempt > 1 else "w", encoding="utf-8",
                                errors="replace") as log:
                 process = subprocess.Popen(
                     argv, cwd=str(REPO_ROOT), stdout=log, stderr=subprocess.STDOUT,
-                    env=dict(os.environ),
+                    env=child_env,
                 )
                 try:
                     process.wait(timeout=self.spec.timeout_s)
@@ -1142,6 +1212,7 @@ class Runner:
         provenance: ModelProvenance | None = None,
         acknowledge_unpriced: bool = False,
         max_attempts_per_run: int = DEFAULT_MAX_ATTEMPTS_PER_RUN,
+        accounts: Sequence[Any] | None = None,
         logger: Callable[[str], None] | None = None,
     ) -> None:
         self.dataset = dataset
@@ -1178,13 +1249,26 @@ class Runner:
         self.budget = BudgetTracker(budget, usd_enforceable=self.usd_enforceable)
 
         if executor is None:
+            accounts = tuple(accounts or ())
+            allocations = (
+                accounts_module.allocation_for(
+                    (entry.run_key for entry in self.entries), accounts
+                )
+                if accounts else {}
+            )
+            self.accounts = accounts
+            self.allocations = allocations
             spec = ExecutorSpec(
                 config=config, dataset=dataset, timeout_s=self.timeout_s,
                 log_dir=out_dir / "logs", model=self.model,
                 provenance=self.provenance,
+                allocations=allocations,
+                accounts={account.label: account for account in accounts},
             )
             self.executor = build_executor(spec, self.backend)
         else:
+            self.accounts = tuple(accounts or ())
+            self.allocations = {}
             self.executor = executor
 
         self.raw_path = out_dir / "raw.jsonl"
@@ -1672,6 +1756,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default=None,
                         help="model label to price against (default LLM_MODEL)")
     parser.add_argument(
+        "--accounts", default="",
+        help=(
+            "comma-separated settings-profile names to spread this batch across. "
+            "Each profile must hold a key; all must share one endpoint and one "
+            "model, or the batch is refused. The allocation is computed from the "
+            "plan before the first run and recorded per attempt. Omit for a "
+            "single-credential batch."
+        ),
+    )
+    parser.add_argument(
         "--acknowledge-unpriced", action="store_true",
         help=(
             "required before a live batch whose model(s) no price table can price. "
@@ -2008,6 +2102,20 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
+    try:
+        authorised = load_accounts(_split(args.accounts))
+    except accounts_module.AccountError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    if authorised:
+        print(
+            "accounts  : "
+            + ", ".join(f"{a.label} ({accounts_module.account_fingerprint(a.key)})"
+                        for a in authorised)
+            + f" - {len(authorised)} credential(s), one endpoint, one model",
+            flush=True,
+        )
+
     runner = Runner(
         dataset, config, out_dir,
         entries=entries,
@@ -2024,6 +2132,7 @@ def main(argv: list[str] | None = None) -> int:
         provenance=provenance,
         acknowledge_unpriced=args.acknowledge_unpriced,
         max_attempts_per_run=args.max_attempts_per_run,
+        accounts=authorised,
     )
 
     try:
