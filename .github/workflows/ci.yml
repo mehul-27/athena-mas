@@ -68,6 +68,15 @@ jobs:
       - name: composer tests
         run: node athena/api/static/app.composer.test.js
 
+      - name: context panel tests
+        run: node athena/api/static/context.test.js
+
+      - name: diagram tests
+        run: node athena/api/static/diagram.test.js
+
+      - name: telemetry tests
+        run: node athena/api/static/telemetry.test.js
+
   config:
     name: deployment config sanity
     runs-on: ubuntu-latest

@@ -103,7 +103,9 @@ def test_web_server_over_stdio_reports_disabled() -> None:
             env={"SEARCH_PROVIDER": "disabled"},
         )
     )
-    assert names == ["web_search"]
+    # The web server registers both web tools; the disabled provider must only
+    # block the call, not hide fetch_page from the same server.
+    assert sorted(names) == ["fetch_page", "web_search"]
     assert not result.ok
     assert "disabled" in (result.error or "").lower()
 

@@ -1,0 +1,2 @@
+pattern,runs,scored,completed_rate,success_rate,latency_n,latency_median,latency_p25,latency_p75,tokens_n,tokens_median,cost_n,cost_median,cost_missing,tool_calls_median,rubric_median,rubric_n,answer_key_median,citation_precision_median,citation_coverage_median,unsupported_claim_median,evidence_relevance_median,critic_approved_rate
+hierarchical,36,36,1/36 (3%),1/36 (3%),36,60.188,59.9845,117.2335,36,0.0,0,,36,0.0,0.0,36,0.0,0.0,0.0,0.0,0.3934,1/36 (3%)

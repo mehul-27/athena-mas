@@ -18,6 +18,18 @@ consumer could tell why. Both halves are pinned here:
 
 Everything is offline: the runner is a stub that writes to a real blackboard and
 a real event store, and no model, tool or server is contacted.
+
+The stub records its evidence through the same adapters a real tool call uses
+(:func:`athena.tools.adapters.to_evidence_items`). That matters, and it was the
+fixture's bug: the original stub wrote six page bodies under ``web-*`` ids, which
+is what a *search snippet* looks like. :mod:`athena.agents.sufficiency` draws a
+deliberate line between the two -- ``fetch-*`` items are fetched page content,
+``web-*`` items are search snippets, and "only search-result snippets were
+recorded" is one of its issues. So the stub was judged on evidence weaker than
+the pilot's, ``assess()`` returned ``ok=False``, ``set_outcome`` classified the
+run ``incomplete`` and :func:`athena.summary.set_outcome` marked it degraded
+(``if outcome != "approved": mark_degraded(...)``). The production path was right
+the whole time; the stub was the thing that was wrong.
 """
 
 from __future__ import annotations
@@ -50,6 +62,8 @@ from athena.summary import (
     summary_line,
     unrecovered_errors,
 )
+from athena.tools.adapters import to_evidence_items
+from athena.tools.schemas import FetchResult, WebHit, WebResult
 
 QUESTION = "What propellant does the SpaceX Draco thruster use, and what is its specific impulse?"
 # The three sources the real pilot actually cited.
@@ -58,10 +72,106 @@ PILOT_URLS = (
     "https://www.rsc.org/periodic-table/",
     "https://www.periodic-table.org/",
 )
+# The body a successfully fetched pilot page carried: long enough to be evidence
+# on its own terms, and it names the subject so the relevance check can match it.
+# The page title travels separately in FetchResult.title, exactly as a real fetch
+# records it; _from_fetch joins the two.
 EVIDENCE_BODY = (
-    "Draco is a hypergolic bipropellant thruster using monomethylhydrazine fuel "
-    "and a nitrogen tetroxide oxidiser, with a vacuum specific impulse near 300 s. "
+    "Draco is a hypergolic bipropellant thruster built by SpaceX for the Dragon "
+    "spacecraft. It burns monomethylhydrazine fuel with a nitrogen tetroxide "
+    "oxidiser and delivers a vacuum specific impulse of about 300 s, so the engine "
+    "needs no ignition system and can be restarted in orbit many times."
 )
+# The snippet a search result carried for the same pages.
+EVIDENCE_SNIPPET = (
+    "The SpaceX Draco thruster is a hypergolic bipropellant engine with about "
+    "300 s of specific impulse in vacuum."
+)
+
+
+def _fetched_evidence(url: str, attempt: int = 0):
+    """The evidence one successful ``fetch_page`` call records, via the adapter."""
+    return to_evidence_items(
+        FetchResult(
+            elapsed_ms=18.0,
+            fetch_id=f"{url}#{attempt}",
+            requested_url=url,
+            final_url=url,
+            canonical_url=url,
+            title="SpaceX Draco",
+            content_type="text/html",
+            status="ok",
+            status_code=200,
+            text=EVIDENCE_BODY,
+        ),
+        retrieved_by="web_researcher",
+    )
+
+
+def _searched_evidence():
+    """The evidence one ``web_search`` call records, via the adapter."""
+    return to_evidence_items(
+        WebResult(
+            elapsed_ms=9.0,
+            query="draco propellant specific impulse",
+            provider="duckduckgo",
+            max_results=3,
+            results=[
+                WebHit(
+                    title="SpaceX Draco", url=url, snippet=EVIDENCE_SNIPPET,
+                    provider="duckduckgo",
+                )
+                for url in PILOT_URLS
+            ],
+        ),
+        retrieved_by="web_researcher",
+    )
+
+
+def _failed_fetch_evidence(url: str):
+    """The evidence a ``fetch_page`` call records when the page answers HTTP 403.
+
+    A failed fetch still records one item, with ``source_type="other"``: it is
+    provenance for the attempt, never citable evidence. The pilot's six items
+    include exactly one of these.
+    """
+    return to_evidence_items(
+        FetchResult(
+            elapsed_ms=41.0,
+            fetch_id=f"{url}#403",
+            requested_url=url,
+            status="http_error",
+            status_code=403,
+            error="HTTP 403",
+        ),
+        retrieved_by="web_researcher",
+    )
+
+
+def _pilot_evidence(
+    *,
+    failed_fetch: bool = True,
+    snippets: int = 3,
+) -> list[EvidenceItem]:
+    """The pilot's six evidence items, shaped the way the tool adapters record them.
+
+    The pilot fetched all three cited URLs and searched for them once. One of those
+    fetches answered HTTP 403; it is still recorded, as a non-citable ``fetch-*``
+    item (``source_type="other"``), exactly as ``_from_fetch`` does. The successful
+    fetches record ``fetch-*`` items carrying the page body -- which is what the
+    sufficiency gate counts as page content -- and the search records ``web-*``
+    items carrying result snippets. With ``failed_fetch`` that is 1 + 2 + 3 = 6;
+    without it, 3 + 3 = 6. Snippets alone would be rejected by the gate; snippets
+    alongside fetched page bodies are exactly what it accepts.
+    """
+    items: list[EvidenceItem] = []
+    for index, url in enumerate(PILOT_URLS):
+        if index == 0 and failed_fetch:
+            items.extend(_failed_fetch_evidence(url))
+        else:
+            items.extend(_fetched_evidence(url, index))
+    items.extend(_searched_evidence()[:snippets])
+    return items
 
 
 # --- fixtures --------------------------------------------------------------
@@ -131,31 +241,24 @@ class _PilotRunner:
             self.run_id, agent=agent, tool="web_search",
             args="{'query': 'draco propellant specific impulse', 'max_results': 3}", ok=True,
         )
-        if self.failed_fetch:
-            _record_tool_call(
-                self.run_id, agent=agent, tool="fetch_page",
-                args="{'url': 'https://en.wikipedia.org/wiki/SpaceX_Draco'}",
-                ok=False, error="HTTP 403",
-            )
-        for url in PILOT_URLS[1:]:
-            _record_tool_call(
-                self.run_id, agent=agent, tool="fetch_page",
-                args=f"{{'url': '{url}'}}", ok=True,
-            )
+        for index, url in enumerate(PILOT_URLS):
+            if index == 0 and self.failed_fetch:
+                _record_tool_call(
+                    self.run_id, agent=agent, tool="fetch_page",
+                    args=f"{{'url': '{url}'}}", ok=False, error="HTTP 403",
+                )
+            else:
+                _record_tool_call(
+                    self.run_id, agent=agent, tool="fetch_page",
+                    args=f"{{'url': '{url}'}}", ok=True,
+                )
 
         board = Blackboard.open(self.run_id)
-        for index in range(self.evidence):
-            board.append(
-                "evidence",
-                EvidenceItem(
-                    id=f"web-{index}",
-                    source_type="web",
-                    source_ref=PILOT_URLS[index % len(PILOT_URLS)],
-                    content=EVIDENCE_BODY,
-                    retrieved_by=agent,
-                ),
-                author=agent,
-            )
+        # Every fetch attempt and the search, recorded through the same adapters the
+        # real tool wrappers use, so the evidence on the board has the ids, source
+        # types and bodies a real run would leave there.
+        for item in _pilot_evidence(failed_fetch=self.failed_fetch)[: self.evidence]:
+            board.append("evidence", item, author=agent)
         board.write(
             "final_report",
             FinalReport(
@@ -223,6 +326,31 @@ def test_the_failed_fetch_is_recorded_but_not_a_degradation() -> None:
     assert any("HTTP 403" in error for error in summary.recovered_errors)
     assert unrecovered_errors(summary) == []
     assert summary.degraded is False
+
+
+def test_the_fixture_holds_the_evidence_shape_the_pilot_left_behind() -> None:
+    """The six items are the pilot's mix: one failed fetch, two pages, three snippets.
+
+    This pins the fixture itself. A stub that wrote page bodies under snippet ids
+    would fail sufficiency and make the approved-run tests fail for a reason the
+    real pilot never hit, which is the opposite of a regression test.
+    """
+    summary = _execute(lambda run_id, pattern, recorder: _PilotRunner(run_id))
+    items = Blackboard.open(summary.run_id).read("evidence")[0]
+
+    by_id = {item.id: item for item in items}
+    assert len(items) == 6
+    assert len([key for key in by_id if key.startswith("fetch-")]) == 3
+    assert len([key for key in by_id if key.startswith("web-")]) == 3
+    # The 403 attempt is provenance only: recorded, and never citable evidence.
+    non_citable = [item for item in items if item.source_type == "other"]
+    assert len(non_citable) == 1
+    assert "http_error" in non_citable[0].content
+    # And at least one fetched page body is real, citable page content.
+    assert any(
+        item.source_type == "web" and item.id.startswith("fetch-")
+        for item in items
+    )
 
 
 def test_an_approved_run_with_no_failures_at_all_is_not_degraded() -> None:
@@ -432,18 +560,8 @@ def test_the_pilot_summary_shape_no_longer_reports_degraded(tmp_path) -> None:
             args="{'url': 'https://www.rsc.org/periodic-table/'}",
             ok=True,
         )
-        for index in range(6):
-            blackboard.append(
-                "evidence",
-                EvidenceItem(
-                    id=f"web-{index}",
-                    source_type="web",
-                    source_ref=PILOT_URLS[index % len(PILOT_URLS)],
-                    content=EVIDENCE_BODY,
-                    retrieved_by="web_researcher",
-                ),
-                author="web_researcher",
-            )
+        for item in _pilot_evidence():
+            blackboard.append("evidence", item, author="web_researcher")
         blackboard.write(
             "final_report",
             FinalReport(

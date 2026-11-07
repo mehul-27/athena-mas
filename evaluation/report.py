@@ -126,6 +126,19 @@ def _total_cost(records: Sequence[Mapping[str, Any]]) -> float | None:
     return round(sum(values), 6) if values else None
 
 
+def _all_failed(records: Sequence[Mapping[str, Any]]) -> bool:
+    """True when a batch recorded attempts but not a single completed run.
+
+    Such a batch says something about the environment (a quota, a missing key,
+    an operator stopping it) and nothing about the pipeline, so the pooled
+    headline has to point at it rather than let it dilute the success rate
+    silently.
+    """
+    if not records:
+        return False
+    return not any(record.get("terminal_state") == "completed" for record in records)
+
+
 def _distinct(records: Sequence[Mapping[str, Any]], key: str) -> list[str]:
     return sorted({str(record.get(key)) for record in records if record.get(key)})
 
@@ -250,6 +263,29 @@ def build_overview(
     ]
 
     # --- headline ------------------------------------------------------
+    lines.append("\n## Read this first\n")
+    failed_batches = [
+        a for a in analyses if _all_failed(a.records)
+    ]
+    lines.append(
+        "- The headline below pools every batch directory it can find. It is "
+        "**not** one experiment, and the pooled success rate must not be quoted "
+        "as a measure of research quality.\n"
+    )
+    lines.append(
+        "- A run that failed before any model call (an exhausted provider quota, "
+        "a missing key, a stopped batch) counts as `failed` and drags the pooled "
+        "share down without saying anything about the pipeline. Read the "
+        "per-batch table and the outcome notes next to each batch directory "
+        "before drawing conclusions.\n"
+    )
+    if failed_batches:
+        names = ", ".join(f"`{_rel(a.results_dir)}`" for a in failed_batches)
+        lines.append(
+            f"- {len(failed_batches)} batch(es) recorded **only** failures: {names}. "
+            "See the `*.md` outcome note inside each for why.\n"
+        )
+
     hits, total, share = analyze.rate(score.success for score in scores)
     prices = _cost_counts(records)
     lines.append("\n## Headline\n")

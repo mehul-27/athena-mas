@@ -1,0 +1,99 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "3f5b8225-bc58-41e4-99da-c6a7ea17b733",
+  "wall_s": 679.2710477000073,
+  "stage_ms": {
+    "planner": 78235.2,
+    "web_researcher": 240465.2,
+    "analyst": 181760.4,
+    "writer": 119950.7,
+    "critic": 58728.2
+  },
+  "adk_tokens": 10580,
+  "a2a_bytes_out": 479,
+  "a2a_bytes_in": 582,
+  "evidence_count": 7,
+  "citation_count": 5,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 3,
+  "revision_rounds": 0,
+  "recovery_rounds": 0,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The stated confidence of 0.55 is below the 0.80 evidence-quality ceiling and lower than warranted given multiple corroborating primary sources (Wikipedia, RSC, periodictable.one, periodictableonline.com, LANL all confirm symbol W and atomic number 74); it should be raised or removed rather than left at an understated value. | Every factual claim (W = tungsten, atomic number 74, German 'wolfram' origin, transition metal, group 6, ~183.84 mass, d-block) is directly traceable to the recorded evidence; the answer is complete for what the evidence supports, so no content errors were found.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "analyst: InstructorRetryException",
+    "fetch_page: HTTP 403"
+  ],
+  "degraded": true,
+  "degraded_reason": "analyst: InstructorRetryException",
+  "recovered_errors": [
+    "fetch_page: HTTP 403"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some page fetches failed (fetch_page: HTTP 403); only pages that returned readable content were used."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": true,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.8,
+  "confidence_notes": [
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 7,
+  "claim_issues": [
+    "Tungsten is a d-block transition metal in group 6. (not about the asked subject)",
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

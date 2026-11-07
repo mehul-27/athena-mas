@@ -1,0 +1,366 @@
+{
+  "plan_id": "hierarchical-36",
+  "entries": [
+    {
+      "run_key": "gf-01__hierarchical__r0",
+      "prompt_id": "gf-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "te-02__hierarchical__r0",
+      "prompt_id": "te-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "ne-02__hierarchical__r0",
+      "prompt_id": "ne-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "cm-02__hierarchical__r0",
+      "prompt_id": "cm-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "cv-01__hierarchical__r0",
+      "prompt_id": "cv-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "ms-02__hierarchical__r0",
+      "prompt_id": "ms-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "cs-01__hierarchical__r0",
+      "prompt_id": "cs-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "dr-01__hierarchical__r0",
+      "prompt_id": "dr-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "nc-01__hierarchical__r0",
+      "prompt_id": "nc-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "ie-01__hierarchical__r0",
+      "prompt_id": "ie-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "pi-01__hierarchical__r0",
+      "prompt_id": "pi-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "tp-01__hierarchical__r0",
+      "prompt_id": "tp-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": "core: one prompt per category under the hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "gf-02__hierarchical__r0",
+      "prompt_id": "gf-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "te-01__hierarchical__r0",
+      "prompt_id": "te-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "ne-01__hierarchical__r0",
+      "prompt_id": "ne-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "cm-03__hierarchical__r0",
+      "prompt_id": "cm-03",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "cv-02__hierarchical__r0",
+      "prompt_id": "cv-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "ms-04__hierarchical__r0",
+      "prompt_id": "ms-04",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "cs-04__hierarchical__r0",
+      "prompt_id": "cs-04",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "dr-04__hierarchical__r0",
+      "prompt_id": "dr-04",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "nc-03__hierarchical__r0",
+      "prompt_id": "nc-03",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "ie-03__hierarchical__r0",
+      "prompt_id": "ie-03",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "pi-03__hierarchical__r0",
+      "prompt_id": "pi-03",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "tp-04__hierarchical__r0",
+      "prompt_id": "tp-04",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "breadth",
+      "note": "breadth: the second prompt of every category, hierarchical pattern (stochastic replicate - no seed reaches the provider)"
+    },
+    {
+      "run_key": "gf-01__hierarchical__r1",
+      "prompt_id": "gf-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "te-02__hierarchical__r1",
+      "prompt_id": "te-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "ne-02__hierarchical__r1",
+      "prompt_id": "ne-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "cm-02__hierarchical__r1",
+      "prompt_id": "cm-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "cv-01__hierarchical__r1",
+      "prompt_id": "cv-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "ms-02__hierarchical__r1",
+      "prompt_id": "ms-02",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "cs-01__hierarchical__r1",
+      "prompt_id": "cs-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "dr-01__hierarchical__r1",
+      "prompt_id": "dr-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "nc-01__hierarchical__r1",
+      "prompt_id": "nc-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "ie-01__hierarchical__r1",
+      "prompt_id": "ie-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "pi-01__hierarchical__r1",
+      "prompt_id": "pi-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    },
+    {
+      "run_key": "tp-01__hierarchical__r1",
+      "prompt_id": "tp-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 1,
+      "tier": "variance",
+      "note": "variance: repeat of the matching core prompt for within-pattern spread. This is a STOCHASTIC replicate, not a seeded reproduction: athena.run passes no seed to any provider, so the repeat=1 label records which trial this was and nothing more."
+    }
+  ],
+  "not_run": []
+}
