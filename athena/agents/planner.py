@@ -9,15 +9,23 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 
 from google.adk.agents import LlmAgent
 
 from athena.agents import bb_io
 from athena.agents.requirements import finding_requirement
-from athena.agents.routing import ensure_step_texts, source_guidance
+from athena.agents.routing import (
+    classify,
+    ensure_step_texts,
+    request_profile,
+    source_guidance,
+)
+from athena.observability.recorder import get_recorder
 from athena.settings.preferences import with_preferences
 from athena.blackboard import Blackboard, BlackboardStore, Plan, PlanStep
 from athena.config.llm import get_adk_model
+from athena.tools import registry
 
 MAX_STEPS = 4
 WORKER_ROLES = ("rag_researcher", "web_researcher", "calc_researcher")
@@ -27,12 +35,14 @@ INSTRUCTION = """You are the planner in a research pipeline.
 
 Read the question, then call `write_plan` exactly once with 2-4 short steps.
 Each step must be a string "<owner>: <what to do>", where <owner> is one of:
-- rag_researcher: search the NASA document corpus
+- rag_researcher: search a supplied local document corpus
 - web_researcher: search the web for current information
-- calc_researcher: run arithmetic or a forecast over numbers
+- calc_researcher: run the numbers, but only when the question supplies numeric
+  inputs or explicitly asks for a calculation or forecast
 
 Use at most one step per owner. Do not call the tool twice and do not answer
-the question yourself.
+the question yourself. Do not add a calculation or forecast step merely because
+the question mentions a technical object.
 """
 
 
@@ -83,18 +93,110 @@ def parse_plan_text(text: str) -> list[PlanStep]:
     return parse_steps([str(item) for item in raw])
 
 
+@dataclass(frozen=True)
+class PlanPolicy:
+    """A plan after the run's tool selection has been applied."""
+
+    steps: list[PlanStep]
+    blocked: list[str]
+    limitations: list[str]
+
+
+def prepare_plan(
+    raw_steps: list[str],
+    question: str,
+    selected: list[str] | tuple[str, ...] | None = None,
+) -> PlanPolicy:
+    """Validate the planner's steps against the enabled research tools."""
+    selection = registry.normalise_selection(selected)
+    texts = ensure_step_texts(raw_steps, question, selection)
+    parsed = parse_steps(texts)
+    profile = request_profile(question)
+    allowed: list[PlanStep] = []
+    blocked: list[str] = []
+    omitted_calculation: list[str] = []
+    for step in parsed:
+        if step.assigned_to == "calc_researcher" and not profile.allows_calculation:
+            omitted_calculation.append(step.description)
+            continue
+        if registry.role_enabled(step.assigned_to, selection):
+            allowed.append(step)
+        else:
+            blocked.append(f"{step.assigned_to}: {step.description}")
+
+    limitations: list[str] = []
+    if omitted_calculation:
+        limitations.append(
+            "Calculation/forecast steps were omitted because this is a "
+            f"{profile.kind} request that does not ask for a numeric result."
+        )
+    route = classify(question)
+    if route.needs_web and not registry.role_enabled("web_researcher", selection):
+        limitations.append(
+            "Web research is unavailable because web_search and fetch_page are disabled."
+        )
+    if route.needs_rag and not registry.role_enabled("rag_researcher", selection):
+        limitations.append(
+            "Local document research is unavailable because rag_search is disabled."
+        )
+    if not registry.enabled_ids(selection):
+        limitations.append("No research tools are enabled, so no evidence can be gathered.")
+    if blocked:
+        limitations.append(
+            "The plan asked for steps this run cannot execute: " + "; ".join(blocked)
+        )
+
+    # Renumber so the surviving plan is still a valid, ordered plan.
+    steps = [
+        step.model_copy(update={"id": f"s{index}"})
+        for index, step in enumerate(allowed, start=1)
+    ]
+    return PlanPolicy(steps, blocked, limitations)
+
+
+def _visible_selection(run_id: str, store: BlackboardStore | None, selected) -> tuple[str, ...] | None:
+    """Explicit selections win; otherwise read the one stored on the task."""
+    if selected is not None:
+        return registry.normalise_selection(selected)
+    return registry.task_selection(run_id, store)
+
+
 def build_plan_writer(
-    run_id: str, store: BlackboardStore | None = None, question: str = ""
+    run_id: str,
+    store: BlackboardStore | None = None,
+    question: str = "",
+    enabled_tools: list[str] | tuple[str, ...] | None = None,
 ):
+    selection = _visible_selection(run_id, store, enabled_tools)
+
     def write_plan(steps: list[str]) -> str:
         """Record the research plan. Each step is "<owner>: <what to do>".
 
         Args:
             steps: 2-4 steps, each formatted as "owner: description".
         """
-        plan = Plan(steps=parse_steps(ensure_step_texts(steps, question)))
+        policy = prepare_plan(steps, question, selection)
+        plan = Plan(steps=policy.steps, blocked=policy.blocked)
         version = Blackboard.open(run_id, store).write("plan", plan, author="planner")
-        return f"Plan with {len(plan.steps)} steps recorded at version {version}."
+        recorder = get_recorder()
+        if recorder is not None:
+            for limitation in policy.limitations:
+                recorder.emit(
+                    "skip",
+                    "planner",
+                    "adk",
+                    payload_summary=limitation,
+                    extra={"reason": "tool selection", "blocked": policy.blocked},
+                )
+        blocked_note = (
+            f" {len(policy.blocked)} requested step(s) were blocked by the tool selection."
+            if policy.blocked
+            else ""
+        )
+        return (
+            f"Plan with {len(plan.steps)} executable step(s) recorded at version "
+            f"{version}.{blocked_note}"
+        )
 
     return write_plan
 
@@ -104,6 +206,7 @@ def build_planner(
     store: BlackboardStore | None = None,
     task_text: str | None = None,
     message_mode: bool = False,
+    enabled_tools: list[str] | tuple[str, ...] | None = None,
 ) -> LlmAgent:
     """The planner agent, bound to one run.
 
@@ -114,9 +217,15 @@ def build_planner(
     text = task_text
     if text is None:
         text = bb_io.task_text(Blackboard.open(run_id, store))
+    selection = _visible_selection(run_id, store, enabled_tools)
 
+    profile = request_profile(text)
     base = with_preferences(INSTRUCTION)
     base = f"{base}\n{source_guidance(text)}"
+    base = f"{base}\nREQUEST PROFILE: {profile.kind}\n{profile.guidance}"
+    for note in profile.notes:
+        base = f"{base}\n{note}"
+    base = f"{base}\n{registry.capability_block(selection)}\n{registry.limit_note(selection)}"
     requirement = finding_requirement(text)
     if requirement:
         base = f"{base}\n{requirement}\nPlan one primary-source investigation per finding."
@@ -129,7 +238,7 @@ def build_planner(
         tools = []
     else:
         instruction = f"{base}\nThe task:\n{text}\n"
-        tools = [build_plan_writer(run_id, store, text)]
+        tools = [build_plan_writer(run_id, store, text, selection)]
 
     return LlmAgent(
         name="planner",

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import threading
 
+from athena.observability.context import current_agent
 from athena.observability.litellm_usage import TOTALS, usage_from_response
+from athena.observability.recorder import get_recorder
 
 _LOGGER = None
 
@@ -22,6 +24,49 @@ def record(response_obj) -> None:
     except Exception:  # noqa: BLE001 - monitoring must never break a call
         return
     TOTALS.add(tokens_in, tokens_out, reasoning)
+    note_over_cap(tokens_out)
+
+
+def note_over_cap(completion_tokens: int | None) -> None:
+    """Record a ``guardrail`` event when a completion blows past the role cap.
+
+    Passive: it emits an event and changes nothing. The clamp itself stays in
+    ``athena/config/call_limits.py``; this is the observable half of it, and it
+    is the only guardrail emit site reachable from the usage path.
+    """
+    try:
+        from athena.config import call_limits
+        from athena.observability.hooks import framework_for
+
+        role, cap = call_limits.current()
+        if not cap or not completion_tokens:
+            return
+        if int(completion_tokens) <= call_limits.RUNAWAY_FACTOR * cap:
+            return
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        recorder.emit(
+            "guardrail",
+            role or current_agent(),
+            framework_for(role),
+            ok=True,
+            payload_summary=(
+                f"guardrail runaway_output: flagged {int(completion_tokens)} "
+                f"completion tokens against a cap of {cap}"
+            ),
+            extra={
+                "rule": "runaway_output",
+                "action": "flag",
+                "stage": "model_call",
+                "role": role,
+                "cap": int(cap),
+                "factor": call_limits.RUNAWAY_FACTOR,
+                "completion_tokens": int(completion_tokens),
+            },
+        )
+    except Exception:  # noqa: BLE001 - monitoring must never break a call
+        return
 
 
 _SEEN: set[str] = set()

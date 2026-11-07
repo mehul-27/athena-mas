@@ -5,13 +5,22 @@ the blackboard. A failed search/calculation produces no evidence: a tool error
 is not a source. A failed or empty page fetch is different: it is recorded as
 provenance so the attempt is visible, marked ``other`` rather than a citable
 web source.
+
+Every item is passed through
+:func:`athena.guardrails.tool_output.validate_tool_output` before it is written.
+An item that is *invalid as data* — over the byte cap, undecodable, or a payload
+the validator itself could not inspect — is dropped and reported
+(:func:`screen_items`). An item that merely *contains* suspicious text (an
+instruction inside a page, a private host) is recorded: it is evidence, and
+suppressing it would hide what the source actually said.
 """
 
 from __future__ import annotations
 
 import hashlib
 
-from athena.blackboard.schemas import EvidenceItem
+from athena.blackboard.schemas import EvidenceItem, GuardrailFlag
+from athena.guardrails.tool_output import validate_tool_output
 from athena.tools.schemas import (
     CalcResult,
     FetchResult,
@@ -20,6 +29,37 @@ from athena.tools.schemas import (
     ToolResult,
     WebResult,
 )
+
+# Flags that make an item unusable as evidence. Everything else (embedded
+# instructions, odd URLs, control characters) is kept and reported.
+DROP_RULES = frozenset(
+    {
+        "tool_output.size_cap",
+        "tool_output.unserialisable",
+        "tool_output.encoding",
+        "tool_output.validator_error",
+    }
+)
+
+
+def screen_items(
+    items: list[EvidenceItem], tool_name: str = ""
+) -> tuple[list[EvidenceItem], list[GuardrailFlag], int]:
+    """``(kept, flags, dropped)`` for the evidence one tool call produced."""
+    kept: list[EvidenceItem] = []
+    flags: list[GuardrailFlag] = []
+    dropped = 0
+    for item in items:
+        ok, item_flags = validate_tool_output(
+            tool_name or item.source_type, item.content
+        )
+        if not ok and any(flag.rule in DROP_RULES for flag in item_flags):
+            dropped += 1
+            flags.extend(flag for flag in item_flags if flag.rule in DROP_RULES)
+            continue
+        kept.append(item)
+    return kept, flags, dropped
+
 
 
 def _evidence_id(prefix: str, key: str) -> str:
@@ -70,6 +110,7 @@ def _from_rag(result: RagResult, retrieved_by: str) -> list[EvidenceItem]:
                 source_ref=rag_source_ref(hit),
                 content=clean_text(hit.text),
                 score=hit.score,
+                provider="rag",
                 retrieved_by=retrieved_by,
             )
         )
@@ -77,17 +118,33 @@ def _from_rag(result: RagResult, retrieved_by: str) -> list[EvidenceItem]:
 
 
 def _from_web(result: WebResult, retrieved_by: str) -> list[EvidenceItem]:
-    return [
-        EvidenceItem(
-            id=_evidence_id("web", hit.url),
-            source_type="web",
-            source_ref=hit.url,
-            content=clean_text(f"{hit.title}\n{hit.snippet}".strip()),
-            score=None,
-            retrieved_by=retrieved_by,
+    """One evidence item per distinct result URL.
+
+    Two hits for the same page are one source: their evidence ids are derived from
+    the URL, so keeping both would collide in the blackboard. The per-hit provider
+    wins over the result-level provider, which means a fallback result is recorded
+    as ``searxng`` even if the caller only knows that search "used whichever
+    provider answered".
+    """
+    items: list[EvidenceItem] = []
+    seen: set[str] = set()
+    for hit in result.results:
+        key = hit.url.strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        items.append(
+            EvidenceItem(
+                id=_evidence_id("web", key),
+                source_type="web",
+                source_ref=key,
+                content=clean_text(f"{hit.title}\n{hit.snippet}".strip()),
+                score=None,
+                provider=hit.provider or result.provider,
+                retrieved_by=retrieved_by,
+            )
         )
-        for hit in result.results
-    ]
+    return items
 
 
 def _from_fetch(result: FetchResult, retrieved_by: str) -> list[EvidenceItem]:
@@ -111,6 +168,7 @@ def _from_fetch(result: FetchResult, retrieved_by: str) -> list[EvidenceItem]:
             source_ref=url,
             content=body,
             score=None,
+            provider="fetch",
             retrieved_by=retrieved_by,
         )
     ]

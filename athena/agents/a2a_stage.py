@@ -100,6 +100,8 @@ class A2AStageAgent(BaseAgent):
                 "response_bytes": traffic["in"],
                 "reasoning_tokens": body.get("reasoning_tokens"),
                 "calls": body.get("calls"),
+                "handoff": "adk->crewai",
+                "role": self.role,
             },
         )
 

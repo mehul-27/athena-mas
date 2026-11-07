@@ -1,0 +1,59 @@
+# Fly.io deployment for Athena (single machine, single volume).
+#
+# Deliberately one machine: the API keeps the active run in memory and SQLite
+# lives on one volume, so a second instance would serve a different universe.
+# `min_machines_running = 1` with autostop/autostart off keeps it exactly 1.
+#
+# Nothing here creates resources. Before the first deploy:
+#   fly launch --no-deploy --copy-config --name athena-mas   # or `fly apps create`
+#   fly volumes create athena_data --size 10 --region iad
+#   fly secrets set ATHENA_ACCESS_TOKEN=... ATHENA_ALLOWED_HOSTS=athena-mas.fly.dev
+# See docs/DEPLOYMENT.md for the full checklist.
+
+app = "athena-mas"
+primary_region = "iad"
+
+# The lifespan shutdown needs time to stop the run subprocess and the crew
+# server (5s + 5s by default); give the machine room for both.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  ATHENA_DATA_DIR = "/app/data"
+  ATHENA_START_CREW = "1"
+  ATHENA_LOG_FORMAT = "json"
+  ATHENA_SHUTDOWN_TIMEOUT_S = "8"
+  # ATHENA_ALLOWED_HOSTS and ATHENA_ACCESS_TOKEN are NOT set here: they are
+  # per-deployment and belong in `fly secrets set`, never in the repo.
+
+[[mounts]]
+  source = "athena_data"
+  destination = "/app/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "60s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 2
+
+[deploy]
+  # A volume can only be attached to one machine, so never run two at once.
+  strategy = "immediate"

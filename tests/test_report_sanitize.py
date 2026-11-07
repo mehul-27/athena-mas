@@ -111,6 +111,145 @@ def test_fetch_page_is_attributed_only_for_successful_fetches() -> None:
     assert clean.tools_used == ["fetch_page", "web_search"]
 
 
+def test_claims_absent_from_a_truncated_stub_are_removed() -> None:
+    stub = _evidence(
+        "fetch-314", "web", "https://docs.python.org/3/whatsnew/3.14.html",
+        "What's new in Python 3.14. Python 3.14 ...",
+    )
+    report = FinalReport(
+        answer="Python 3.14 added template strings and compression.zstd.",
+        key_points=["Python 3.14 introduced deferred annotations."],
+        citations=[
+            Citation(
+                source_type="web", source_ref=stub.source_ref,
+                quote_or_summary="Python 3.14 ...",
+            )
+        ],
+        confidence=0.8,
+        run_id="r",
+    )
+
+    clean = sanitize_report(report, None, "r", items=[stub], question="What changed in Python 3.14?")
+
+    assert "template" not in clean.answer.lower()
+    assert "zstd" not in clean.answer.lower()
+    assert clean.confidence <= 0.3
+    assert not clean.citations
+
+
+def test_each_surviving_claim_keeps_a_supporting_citation() -> None:
+    first = _evidence(
+        "fetch-alpha", "web", "https://example.com/alpha",
+        "Alpha thrusters use pressurized nitrogen and a nozzle. " * 3,
+    )
+    second = _evidence(
+        "fetch-beta", "web", "https://example.com/beta",
+        "Beta thrusters use hydrazine and a catalyst bed. " * 3,
+    )
+    report = FinalReport(
+        answer="Alpha thrusters use pressurized nitrogen and a nozzle. Beta thrusters use hydrazine and a catalyst bed.",
+        key_points=[],
+        citations=[
+            Citation(
+                source_type="web", source_ref=first.source_ref,
+                quote_or_summary="Alpha.",
+            )
+        ],
+        confidence=0.7,
+        run_id="r",
+    )
+
+    clean = sanitize_report(
+        report, None, "r", items=[first, second],
+        question="Compare alpha and beta thrusters.",
+    )
+
+    refs = {citation.source_ref for citation in clean.citations}
+    assert first.source_ref in refs
+    assert second.source_ref in refs
+    assert "Beta thrusters" in clean.answer
+
+
+def test_a_claim_is_kept_when_the_cited_content_supports_it() -> None:
+    evidence = _evidence(
+        "fetch-315", "web", "https://docs.python.org/3/whatsnew/3.15.html",
+        "Python 3.15 adds lazy imports and a frozendict builtin. "
+        "The release also makes UTF-8 the default encoding. " * 2,
+    )
+    report = FinalReport(
+        answer="Python 3.15 adds lazy imports and a frozendict builtin.",
+        key_points=["The release makes UTF-8 the default encoding."],
+        citations=[
+            Citation(
+                source_type="web", source_ref=evidence.source_ref,
+                quote_or_summary="Python 3.15 ...",
+            )
+        ],
+        confidence=0.7,
+        run_id="r",
+    )
+
+    clean = sanitize_report(
+        report, None, "r", items=[evidence], question="What changed in Python 3.15?"
+    )
+
+    assert "lazy imports" in clean.answer
+    assert clean.citations
+    assert clean.confidence == 0.7
+
+
+def test_named_entity_evidence_is_backfilled_into_citations() -> None:
+    generic = _evidence(
+        "web-generic", "web", "https://example.com/cold-gas",
+        "A cold gas thruster expands pressurized gas through a nozzle.",
+    )
+    named_fetch = _evidence(
+        "fetch-spacex", "web", "https://example.com/spacex-cold-gas",
+        "SpaceX cold-gas thruster hardware description.",
+    )
+    named_snippet = _evidence(
+        "web-spacex", "web", "https://en.wikipedia.org/wiki/SpaceX_rocket_engines",
+        "SpaceX rocket engines include Merlin, Draco and SuperDraco.",
+    )
+    unread_pdf = _evidence(
+        "web-pdf", "web", "https://example.com/spacex-paper.pdf",
+        "SpaceX paper snippet.",
+    )
+    report = _report([
+        Citation(source_type="web", source_ref=generic.source_ref, quote_or_summary="definition")
+    ])
+
+    clean = sanitize_report(
+        report, None, "r", items=[generic, named_fetch, named_snippet, unread_pdf],
+        question="How does SpaceX's nitrogen thruster work in space?",
+    )
+
+    refs = [citation.source_ref for citation in clean.citations]
+    assert generic.source_ref in refs
+    assert named_fetch.source_ref in refs
+    assert named_snippet.source_ref in refs
+    assert unread_pdf.source_ref not in refs
+
+
+def test_pdf_search_snippet_is_not_citable_as_a_read_source() -> None:
+    pdf_snippet = _evidence(
+        "web-pdf", "web", "https://example.com/paper.pdf",
+        "PDF A Detailed Study of Cold Gas Propulsion",
+    )
+    html_snippet = _evidence(
+        "web-html", "web", "https://example.com/article",
+        "Cold gas thruster definition",
+    )
+    report = _report([
+        Citation(source_type="web", source_ref=pdf_snippet.source_ref, quote_or_summary="snippet"),
+        Citation(source_type="web", source_ref=html_snippet.source_ref, quote_or_summary="snippet"),
+    ])
+
+    clean = sanitize_report(report, None, "r", items=[pdf_snippet, html_snippet])
+
+    assert [citation.source_ref for citation in clean.citations] == [html_snippet.source_ref]
+
+
 def test_failed_fetch_alone_does_not_claim_fetch_page() -> None:
     failed = _evidence(
         "fetch-fail", "other", "http://127.0.0.1/private",

@@ -13,8 +13,9 @@ import os
 CAP_ENV = "ATHENA_MAX_LLM_CALLS"
 
 PATTERN_CAPS = {
-    "sequential": 12,
-    "p2p": 12,
+    # These two patterns now add one bounded post-critic recovery pass.
+    "sequential": 24,
+    "p2p": 24,
     "parallel": 30,
     "hierarchical": 40,
 }

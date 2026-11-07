@@ -410,7 +410,8 @@ def test_composer_pattern_is_sent_and_locked_during_an_active_run() -> None:
     source = _read("app.js")
 
     assert 'state = {\n  view: "run", pattern: L.DEFAULT_PATTERN' in source
-    assert 'body: JSON.stringify({ question: submittedQuestion, pattern: state.pattern })' in source
+    assert "pattern: state.pattern" in source
+    assert "tools: state.researchTools === null ? null : state.researchTools.slice()" in source
     assert "const patternSelect = $(\"composer-pattern\")" in source
     assert "patternSelect.disabled = locked" in source
     assert "patternTrigger.disabled = locked" in source
@@ -460,6 +461,123 @@ def test_metrics_empty_and_heatmap_failure_states_exist() -> None:
     assert "Heatmap image unavailable" in source
     assert 'id="metrics-empty"' in html
     assert 'id="heatmap-empty"' in html
+
+
+def test_run_details_is_scoped_to_the_research_response_header() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+
+    assert 'id="nav-details"' not in html
+    assert 'data-view="details"' not in html
+    assert 'id="report-details"' in html
+    assert html.index('id="report-details"') < html.index('id="copy-markdown"')
+    assert 'id="exchange-details"' not in html
+    assert "!state.runId || Boolean(state.loadingRunId)" in source
+    assert "state.loadingRunId" in source
+    assert 'showView("details")' in source
+    assert 'id="details-back"' in html
+
+
+def test_research_tools_pills_are_multi_select_and_accessible() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+    css = _read("style.css")
+
+    assert 'id="research-tools-trigger"' in html
+    assert 'id="research-tools-menu"' in html
+    assert 'aria-multiselectable="true"' in html
+    assert 'aria-haspopup="listbox"' in html
+    assert "L.toggleToolSelection" in source
+    assert "L.toolSelectionLabel" in source
+    assert "All tools" in html
+    assert "select at least one tool" in source
+    assert ".tool-check" in css
+    assert "border-radius: 50%" in css
+
+
+def test_activity_trace_is_rendered_for_research_and_chat() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+    chat = _read("chat.js")
+    css = _read("style.css")
+
+    assert 'id="activity-trace"' in html and 'id="activity-list"' in html
+    assert 'id="activity-toggle"' in html
+    assert "L.researchTrace" in source
+    assert "renderActivityTrace" in source
+    assert "event.run_id !== state.runId" in source
+    assert "Activity unavailable" in source
+    assert "state.eventsError" in source
+    assert "chatTrace" in chat
+    assert 'name === "trace"' in chat
+    assert ".activity-trace.is-complete" in css
+    assert "is-complete" in source
+
+
+def test_documents_view_lists_the_indexed_corpus() -> None:
+    html = _read("index.html")
+    source = _read("app.js")
+
+    assert 'id="documents-content"' in html
+    assert 'id="documents-refresh"' in html
+    assert "async function loadDocuments" in source
+    assert "/api/settings/library" in source
+    assert "document-row" in source
+    assert "Upload and personal document management are not implemented" in html
+
+
+def test_contextual_workspace_is_shared_by_chat_and_research() -> None:
+    html = _read("index.html")
+    app = _read("app.js")
+    chat = _read("chat.js")
+    context = _read("context.js")
+    css = _read("style.css")
+
+    for element in ("context-panel", "context-tabs", "context-pane-sources",
+                    "context-pane-run", "context-pane-context",
+                    "context-backdrop", "context-close"):
+        assert f'id="{element}"' in html
+    assert 'src="/context.js"' in html
+    assert 'data-context-tab="sources"' in html
+    assert 'data-context-tab="run"' in html
+    assert 'data-context-tab="context"' in html
+    assert "root.AthenaContext =" in context
+    assert "AthenaContext?.register(\"research\"" in app
+    assert "AthenaContext.register(\"chat\"" in chat
+    assert "researchContextModel" in app and "chatContextModel" in chat
+    assert "responseMetaFromModel" in app and "responseMetaFromModel" in chat
+    assert 'id="research-response-meta"' in html
+    assert "chat-response-meta" in chat
+    assert "context-panel" in css and "context-backdrop" in css
+    assert "position: fixed" in css
+    assert "AthenaContext?.setView(name)" in app
+    assert "!state.runId || state.loadingRunId" in app
+    assert "token !== state.navToken" in chat
+
+
+def test_tools_popover_uses_one_grid_row_layout() -> None:
+    css = _read("style.css")
+
+    assert "grid-template-columns: 16px minmax(0, 1fr)" in css
+    assert ".tool-option {" in css
+    assert "display: grid" in css
+    assert "min-height: 46px" in css
+    assert "overflow-x: hidden" in css
+    assert "left: auto; right: 0" in css
+    assert ".tools-menu {" in css
+    assert "padding: 6px" in css
+
+
+def test_scroll_restoration_is_keyed_by_stable_ids() -> None:
+    app = _read("app.js")
+    chat = _read("chat.js")
+
+    assert "athena.research.scroll.v1" in app
+    assert "athena.chat.scroll.v1" in chat
+    assert "saveResearchScroll" in app and "restoreResearchScroll" in app
+    assert "saveCurrentScroll" in chat and "restoreAfterRender" in chat
+    assert "getItem(SCROLL_KEY" in chat
+    assert "localStorage.setItem(RESEARCH_SCROLL_KEY" in app
 
 
 def test_critic_rejection_detail_is_rendered_in_run_details() -> None:

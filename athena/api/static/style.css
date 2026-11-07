@@ -191,11 +191,6 @@ a { color: var(--accent-2); }
 .dot.warn { background: var(--warn); }
 
 .appbar-actions { display: flex; gap: 8px; }
-.chip-button {
-  background: var(--panel-2); color: var(--fg-dim); border: none;
-  border-radius: 999px; padding: 4px 12px; cursor: pointer; font: inherit; font-size: .85em;
-}
-.chip-button.on { color: var(--on-accent); background: var(--accent-2); }
 
 /* ---------------- banner + toast ---------------- */
 
@@ -742,12 +737,6 @@ button.primary[disabled], button.ghost[disabled] { opacity: .55; cursor: progres
 .test-result { margin-top: 12px; }
 .empty-state { color: var(--muted); font-style: italic; }
 
-.footer {
-  flex: 0 0 auto; display: flex; gap: 16px; align-items: center;
-  padding: 6px 16px; color: var(--muted); font-size: .8em; background: var(--panel);
-}
-.footer a { color: var(--accent-2); }
-
 @media (max-width: 1100px) {
   .sidebar { width: 220px; flex-basis: 220px; }
   .form-grid { grid-template-columns: 1fr; }
@@ -755,7 +744,6 @@ button.primary[disabled], button.ghost[disabled] { opacity: .55; cursor: progres
 
 @media (max-width: 860px) {
   .main { padding: 0 16px; }
-  .appbar-actions .chip-button { display: none; }
   .empty-hero h1 { font-size: 28px; }
   .user-turn { max-width: 100%; }
 }
@@ -795,7 +783,6 @@ button.primary[disabled], button.ghost[disabled] { opacity: .55; cursor: progres
 
 .icon { width: 16px; height: 16px; fill: currentColor; flex: 0 0 auto; display: inline-block; vertical-align: -2px; }
 .icon.sm { width: 14px; height: 14px; }
-.icon.lg { width: 18px; height: 18px; }
 .icon-fallback { width: 14px; height: 14px; display: inline-block; }
 html[data-theme="dark"] .icon-theme-light { display: none; }
 html[data-theme="light"] .icon-theme-dark { display: none; }
@@ -1084,7 +1071,7 @@ html[data-theme="light"] .icon-theme-dark { display: none; }
 /* ---------------- responsive ---------------- */
 
 @media (max-width: 1100px) {
-  .form-grid { grid-template-columns: 1fr; }
+  /* Must follow the base .chat-column / .chat-composer rules above. */
   .chat-column, .chat-composer { max-width: 100%; }
 }
 @media (max-width: 860px) {
@@ -1151,3 +1138,479 @@ html[data-theme="light"] .icon-theme-dark { display: none; }
 .chat-composer textarea, #about-me {
   font-family: var(--font);
 }
+
+/* ---------------- execution activity trace ---------------- */
+
+.activity-trace {
+  width: 100%;
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid var(--accent-2);
+  border-radius: 8px;
+  background: var(--inset);
+  color: var(--fg-dim);
+  font-size: .84em;
+  overflow: hidden;
+}
+.activity-trace.is-complete { border-left-color: var(--border); color: var(--muted); }
+.activity-trace.is-failed { border-left-color: var(--red); }
+.activity-head {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 10px;
+  background: none; border: 0; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.activity-head:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+.activity-trace > summary { list-style: none; }
+.activity-trace > summary::-webkit-details-marker { display: none; }
+.activity-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted); flex: 0 0 auto;
+}
+.activity-dot.is-live { background: var(--accent-2); animation: trace-pulse 1.1s infinite; }
+.activity-dot.is-error { background: var(--red); }
+.activity-dot.is-done { background: var(--green); opacity: .65; }
+.activity-state { color: var(--fg-dim); white-space: nowrap; }
+.activity-sep { color: var(--border-strong); }
+.activity-current {
+  flex: 1 1 auto; min-width: 0; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.activity-time { color: var(--muted); font-size: .78em; white-space: nowrap; }
+.activity-expand { color: var(--accent-2); white-space: nowrap; }
+.activity-trace.is-complete .activity-expand { color: var(--muted); }
+.activity-list {
+  list-style: none; margin: 0; padding: 2px 10px 8px;
+  max-height: 230px; overflow-y: auto;
+  border-top: 1px solid var(--border-soft);
+}
+.activity-row { display: flex; gap: 8px; padding: 5px 0; }
+.activity-row + .activity-row { border-top: 1px solid var(--border-soft); }
+.activity-row-dot {
+  width: 5px; height: 5px; border-radius: 50%; margin-top: 7px;
+  background: var(--muted); flex: 0 0 auto;
+}
+.activity-row.is-running .activity-row-dot { background: var(--accent-2); }
+.activity-row.is-failed .activity-row-dot { background: var(--red); }
+.activity-row.is-skipped { opacity: .62; }
+.activity-row-body { min-width: 0; flex: 1 1 auto; }
+.activity-row-head {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+.activity-agent { color: var(--muted); font-size: .76em; }
+.activity-label { color: var(--fg-dim); font-weight: 500; font-size: .92em; }
+.activity-badge {
+  color: var(--accent-2); border: 1px solid var(--border-soft);
+  border-radius: 999px; padding: 0 6px;
+  font-size: .68em; letter-spacing: .06em; text-transform: uppercase;
+}
+.activity-row-time { margin-left: auto; color: var(--muted); font-size: .74em; white-space: nowrap; }
+.activity-detail { margin: 1px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+.activity-error { margin: 1px 0 0; color: var(--red); overflow-wrap: anywhere; }
+.activity-trace.is-complete .activity-label { color: var(--fg-dim); }
+.chat-trace { margin: 2px 0 4px; }
+@keyframes trace-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+/* ---------------- research tools picker ---------------- */
+
+.composer-divider {
+  display: inline-block; width: 1px; height: 18px;
+  background: var(--border-soft); margin: 0 2px;
+}
+.tools-picker .pattern-trigger { min-width: 112px; }
+.tools-trigger.is-empty { border-color: var(--warn); color: var(--warn); }
+/* Anchored to the trigger's right edge: the Tools pill sits at the end of the
+   composer row, so opening rightward overflows a narrow viewport. */
+.tools-menu {
+  left: auto; right: 0;
+  min-width: 260px;
+  width: min(330px, calc(100vw - 24px));
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 6px;
+  overflow-x: hidden;
+}
+.tool-option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: start;
+  justify-content: initial;
+  min-height: 46px;
+  padding: 8px;
+}
+.tool-check {
+  width: 14px; height: 14px; margin-top: 3px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-strong); border-radius: 50%;
+  align-self: start;
+}
+.tool-option.selected .tool-check { border-color: var(--accent-2); }
+.tool-option.selected .tool-check::after {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent-2);
+}
+.tool-option.is-disabled { opacity: .55; cursor: not-allowed; }
+.tool-option-body {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; width: auto;
+}
+.tool-option-body strong {
+  color: var(--fg-dim); font-weight: 500; line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.tool-option-desc {
+  color: var(--muted); font-size: .78em; line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.tool-option-reason {
+  color: var(--warn); font-size: .76em; line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.composer-pattern-note.is-warning { color: var(--warn); }
+
+/* ---------------- run details and documents ---------------- */
+
+.details-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.details-head .hint { margin: .25em 0 0; }
+.tool-report-card { margin-top: 12px; }
+.tool-report-row {
+  display: flex; gap: 10px; padding: 4px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.tool-report-row .sidebar-label { min-width: 145px; margin: 0; }
+.tool-report-row.is-warning { color: var(--warn); }
+.tool-report-calls { margin-top: 8px; }
+.tool-report-calls summary { color: var(--muted); cursor: pointer; }
+.tool-report-call {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 0; border-top: 1px solid var(--border-soft); font-size: .86em;
+}
+.tool-report-call.is-error strong { color: var(--red); }
+.documents-list { list-style: none; margin: 8px 0; padding: 0; }
+.document-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 8px 0; border-top: 1px solid var(--border-soft);
+}
+.document-row span { color: var(--muted); font-size: .82em; white-space: nowrap; }
+.mono { font-family: var(--font-mono); }
+
+/* ---------------- response metadata ---------------- */
+
+.response-meta {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 5px; margin: 10px 0 2px;
+}
+.response-meta-pill {
+  border: 1px solid var(--border-soft);
+  background: var(--panel-2); color: var(--fg-dim);
+  border-radius: 999px; padding: 2px 9px;
+  font: inherit; font-size: .74em; line-height: 1.45;
+  white-space: nowrap; cursor: pointer;
+}
+.response-meta-pill:hover { border-color: var(--accent-2); color: var(--fg); }
+.response-meta-pill.is-ok { color: var(--green); }
+.response-meta-pill.is-warn { color: var(--warn); }
+.response-meta-pill.is-error { color: var(--red); }
+.response-meta-pill.is-live { color: var(--accent-2); }
+.response-meta-pill.is-muted { color: var(--muted); }
+.response-meta-pill:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.chat-response-meta { margin: 6px 0 2px; }
+
+/* A `[n]` marker in an answer is a real button that opens the context panel on
+ * that source; it has to read as part of the prose, not as a control. */
+.citation-marker {
+  -webkit-appearance: none; appearance: none;
+  display: inline; margin: 0 1px; padding: 0 3px;
+  background: none; background-image: none; border: 0; border-radius: 3px;
+  color: var(--accent-2); font: inherit; font-size: .82em; line-height: inherit;
+  vertical-align: baseline; cursor: pointer;
+}
+.citation-marker:hover { background: var(--panel-2); text-decoration: underline; }
+.citation-marker:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 1px; }
+
+/* ---------------- contextual workspace ---------------- */
+
+/* One breakpoint, shared with context.js (`CONTEXT_BREAKPOINT = 1280`):
+ * at or above it the panel is a column in `.shell`; below it context.js sets
+ * `body.context-overlay` and the panel becomes an overlay with a backdrop.
+ * tests/test_ui_static.py fails if the two copies of the number drift apart. */
+.context-panel {
+  flex: 0 0 clamp(300px, 30vw, 380px);
+  width: clamp(300px, 30vw, 380px);
+  min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--panel); border-left: 1px solid var(--border-soft);
+  position: relative; z-index: 20;
+}
+.context-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.context-head-text { min-width: 0; }
+.context-head h2 { margin: 2px 0 0; font-size: .98em; }
+.context-head .hint {
+  margin: 3px 0 0; font-size: .76em; line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.context-head-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.context-status { display: inline-flex; }
+.context-status-chip {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  border: 1px solid var(--border-soft); padding: 1px 8px;
+  color: var(--muted); font-size: .7em; white-space: nowrap;
+}
+.context-status-chip.is-ok { color: var(--green); }
+.context-status-chip.is-warn { color: var(--warn); }
+.context-status-chip.is-error { color: var(--red); }
+.context-status-chip.is-live { color: var(--accent-2); }
+.context-tabs {
+  display: flex; gap: 2px; padding: 8px 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.context-tab {
+  flex: 1 1 0; min-width: 0; padding: 6px 2px 7px;
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--muted); font: inherit; font-size: .8em;
+  cursor: pointer;
+}
+.context-tab:hover { color: var(--fg-dim); }
+.context-tab.is-active { color: var(--fg); border-bottom-color: var(--accent-2); }
+.context-tab:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+.context-panes { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 14px 22px; }
+.context-pane { display: flex; flex-direction: column; gap: 10px; }
+.context-summary { margin: 0; color: var(--muted); font-size: .76em; line-height: 1.4; }
+.context-source-list, .context-activity-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column;
+}
+.context-source { padding: 9px 0; border-top: 1px solid var(--border-soft); }
+.context-source:first-child { border-top: 0; padding-top: 0; }
+.context-source-head {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 5px; min-width: 0;
+}
+.context-source-title {
+  min-width: 0; color: var(--fg); font-family: var(--font);
+  font-size: .9em; line-height: 1.35; overflow-wrap: anywhere;
+  text-decoration: none;
+}
+a.context-source-title:hover { color: var(--accent-2); text-decoration: underline; }
+.context-source-badge {
+  border: 1px solid var(--border-soft); border-radius: 999px;
+  padding: 0 6px; color: var(--muted);
+  font-size: .66em; line-height: 1.5; white-space: nowrap;
+}
+.context-source-badge.is-ok { color: var(--green); }
+.context-source-badge.is-warn { color: var(--warn); }
+.context-source-meta {
+  margin: 3px 0 0; color: var(--muted); font-size: .74em;
+  line-height: 1.4; overflow-wrap: anywhere;
+}
+.context-source-excerpt {
+  margin: 4px 0 0; color: var(--fg-dim); font-family: var(--font);
+  font-size: .82em; line-height: 1.45; overflow-wrap: anywhere;
+}
+.context-run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.context-kicker { color: var(--muted); font-size: .76em; }
+.context-run-meta { margin: 0; color: var(--muted); font-size: .8em; }
+.context-tool-box, .context-warning-box, .context-prompt, .context-notes {
+  border: 1px solid var(--border-soft); background: var(--inset);
+  border-radius: 6px; padding: 8px 10px;
+}
+.context-kv {
+  margin: 2px 0; color: var(--fg-dim); font-size: .78em;
+  line-height: 1.4; overflow-wrap: anywhere;
+}
+.context-kv-list {
+  display: grid; grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  gap: 5px 10px; margin: 0; font-size: .8em;
+}
+.context-kv-list dt { color: var(--muted); }
+.context-kv-list dd { margin: 0; color: var(--fg-dim); overflow-wrap: anywhere; }
+.context-prompt p {
+  margin: 5px 0 0; color: var(--fg-dim); font-family: var(--font);
+  font-size: .84em; line-height: 1.45; white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.context-note {
+  margin: 4px 0 0; color: var(--muted); font-size: .78em;
+  line-height: 1.45; overflow-wrap: anywhere;
+}
+.context-empty {
+  margin: 0; color: var(--muted); font-size: .82em; line-height: 1.5;
+}
+.context-activity-list .activity-row { padding: 6px 0; }
+.context-open-details { margin-top: 2px; align-self: flex-start; }
+
+/* Open state. `context-open` is set whenever the panel is visible; `main` may
+ * then shrink instead of pushing the panel out of the viewport, and the source
+ * row a `[n]` marker asked for is marked. */
+body.context-open .main { min-width: 0; }
+.context-source.is-target {
+  background: var(--inset); outline: 1px solid var(--accent-2);
+  outline-offset: 3px; border-radius: 5px;
+}
+
+/* Below the breakpoint the panel leaves the flow and covers the app. The
+ * backdrop carries `.hidden` while closed, so this only ever shows a real
+ * overlay; the body class also stops the page scrolling underneath it. */
+.context-backdrop { display: none; }
+body.context-overlay { overflow: hidden; }
+body.context-overlay .context-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(380px, 94vw); flex-basis: auto;
+  z-index: 60; box-shadow: -14px 0 34px rgba(0, 0, 0, .38);
+}
+body.context-overlay .context-backdrop {
+  display: block; position: fixed; inset: 0;
+  z-index: 55; background: rgba(0, 0, 0, .48);
+}
+
+@media (max-width: 680px) {
+  .activity-head { flex-wrap: wrap; }
+  .activity-current { flex-basis: 100%; order: 5; }
+  .activity-time { margin-left: auto; }
+  .activity-list { max-height: 180px; }
+  .details-head { flex-direction: column; }
+  .document-row { flex-direction: column; gap: 2px; }
+  .context-head { padding: 12px 12px 9px; }
+  .context-panes { padding: 10px 12px 18px; }
+  .context-kv-list { grid-template-columns: minmax(82px, auto) minmax(0, 1fr); }
+  .response-meta { gap: 4px; }
+  .response-meta-pill { font-size: .72em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-dot.is-live { animation: none; opacity: 1; }
+}
+
+/* ---------------- document preview drawer ---------------- */
+/* Read-only: the drawer reuses the context panel chrome and shows the indexed
+ * chunk text the Documents view already knows about. */
+
+.doc-preview {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; justify-content: flex-end;
+}
+.doc-preview-panel {
+  height: 100%; width: min(460px, 96vw); flex: 0 0 auto; flex-basis: auto;
+  background: var(--panel); border-left: 1px solid var(--border-soft);
+  box-shadow: -14px 0 34px rgba(0, 0, 0, .42);
+}
+.doc-preview-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .48); }
+.doc-chunk { padding: 9px 0; border-top: 1px solid var(--border-soft); }
+.doc-chunk:first-child { border-top: 0; padding-top: 0; }
+.doc-chunk-text {
+  margin: 4px 0 0; color: var(--fg-dim); font-family: var(--font);
+  font-size: .86em; line-height: 1.5; white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.document-open { padding: 0; font-size: .8em; }
+
+/* ---------------- evaluation ---------------- */
+
+.eval-charts { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.eval-chart {
+  display: block; max-width: 100%; border: 1px solid var(--border-soft);
+  border-radius: 6px; overflow: hidden; background: var(--panel);
+}
+.eval-chart:hover { border-color: var(--accent-2); }
+.eval-chart img { display: block; max-width: 100%; height: auto; }
+.eval-batch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.eval-batch select { min-width: 0; max-width: 100%; }
+
+/* ------------------------------------------------ telemetry: cost, heat, waterfall */
+.telemetry { display: block; margin-top: var(--gap); }
+.telemetry h2 { font-size: .95em; }
+.telemetry .sidebar-label { margin-top: 12px; }
+.telemetry .hint { margin: 2px 0 0; overflow-wrap: anywhere; }
+
+.heatmap-grid {
+  display: grid; gap: 2px; margin-top: 4px;
+  align-items: stretch; overflow-x: auto;
+}
+.hg-corner, .hg-col, .hg-row-head {
+  color: var(--muted); font-size: .74em; line-height: 1.25;
+  padding: 4px 5px; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hg-col { align-self: end; text-align: center; }
+.hg-row-head {
+  color: var(--fg-dim); font-family: var(--font-mono); font-size: .76em;
+  display: flex; align-items: center;
+}
+.hg-cell {
+  font: inherit; font-size: .78em; color: var(--fg);
+  background: transparent; cursor: pointer;
+  border: 1px solid var(--border-soft); border-radius: 4px;
+  padding: 4px 5px; min-height: 24px; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hg-cell:hover { border-color: var(--border-strong); }
+.hg-cell:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.hg-cell.is-empty {
+  color: var(--muted); font-style: italic; cursor: default;
+  border-style: dashed;
+}
+/* recorded events but no value (an unpriced cost cell): still opens its events */
+.hg-cell.is-empty.is-unpriced { cursor: pointer; font-style: normal; }
+.hg-cell.is-empty.is-unpriced:hover { border-color: var(--border-strong); }
+.hg-cell.is-selected { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+.waterfall { display: grid; gap: 4px; margin-top: 4px; }
+.wf-row, .wf-axis {
+  display: grid; grid-template-columns: minmax(84px, max-content) minmax(0, 1fr);
+  gap: 8px; align-items: center;
+}
+.wf-agent {
+  color: var(--fg-dim); font-family: var(--font-mono); font-size: .76em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wf-track {
+  position: relative; height: 18px; border-radius: 4px;
+  background: var(--inset); overflow: hidden;
+}
+.wf-bar {
+  position: absolute; top: 0; height: 100%; border-radius: 3px;
+  background: var(--adk); opacity: .8;
+}
+.wf-bar.is-failed { background: var(--red); }
+.wf-bar.is-open {
+  background: repeating-linear-gradient(45deg, var(--warn), var(--warn) 3px,
+    transparent 3px, transparent 6px);
+}
+.wf-ticks { position: relative; height: 14px; }
+.wf-tick {
+  position: absolute; top: 0; transform: translateX(-50%);
+  color: var(--muted); font-size: .68em; white-space: nowrap;
+}
+
+.cell-events, .provenance {
+  margin-top: 12px; padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.cell-events ol, .provenance ol {
+  list-style: none; margin: 6px 0 0; padding: 0;
+  display: grid; gap: 4px; max-height: 320px; overflow-y: auto;
+}
+.cell-event, .provenance li {
+  border: 1px solid var(--border-soft); border-radius: 5px;
+  padding: 5px 7px; font-size: .78em; line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.cell-event.is-failed { border-color: var(--red); }
+.cell-event-kind {
+  display: block; color: var(--muted);
+  font-family: var(--font-mono); font-size: .92em;
+}
+.prov-hop-label {
+  color: var(--muted); font-family: var(--font-mono);
+  font-size: .92em; margin-right: 6px;
+}
+.prov-hop-detail { color: var(--fg-dim); }
+
+@media (max-width: 680px) {
+  .waterfall { font-size: .92em; }
+  .wf-row, .wf-axis { grid-template-columns: minmax(64px, max-content) minmax(0, 1fr); }
+  .heatmap-grid { font-size: .92em; }
+}
+

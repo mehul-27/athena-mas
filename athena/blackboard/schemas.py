@@ -49,6 +49,13 @@ class Task(_Model):
     persona: str | None = Field(
         default=None, description="Optional persona the answer should adopt."
     )
+    tools: list[str] | None = Field(
+        default=None,
+        description=(
+            "Research tool ids enabled for this run. None means all tools; an "
+            "empty list means no tools."
+        ),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, description="Creation time, UTC."
     )
@@ -71,6 +78,13 @@ class Plan(_Model):
     steps: list[PlanStep] = Field(
         default_factory=list, description="Ordered steps to execute."
     )
+    blocked: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Steps the planner requested but the run's tool selection cannot "
+            "execute. Kept visible so a partial plan is not mistaken for a full one."
+        ),
+    )
 
 
 class EvidenceItem(_Model):
@@ -84,6 +98,9 @@ class EvidenceItem(_Model):
     content: str = Field(description="The retrieved text or computed value.")
     score: float | None = Field(
         default=None, description="Relevance or confidence score, if the source gave one."
+    )
+    provider: str = Field(
+        default="", description="Search provider or source channel, when recorded."
     )
     retrieved_by: str = Field(description="Name of the agent that retrieved it.")
 

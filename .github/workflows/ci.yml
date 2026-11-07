@@ -1,0 +1,120 @@
+# CI: offline pytest plus the static front end's node tests.
+#
+# Nothing here needs a provider key, a network service or a secret: the suite
+# is offline by default (pyproject's `addopts = -m 'not e2e'`), and the JS tests
+# are plain `node` scripts. Deployment is NOT part of CI - no job builds a cloud
+# resource, logs in anywhere, or deploys.
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # Belt and braces: nothing in this job may reach a model or a search API.
+      LLM_API_KEY: ""
+      LLM_MODEL: ""
+      SEARCH_PROVIDER: disabled
+      ATHENA_OFFLINE: "1"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # The app imports matplotlib/chromadb/fastembed at collection time, so the
+      # full pinned set is installed rather than a subset.
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip check
+
+      - name: pytest
+        run: python -m pytest -q
+
+  node:
+    name: node tests (static front end)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: logic.js tests
+        run: node athena/api/static/logic.test.js
+
+      - name: composer tests
+        run: node athena/api/static/app.composer.test.js
+
+  config:
+    name: deployment config sanity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Parse fly.toml and check the single-machine rules
+        run: |
+          python - <<'PY'
+          import tomllib
+
+          with open("fly.toml", "rb") as handle:
+              config = tomllib.load(handle)
+          http = config["http_service"]
+          assert http["internal_port"] == 8080, http
+          assert http["min_machines_running"] == 1, http
+          assert http["auto_stop_machines"] is False, http
+          assert config["mounts"][0]["destination"] == "/app/data", config["mounts"]
+          assert config["vm"]["memory"] == "2gb", config["vm"]
+          assert http["checks"][0]["path"] == "/healthz", http["checks"]
+          print("fly.toml ok")
+          PY
+
+      - name: Dockerfile and .dockerignore contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+          assert "FROM python:3.13-slim" in dockerfile
+          assert "USER athena" in dockerfile
+          assert "/healthz" in dockerfile and "HEALTHCHECK" in dockerfile
+          assert "athena.agents.crew_server" not in dockerfile  # entrypoint owns it
+          assert "ATHENA_ACCESS_TOKEN=" not in dockerfile, "never bake a token"
+
+          ignore = Path(".dockerignore").read_text(encoding="utf-8").splitlines()
+          for pattern in (".env", ".venv/", "data/settings/", "**/master.key"):
+              assert pattern in ignore, pattern
+
+          entry = Path("docker/entrypoint.sh").read_text(encoding="utf-8")
+          assert "athena.agents.crew_server" in entry
+          assert "exec uvicorn athena.api.app:create_app --factory" in entry
+          assert "ATHENA_ACCESS_TOKEN" not in entry
+          print("container config ok")
+          PY

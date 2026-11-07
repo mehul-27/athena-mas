@@ -3,6 +3,11 @@
 In blackboard mode the payload is only ``run_id`` + ``role`` + a short
 instruction. In p2p mode it also carries a ``context`` string, because the
 message is the only data path. Byte counters here feed the run summary.
+
+When the deployment has a shared token (``ATHENA_A2A_SHARED_TOKEN``), every
+payload is HMAC-signed over ``run_id`` + body so the crew server can tell a real
+request from one another local process posted. With no token configured nothing
+is added: a single-host dev run keeps working unchanged.
 """
 
 from __future__ import annotations
@@ -15,6 +20,8 @@ import httpx
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.helpers import get_stream_response_text, new_text_message
 from a2a.types import Role, SendMessageRequest
+
+from athena.guardrails.interagent import TOKEN_ENV, PeerAuth, sign_message
 
 INSTRUCTION_LIMIT = 300
 MAX_PAYLOAD_BYTES = 600
@@ -38,6 +45,16 @@ def stats() -> dict[str, int]:
     return dict(_STATS)
 
 
+def configured_token() -> str:
+    """The shared token if the deployment set one, else an empty string.
+
+    Never generates one: a client that invented its own token would sign
+    messages the server cannot verify, turning a local dev run into a stream of
+    signature failures.
+    """
+    return (os.getenv(TOKEN_ENV) or "").strip()
+
+
 def build_payload(run_id: str, role: str, instruction: str, context: str | None = None) -> str:
     """The exact JSON body sent to the CrewAI server."""
     body: dict[str, str] = {
@@ -51,7 +68,14 @@ def build_payload(run_id: str, role: str, instruction: str, context: str | None 
     payload = json.dumps(body, separators=(",", ":"))
     if context is None and len(payload.encode("utf-8")) > MAX_PAYLOAD_BYTES:
         raise ValueError(f"blackboard-mode payload exceeds {MAX_PAYLOAD_BYTES} bytes")
-    return payload
+    token = configured_token()
+    if not token:
+        return payload
+    # The signature covers the unsigned body, so the server can verify it
+    # without knowing the order the JSON keys arrived in.
+    return json.dumps(
+        sign_message(body, PeerAuth(token)), separators=(",", ":"), sort_keys=True
+    )
 
 
 def a2a_timeout() -> float:

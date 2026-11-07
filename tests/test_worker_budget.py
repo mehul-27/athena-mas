@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from athena.agents.budget import (
+    DEFAULT_CALC_MAX_MODEL_CALLS,
+    DEFAULT_CALC_MAX_TOOL_CALLS,
     DEFAULT_MAX_MODEL_CALLS,
     DEFAULT_MAX_TOOL_CALLS,
     DEFAULT_RESEARCHER_MAX_MODEL_CALLS,
@@ -67,8 +69,23 @@ def test_duplicate_is_detected_and_not_counted_as_new_work() -> None:
 
     assert result == DUPLICATE_RESULT
     assert result["duplicate"] is True
+    assert result["isError"] is True
+    assert result["blocked_by"] == "duplicate"
     assert budget.stop_reason == "duplicate"
     assert budget.tool_calls == 1
+
+
+def test_tool_budget_block_carries_an_explicit_outcome() -> None:
+    budget = Budget(max_tool_calls=0)
+    result = budget.before_tool(
+        SimpleNamespace(name="calculate"), {"expression": "1 + 1"}, None
+    )
+
+    assert result["isError"] is True
+    assert result["error_type"] == "ToolBudgetBlocked"
+    assert result["blocked_by"] == "budget"
+    assert result["block_reason"] == "tool_budget"
+    assert budget.stop_reason == "tool_budget"
 
 
 def test_duplicate_ignores_key_order_and_whitespace() -> None:
@@ -152,16 +169,30 @@ def test_researcher_limits_are_role_scoped(monkeypatch) -> None:
     ):
         monkeypatch.delenv(name, raising=False)
 
+    for name in ("ATHENA_CALC_MAX_TOOL_CALLS", "ATHENA_CALC_MAX_MODEL_CALLS"):
+        monkeypatch.delenv(name, raising=False)
     researcher = Budget.from_env("researcher")
     role_researcher = Budget.from_env("web_researcher")
+    calc = Budget.from_env("calc_researcher")
     analyst = Budget.from_env("analyst")
 
     assert researcher.max_tool_calls == DEFAULT_RESEARCHER_MAX_TOOL_CALLS == 8
     assert researcher.max_model_calls == DEFAULT_RESEARCHER_MAX_MODEL_CALLS == 10
     assert role_researcher.max_tool_calls == 8
     assert role_researcher.max_model_calls == 10
+    assert calc.max_tool_calls == DEFAULT_CALC_MAX_TOOL_CALLS == 4
+    assert calc.max_model_calls == DEFAULT_CALC_MAX_MODEL_CALLS == 4
     assert analyst.max_tool_calls == DEFAULT_MAX_TOOL_CALLS == 3
     assert analyst.max_model_calls == DEFAULT_MAX_MODEL_CALLS == 6
+
+
+def test_calc_limits_are_independently_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("ATHENA_CALC_MAX_TOOL_CALLS", "2")
+    monkeypatch.setenv("ATHENA_CALC_MAX_MODEL_CALLS", "3")
+
+    calc = Budget.from_env("calc_researcher")
+
+    assert (calc.max_tool_calls, calc.max_model_calls) == (2, 3)
 
 
 def test_researcher_env_override_does_not_change_the_global_default(monkeypatch) -> None:

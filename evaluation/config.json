@@ -1,0 +1,792 @@
+{
+  "version": 1,
+  "name": "athena-eval-matrix",
+  "dataset_path": "evaluation/dataset.json",
+  "context_sharing_by_pattern": {
+    "sequential": "blackboard",
+    "parallel": "blackboard",
+    "hierarchical": "blackboard",
+    "p2p": "message_passing"
+  },
+  "matrix": {
+    "patterns": [
+      "sequential",
+      "parallel",
+      "hierarchical",
+      "p2p"
+    ],
+    "context_sharing": [
+      "blackboard",
+      "message_passing"
+    ],
+    "seeds": [
+      0,
+      1
+    ],
+    "repeats": 2,
+    "tool_selection": null,
+    "per_run_timeout_s": 900.0,
+    "llm_call_cap": null,
+    "backend": "in_process"
+  },
+  "budget": {
+    "max_total_usd": 8.0,
+    "max_run_usd": 0.6,
+    "max_runs": 72,
+    "max_total_wall_s": 28800.0,
+    "on_budget_exhausted": "stop"
+  },
+  "pricing": {
+    "currency": "USD",
+    "unit": "per_1m_tokens",
+    "models": {
+      "gemini-2.5-flash": {
+        "input": 0.3,
+        "output": 2.5
+      },
+      "gemini-2.5-pro": {
+        "input": 1.25,
+        "output": 10.0
+      },
+      "gemini-2.0-flash": {
+        "input": 0.1,
+        "output": 0.4
+      },
+      "gpt-4o-mini": {
+        "input": 0.15,
+        "output": 0.6
+      },
+      "gpt-4o": {
+        "input": 2.5,
+        "output": 10.0
+      }
+    },
+    "note": "List prices per million tokens, used only for an estimate. There is no 'default' entry on purpose: a model that is not listed produces a null cost and cost_basis saying why, rather than a made-up number. Add an entry for the model in LLM_MODEL to get cost estimates."
+  },
+  "plan": {
+    "id": "stratified-72",
+    "target_runs": 72,
+    "entries": [
+      {
+        "run_key": "gf-01__sequential__r0",
+        "prompt_id": "gf-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "gf-01__parallel__r0",
+        "prompt_id": "gf-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "gf-01__hierarchical__r0",
+        "prompt_id": "gf-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "gf-01__p2p__r0",
+        "prompt_id": "gf-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "te-02__sequential__r0",
+        "prompt_id": "te-02",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "te-02__parallel__r0",
+        "prompt_id": "te-02",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "te-02__hierarchical__r0",
+        "prompt_id": "te-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "te-02__p2p__r0",
+        "prompt_id": "te-02",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ne-02__sequential__r0",
+        "prompt_id": "ne-02",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ne-02__parallel__r0",
+        "prompt_id": "ne-02",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ne-02__hierarchical__r0",
+        "prompt_id": "ne-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ne-02__p2p__r0",
+        "prompt_id": "ne-02",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cm-02__sequential__r0",
+        "prompt_id": "cm-02",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cm-02__parallel__r0",
+        "prompt_id": "cm-02",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cm-02__hierarchical__r0",
+        "prompt_id": "cm-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cm-02__p2p__r0",
+        "prompt_id": "cm-02",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cv-01__sequential__r0",
+        "prompt_id": "cv-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cv-01__parallel__r0",
+        "prompt_id": "cv-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cv-01__hierarchical__r0",
+        "prompt_id": "cv-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cv-01__p2p__r0",
+        "prompt_id": "cv-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ms-02__sequential__r0",
+        "prompt_id": "ms-02",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ms-02__parallel__r0",
+        "prompt_id": "ms-02",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ms-02__hierarchical__r0",
+        "prompt_id": "ms-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ms-02__p2p__r0",
+        "prompt_id": "ms-02",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cs-01__sequential__r0",
+        "prompt_id": "cs-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cs-01__parallel__r0",
+        "prompt_id": "cs-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cs-01__hierarchical__r0",
+        "prompt_id": "cs-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "cs-01__p2p__r0",
+        "prompt_id": "cs-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "dr-01__sequential__r0",
+        "prompt_id": "dr-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "dr-01__parallel__r0",
+        "prompt_id": "dr-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "dr-01__hierarchical__r0",
+        "prompt_id": "dr-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "dr-01__p2p__r0",
+        "prompt_id": "dr-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "nc-01__sequential__r0",
+        "prompt_id": "nc-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "nc-01__parallel__r0",
+        "prompt_id": "nc-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "nc-01__hierarchical__r0",
+        "prompt_id": "nc-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "nc-01__p2p__r0",
+        "prompt_id": "nc-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ie-01__sequential__r0",
+        "prompt_id": "ie-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ie-01__parallel__r0",
+        "prompt_id": "ie-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ie-01__hierarchical__r0",
+        "prompt_id": "ie-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "ie-01__p2p__r0",
+        "prompt_id": "ie-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "pi-01__sequential__r0",
+        "prompt_id": "pi-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "pi-01__parallel__r0",
+        "prompt_id": "pi-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "pi-01__hierarchical__r0",
+        "prompt_id": "pi-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "pi-01__p2p__r0",
+        "prompt_id": "pi-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "tp-01__sequential__r0",
+        "prompt_id": "tp-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "tp-01__parallel__r0",
+        "prompt_id": "tp-01",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "tp-01__hierarchical__r0",
+        "prompt_id": "tp-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "tp-01__p2p__r0",
+        "prompt_id": "tp-01",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "core",
+        "note": "core: one prompt per category, run under every pattern"
+      },
+      {
+        "run_key": "gf-02__sequential__r0",
+        "prompt_id": "gf-02",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "gf-03__parallel__r0",
+        "prompt_id": "gf-03",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "te-01__hierarchical__r0",
+        "prompt_id": "te-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "te-04__p2p__r0",
+        "prompt_id": "te-04",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "ne-01__sequential__r0",
+        "prompt_id": "ne-01",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "ne-04__parallel__r0",
+        "prompt_id": "ne-04",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "cm-03__hierarchical__r0",
+        "prompt_id": "cm-03",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "cm-04__p2p__r0",
+        "prompt_id": "cm-04",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "cv-02__sequential__r0",
+        "prompt_id": "cv-02",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "cv-04__parallel__r0",
+        "prompt_id": "cv-04",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "ms-01__hierarchical__r0",
+        "prompt_id": "ms-01",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "cs-03__p2p__r0",
+        "prompt_id": "cs-03",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "dr-04__sequential__r0",
+        "prompt_id": "dr-04",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "ie-02__parallel__r0",
+        "prompt_id": "ie-02",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "pi-02__hierarchical__r0",
+        "prompt_id": "pi-02",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "tp-03__p2p__r0",
+        "prompt_id": "tp-03",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 0,
+        "repeat": 0,
+        "tier": "breadth",
+        "note": "breadth: prompt diversity, one pattern each (round-robin)"
+      },
+      {
+        "run_key": "pi-04__sequential__r1",
+        "prompt_id": "pi-04",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      },
+      {
+        "run_key": "pi-04__parallel__r1",
+        "prompt_id": "pi-04",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      },
+      {
+        "run_key": "pi-04__hierarchical__r1",
+        "prompt_id": "pi-04",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      },
+      {
+        "run_key": "pi-04__p2p__r1",
+        "prompt_id": "pi-04",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      },
+      {
+        "run_key": "dr-03__sequential__r1",
+        "prompt_id": "dr-03",
+        "pattern": "sequential",
+        "context_sharing": "blackboard",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      },
+      {
+        "run_key": "dr-03__parallel__r1",
+        "prompt_id": "dr-03",
+        "pattern": "parallel",
+        "context_sharing": "blackboard",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      },
+      {
+        "run_key": "dr-03__hierarchical__r1",
+        "prompt_id": "dr-03",
+        "pattern": "hierarchical",
+        "context_sharing": "blackboard",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      },
+      {
+        "run_key": "dr-03__p2p__r1",
+        "prompt_id": "dr-03",
+        "pattern": "p2p",
+        "context_sharing": "message_passing",
+        "seed": 1,
+        "repeat": 1,
+        "tier": "variance",
+        "note": "variance: repeat trial for within-pattern spread"
+      }
+    ]
+  }
+}

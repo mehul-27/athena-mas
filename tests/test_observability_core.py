@@ -50,6 +50,14 @@ def test_extra_is_small_and_json_safe() -> None:
     assert event.extra["nested"] == {"a": 1}
 
 
+def test_extra_keeps_a_complete_run_summary_payload() -> None:
+    extra = {f"field_{index}": index for index in range(28)}
+    event = _event(kind="stage_end", extra=extra)
+
+    assert len(event.extra) == 28
+    assert event.extra["field_27"] == 27
+
+
 def test_store_assigns_ordered_seq_per_run(tmp_path) -> None:
     store = SQLiteEventStore(tmp_path / "events.db")
     for index in range(5):

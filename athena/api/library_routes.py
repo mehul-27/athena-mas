@@ -1,4 +1,5 @@
-"""Library status and a safe, single-flight RAG rebuild."""
+"""Library status, a safe single-flight RAG rebuild, and a read-only document
+preview for the Documents view."""
 
 from __future__ import annotations
 
@@ -13,13 +14,20 @@ from fastapi import APIRouter, HTTPException, Request
 
 from athena.api.guards import guard
 from athena.tools import settings as tool_settings
-from athena.tools.rag.status import chunk_count, index_exists
+from athena.tools.rag.status import chunk_count, document_preview, document_rows, index_exists
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+# The preview lives under /api/library so its URL names what it returns; it is
+# read-only and capped, and shares this module's guarded, model-free reads.
+documents_router = APIRouter(prefix="/api/library", tags=["library"])
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INGEST_SCRIPT = "scripts/ingest_nasa.py"
 JOB_TIMEOUT_S = 1800
+PREVIEW_MAX_CHUNKS = 12
+PREVIEW_MAX_CHARS = 12000
+PREVIEW_MAX_ID_LENGTH = 300
 
 _LOCK = threading.Lock()
 _JOB: dict[str, Any] = {
@@ -60,6 +68,7 @@ def _status() -> dict[str, Any]:
             "chunks": chunk_count(),
             "index_exists": index_exists(),
             "corpus_files": _corpus_files(),
+            "documents": document_rows(),
         },
         "search": {
             "provider": tool_settings.search_provider(),
@@ -138,3 +147,27 @@ def reindex(request: Request) -> dict:
     thread = threading.Thread(target=_run_reindex, daemon=True)
     thread.start()
     return {"started": True, "state": "running"}
+
+
+@documents_router.get("/documents/{doc_id}")
+def document(doc_id: str, request: Request) -> dict:
+    """A capped, read-only preview of one indexed document's chunk text.
+
+    It reads the chunk text that is already stored in the local index: nothing
+    is re-rendered, re-ingested or written, and the response is capped by both
+    chunk count and characters. An unknown or missing document is a 404 rather
+    than an empty preview, so the drawer can say why there is nothing to show.
+    """
+    guard(request)
+    wanted = (doc_id or "").strip()
+    if not wanted or len(wanted) > PREVIEW_MAX_ID_LENGTH:
+        raise HTTPException(status_code=404, detail="no such document")
+    preview = document_preview(
+        wanted, max_chunks=PREVIEW_MAX_CHUNKS, max_chars=PREVIEW_MAX_CHARS
+    )
+    if preview is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no indexed text for {wanted!r}",
+        )
+    return preview

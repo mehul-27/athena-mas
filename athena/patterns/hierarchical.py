@@ -18,9 +18,13 @@ from google.genai import types
 
 from athena.agents import bb_io
 from athena.agents.researcher import build_role_researcher
-from athena.agents.routing import classify, critique_needs_research
+from athena.agents.routing import classify, preferred_roles
+from athena.agents.sufficiency import assess
 from athena.agents.supervisor import timed_stage
+from athena.agents.tool_report import build_tool_report
 from athena.blackboard import Blackboard
+from athena.observability.recorder import get_recorder
+from athena.tools import registry
 
 DEFAULT_MAX_REVISIONS = 1
 FALLBACK_WORKER = "rag_researcher"
@@ -49,10 +53,13 @@ class HierarchicalAgent(BaseAgent):
             yield event
 
         blackboard = Blackboard.open(self.run_id, self.store)
+        selection = registry.task_selection(self.run_id, self.store)
+        available = registry.available_roles(selection)
         plan = bb_io.section(blackboard, "plan")
         steps = plan.steps if plan else []
         if not steps:
-            steps_text = [FALLBACK_WORKER]
+            task = bb_io.section(blackboard, "task")
+            steps_text = preferred_roles(task.question if task else "", available)
         else:
             # The supervisor dispatches by role, not by step description. Running
             # the same worker twice for two steps therefore repeats the same task
@@ -60,14 +67,26 @@ class HierarchicalAgent(BaseAgent):
             steps_text = list(dict.fromkeys(step.assigned_to for step in steps))
 
         for role in steps_text:
-            worker = self.workers.get(role) or self.workers[FALLBACK_WORKER]
+            if role not in available:
+                reason = "tools disabled by the user"
+                self._note_skip(role, reason)
+                yield Event(
+                    author=self.name,
+                    custom_metadata={"skipped": True, "role": role, "reason": reason},
+                )
+                continue
+            worker = self.workers.get(role)
+            if worker is None:
+                continue
             async for event in timed_stage(self.name, worker, ctx):
                 yield event
 
         async for event in timed_stage(self.name, self.analyst, ctx):
             yield event
 
-        rounds = 0
+        revisions = 0
+        recoveries = 0
+        recovery_limit = max(1, self.revision_limit)
         while True:
             async for event in timed_stage(self.name, self.writer, ctx):
                 yield event
@@ -76,28 +95,87 @@ class HierarchicalAgent(BaseAgent):
 
             critique = bb_io.section(blackboard, "critique")
             rejected = critique is not None and not critique.approved
-            if not rejected or critique.severity != "high" or rounds >= self.revision_limit:
+            task = bb_io.section(blackboard, "task")
+            tool_report = build_tool_report(self.run_id, self.store)
+            assessment = assess(
+                task.question if task else "",
+                bb_io.load_evidence(blackboard, limit=None),
+                enabled_tools=task.tools if task else None,
+                tool_report=tool_report,
+            )
+
+            if not rejected and assessment.answer_as_asked:
                 break
-            rounds += 1
-            if critique_needs_research(list(critique.issues or [])):
-                task = bb_io.section(blackboard, "task")
-                gap_text = bb_io.critique_text(blackboard)
+
+            missing_subject = bool(assessment.missing_subjects)
+            missing_aspect = bool(assessment.missing_aspects)
+            evidence_gap = missing_subject or missing_aspect or not assessment.ok
+            if evidence_gap and recoveries < recovery_limit:
+                recoveries += 1
+                issues = "; ".join(assessment.issues)
+                missing = set(assessment.missing_tools)
+                route = classify(task.question if task else "")
+                if route.kind == "local":
+                    role = "rag_researcher"
+                elif missing_subject or "fetch_page" in missing or assessment.required_urls:
+                    role = "web_researcher"
+                elif "rag_search" in missing and "rag_researcher" in available:
+                    role = "rag_researcher"
+                else:
+                    role = "web_researcher"
+                if role not in available:
+                    self._note_recovery(
+                        skipped=True,
+                        role=role,
+                        reason="tools disabled by the user",
+                    )
+                    break
                 recovery_task = (
                     f"{bb_io.task_text(blackboard)}\n\n"
-                    f"CRITIC GAPS TO RESOLVE WITH NEW PRIMARY EVIDENCE:\n{gap_text}"
+                    f"MISSING SUBJECTS: {', '.join(assessment.missing_subjects) or '(none)'}\n"
+                    f"MISSING ANSWER PARTS: {', '.join(assessment.missing_aspects) or '(none)'}\n"
+                    f"BLOCKING EVIDENCE ISSUES:\n{issues or '(none)'}\n\n"
+                    f"CRITIC GAPS TO RESOLVE WITH NEW PRIMARY EVIDENCE:\n"
+                    f"{bb_io.critique_text(blackboard)}\n\n"
+                    "Target only these gaps. Do not repeat successful calls. Fetch only "
+                    "missing or failed URLs, and preserve the evidence already recorded."
                 )
-                role = "rag_researcher" if classify(
-                    task.question if task else ""
-                ).kind == "local" else "web_researcher"
+                self._note_recovery(
+                    skipped=False,
+                    role=role,
+                    reason=(
+                        ("missing subjects: " + ", ".join(assessment.missing_subjects))
+                        if missing_subject
+                        else ("missing parts: " + ", ".join(assessment.missing_aspects))
+                        if missing_aspect
+                        else (issues or "critic requested stronger evidence")
+                    ),
+                )
                 worker = build_role_researcher(
                     role, self.run_id, self.store, task_text=recovery_task
                 )
                 async for event in timed_stage(self.name, worker, ctx):
                     yield event
+                continue
+
+            # Evidence is sufficient for the asked subject; a high rejection is
+            # now a prose revision, not a reason to repeat research.
+            if rejected and critique.severity == "high" and revisions < self.revision_limit:
+                revisions += 1
+                self._note_recovery(
+                    skipped=True,
+                    reason="existing evidence is sufficient; revise with recorded evidence",
+                )
+                continue
+            break
 
         yield Event(
             author=self.name,
-            custom_metadata={"revision_rounds": rounds, "workers": steps_text},
+            custom_metadata={
+                "revision_rounds": revisions,
+                "recovery_rounds": recoveries,
+                "workers": steps_text,
+            },
         )
 
         report = bb_io.section(blackboard, "final_report")
@@ -106,6 +184,40 @@ class HierarchicalAgent(BaseAgent):
             author=self.name,
             content=types.Content(parts=[types.Part(text=text)]),
             custom_metadata={"final": True},
+        )
+
+    def _note_recovery(
+        self, *, skipped: bool, reason: str, role: str = ""
+    ) -> None:
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        recorder.emit(
+            "recovery",
+            "supervisor",
+            "adk",
+            payload_summary=(
+                ("research recovery skipped: " if skipped else "research recovery: ")
+                + (f"{role} " if role else "")
+                + reason
+            ),
+            extra={
+                "skipped": skipped,
+                "role": role,
+                "reason": reason,
+            },
+        )
+
+    def _note_skip(self, role: str, reason: str) -> None:
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        recorder.emit(
+            "skip",
+            role,
+            "adk",
+            payload_summary=f"{role} skipped: {reason}",
+            extra={"reason": reason, "role": role},
         )
 
 

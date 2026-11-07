@@ -85,10 +85,6 @@
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-research"></use></svg>
           <span>Research</span>
         </button>
-        <button class="nav-item" data-view="details" type="button" id="nav-details">
-          <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-run-details"></use></svg>
-          <span>Run details</span>
-        </button>
         <button class="nav-item" data-view="how" type="button" id="nav-how">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-how"></use></svg>
           <span>Architecture</span>
@@ -96,6 +92,11 @@
         <button class="nav-item" data-view="documents" type="button" id="nav-documents">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-documents"></use></svg>
           <span>Documents</span>
+        </button>
+        <!-- Shown only when evaluation/results holds real runs; see refreshEvalNav(). -->
+        <button class="nav-item hidden" data-view="eval" type="button" id="nav-eval">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-run-details"></use></svg>
+          <span>Evaluation</span>
         </button>
         <button class="nav-item" data-view="settings" type="button" id="nav-settings">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-settings"></use></svg>
@@ -123,6 +124,11 @@
                 <span>Model</span>
               </label>
               <select id="chat-model" aria-label="Chat model"></select>
+              <button class="ghost btn-sm context-toggle" id="context-toggle" type="button"
+                      aria-expanded="false" aria-controls="context-panel" title="Show or hide the response context panel">
+                <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-sidebar"></use></svg>
+                <span>Context</span>
+              </button>
             </header>
 
             <div class="chat-menu hidden" id="chat-menu" role="menu">
@@ -215,11 +221,22 @@
                 <p id="user-question"></p>
               </div>
 
+              <div class="activity-trace hidden" id="activity-trace" aria-live="polite">
+                <button class="activity-head" id="activity-toggle" type="button" aria-expanded="false" aria-controls="activity-list">
+                  <span class="activity-dot" id="activity-dot" aria-hidden="true"></span>
+                  <span class="activity-state" id="activity-state">Activity</span>
+                  <span class="activity-sep" aria-hidden="true">·</span>
+                  <span class="activity-current" id="activity-current"></span>
+                  <span class="activity-time" id="activity-time"></span>
+                  <span class="activity-expand" id="activity-expand">Expand</span>
+                </button>
+                <ol class="activity-list hidden" id="activity-list"></ol>
+              </div>
+
               <div class="exchange-status hidden" id="exchange-status" role="status" aria-live="polite">
                 <span id="exchange-status-text"></span>
                 <span class="exchange-status-actions">
                   <button class="link-button hidden" id="reconnect-run" type="button">Reconnect live updates</button>
-                  <button class="link-button hidden" id="exchange-details" type="button">Run details</button>
                 </span>
               </div>
 
@@ -229,17 +246,28 @@
                     <h2 id="result-title">athena</h2>
                     <div class="card-head-actions">
                       <span class="badge hidden" id="replay-badge">REPLAY</span>
+                      <button class="ghost hidden" id="report-details" type="button">Run details</button>
+                      <button class="ghost context-toggle" id="research-context-toggle" type="button"
+                              aria-expanded="false" aria-controls="context-panel"
+                              title="Show or hide the response context panel">Context</button>
                       <button class="ghost" id="copy-markdown" type="button">Copy Markdown</button>
                     </div>
                   </div>
                   <p class="answer prose" id="report-answer">Ask a question, or replay a recording.</p>
                   <ul class="points prose" id="report-points"></ul>
                   <div class="meta-row" id="report-meta"></div>
+                  <div class="response-meta" id="research-response-meta" aria-label="Response metadata"></div>
                   <div class="critique-detail hidden" id="critique-detail" aria-live="polite"></div>
+                  <!-- Citation markers are the inline source list; the full,
+                       de-duplicated source list lives in the context panel. -->
                   <div class="citations" id="report-citations"></div>
-                  <div class="sources">
-                    <div class="sidebar-label">Sources</div>
-                    <ol id="sources-list"></ol>
+                  <div class="provenance hidden" id="provenance-panel" aria-live="polite">
+                    <div class="card-head">
+                      <span class="sidebar-label" id="provenance-title">Provenance</span>
+                      <button class="link-button" id="provenance-close" type="button">close</button>
+                    </div>
+                    <ol id="provenance-hops"></ol>
+                    <p class="empty-state hidden" id="provenance-empty"></p>
                   </div>
                 </section>
               </div>
@@ -286,7 +314,16 @@
                   </li>
                 </ul>
               </div>
-              <span class="composer-pattern-note">applies to the next run</span>
+              <span class="composer-divider" aria-hidden="true"></span>
+              <span class="composer-pattern-label" id="research-tools-label">Tools</span>
+              <div class="pattern-picker tools-picker" id="research-tools-picker">
+                <button class="pattern-trigger tools-trigger" id="research-tools-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="research-tools-menu" aria-labelledby="research-tools-label research-tools-current">
+                  <span id="research-tools-current">All tools</span>
+                  <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-chevron-down"></use></svg>
+                </button>
+                <ul class="pattern-menu tools-menu hidden" id="research-tools-menu" role="listbox" aria-multiselectable="true" aria-labelledby="research-tools-label"></ul>
+              </div>
+              <span class="composer-pattern-note" id="research-tools-note">applies to the next run</span>
             </div>
             <div class="composer-row">
               <textarea id="question" rows="1" maxlength="500" placeholder="Ask a research question&hellip;"></textarea>
@@ -296,10 +333,12 @@
         </section>
 
         <section class="view hidden" id="view-details">
-          <header class="view-head">
-            <h1>Run details</h1>
-            <p class="hint">Pattern selection, the live run views, and the raw comparison data.
-              The conversation stays on Research.</p>
+          <header class="view-head details-head">
+            <div>
+              <h1>Run details</h1>
+              <p class="hint" id="details-run-label">Open a Research answer to inspect its run.</p>
+            </div>
+            <button class="ghost" id="details-back" type="button">Back to answer</button>
           </header>
 
           <section class="card">
@@ -333,6 +372,13 @@
             </table>
             <div class="sidebar-label">Event log</div>
             <ol class="event-log" id="event-log"></ol>
+            <section class="card inset tool-report-card">
+              <div class="card-head">
+                <h2>Tools</h2>
+                <span class="hint" id="tool-report-note"></span>
+              </div>
+              <div class="tool-report" id="tool-report"></div>
+            </section>
           </div>
 
           <div class="tab-panel hidden" id="panel-blackboard">
@@ -365,6 +411,41 @@
               <img id="heatmap" class="heatmap hidden" alt="per-agent heatmap" />
               <p class="empty-state hidden" id="heatmap-empty"></p>
             </div>
+
+            <section class="telemetry card inset" id="telemetry" aria-label="Cost, heat grid and waterfall">
+              <div class="card-head">
+                <h2>Cost, heat grid and waterfall</h2>
+                <span class="card-head-actions">
+                  <a class="link-button hidden" id="heatmap-download" href="#" download>download PNG</a>
+                </span>
+              </div>
+              <p class="hint" id="telemetry-status"></p>
+              <p class="empty-state hidden" id="telemetry-empty"></p>
+
+              <div class="sidebar-label">Agent &times; metric</div>
+              <div class="heatmap-grid" id="telemetry-metric-grid" role="table"
+                   aria-label="Agent by metric heat matrix"></div>
+              <p class="hint hidden" id="telemetry-metric-caption"></p>
+
+              <div class="sidebar-label">Agent &times; stage</div>
+              <div class="heatmap-grid" id="telemetry-bucket-grid" role="table"
+                   aria-label="Agent by stage heat matrix"></div>
+              <p class="hint hidden" id="telemetry-bucket-caption"></p>
+
+              <div class="sidebar-label">Waterfall</div>
+              <div class="waterfall" id="telemetry-waterfall" aria-label="Span waterfall"></div>
+              <p class="empty-state hidden" id="telemetry-waterfall-empty"></p>
+
+              <div class="cell-events hidden" id="telemetry-cells" aria-live="polite">
+                <div class="card-head">
+                  <span class="sidebar-label" id="telemetry-cells-title">Cell events</span>
+                  <button class="link-button" id="telemetry-cells-close" type="button">close</button>
+                </div>
+                <ol id="telemetry-cell-list"></ol>
+                <p class="empty-state hidden" id="telemetry-cells-empty"></p>
+              </div>
+            </section>
+
             <div class="table-wrap">
               <table class="table" id="compare-table">
                 <thead><tr><th>run</th><th>wall</th><th>tokens</th><th>A2A out/in</th><th>evidence</th><th>tools</th><th>confidence</th><th>verdict</th><th>degraded</th></tr></thead>
@@ -404,13 +485,108 @@
 
         <section class="view hidden" id="view-documents">
           <section class="card">
-            <div class="card-head"><h2>My documents</h2></div>
-            <p class="hint">Documents stay on this computer. The index status and rebuild controls live in Settings → Library.</p>
-            <p class="empty-state">Upload and personal document management come in a later step; the NASA handbook is the built-in document.</p>
+            <div class="card-head">
+              <h2>My documents</h2>
+              <button class="ghost btn-sm" id="documents-refresh" type="button">Refresh</button>
+            </div>
+            <p class="hint">These are the documents in the local index. They stay on this computer.
+              In Chat, turn on <strong>Documents</strong> to retrieve relevant passages for a message;
+              when it is off, no document search runs.</p>
+            <div id="documents-content" class="library-content"></div>
+            <p class="hint" id="documents-status"></p>
+            <p class="hint">Upload and personal document management are not implemented in this build.
+              The indexed corpus is the source of truth; add files to <span class="mono">data/corpus</span>
+              and rebuild from Settings → Library.</p>
+          </section>
+        </section>
+
+        <section class="view hidden" id="view-eval">
+          <header class="view-head">
+            <div>
+              <h1>Evaluation</h1>
+              <p class="hint">Real harness output from <span class="mono">evaluation/results</span>.
+                Nothing here is sampled or synthesised: an empty directory shows no table.</p>
+            </div>
+          </header>
+          <section class="card">
+            <div class="card-head">
+              <h2>Results</h2>
+              <div class="card-head-actions">
+                <label class="hint" for="eval-run-picker">batch</label>
+                <select id="eval-run-picker" aria-label="Evaluation results batch"></select>
+              </div>
+            </div>
+            <p class="hint" id="eval-status"></p>
+            <p class="empty-state hidden" id="eval-empty"></p>
+            <div class="table-wrap">
+              <table class="table hidden" id="eval-table">
+                <thead>
+                  <tr>
+                    <th>pattern</th><th>n</th><th>success rate</th><th>median latency</th>
+                    <th>median tokens</th><th>median cost</th><th>citation precision</th>
+                  </tr>
+                </thead>
+                <tbody id="eval-body"></tbody>
+              </table>
+            </div>
+            <div id="eval-charts" class="eval-charts"></div>
+            <p class="hint">Charts are the PNGs the harness wrote for this batch.</p>
           </section>
         </section>
       </main>
     </div>
+
+    <aside class="context-panel hidden" id="context-panel" role="complementary" aria-label="Response context" tabindex="-1">
+      <header class="context-head">
+        <div class="context-head-text">
+          <p class="eyebrow">Context</p>
+          <h2 id="context-title">Response</h2>
+          <p class="hint" id="context-subtitle"></p>
+        </div>
+        <div class="context-head-actions">
+          <span class="context-status" id="context-status"></span>
+          <button class="icon-button" id="context-close" type="button" aria-label="Close context panel">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-close"></use></svg>
+          </button>
+        </div>
+      </header>
+      <div class="context-tabs" id="context-tabs" role="tablist" aria-label="Response context sections">
+        <button class="context-tab is-active" id="context-tab-sources" data-context-tab="sources" type="button" role="tab" aria-selected="true" aria-controls="context-pane-sources">Sources</button>
+        <button class="context-tab" id="context-tab-run" data-context-tab="run" type="button" role="tab" aria-selected="false" aria-controls="context-pane-run">Run</button>
+        <button class="context-tab" id="context-tab-context" data-context-tab="context" type="button" role="tab" aria-selected="false" aria-controls="context-pane-context">Context</button>
+      </div>
+      <div class="context-panes">
+        <section class="context-pane" id="context-pane-sources" role="tabpanel" aria-labelledby="context-tab-sources"></section>
+        <section class="context-pane hidden" id="context-pane-run" role="tabpanel" aria-labelledby="context-tab-run"></section>
+        <section class="context-pane hidden" id="context-pane-context" role="tabpanel" aria-labelledby="context-tab-context"></section>
+      </div>
+    </aside>
+    <div class="context-backdrop hidden" id="context-backdrop" aria-hidden="true"></div>
+  </div>
+
+  <!-- Read-only document preview. It reuses the context panel's chrome and
+       layout classes; the text is the indexed chunk text, nothing re-rendered. -->
+  <div class="doc-preview hidden" id="doc-preview" aria-hidden="true">
+    <aside class="context-panel doc-preview-panel" id="doc-preview-panel" role="dialog"
+           aria-modal="false" aria-labelledby="doc-preview-title" tabindex="-1">
+      <header class="context-head">
+        <div class="context-head-text">
+          <p class="eyebrow">Document</p>
+          <h2 id="doc-preview-title">Preview</h2>
+          <p class="hint" id="doc-preview-subtitle"></p>
+        </div>
+        <div class="context-head-actions">
+          <span class="context-status" id="doc-preview-status"></span>
+          <button class="icon-button" id="doc-preview-close" type="button" aria-label="Close document preview">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-close"></use></svg>
+          </button>
+        </div>
+      </header>
+      <div class="context-panes">
+        <section class="context-pane" id="doc-preview-body"></section>
+      </div>
+    </aside>
+    <div class="doc-preview-backdrop" id="doc-preview-backdrop" aria-hidden="true"></div>
   </div>
 
   <div class="modal-backdrop hidden" id="settings-modal">
@@ -655,6 +831,8 @@
   <script src="/logic.js"></script>
   <script src="/diagram.js"></script>
   <script src="/icons.js"></script>
+  <script src="/context.js"></script>
+  <script src="/telemetry.js"></script>
   <script src="/app.js"></script>
   <script src="/chat.js"></script>
   <script src="/settings.js"></script>

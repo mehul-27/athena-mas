@@ -42,12 +42,18 @@ ALLOWED_CONTENT_TYPES = {
     "application/xhtml+xml",
     "text/plain",
 }
+PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf"}
+PDF_MAGIC = b"%PDF-"
 REDIRECT_CODES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
 MAX_URL_LENGTH = 2048
 MIN_CHARS = 1000
 MAX_CHARS = 20000
 MAX_TITLE = 300
+SEARCH_ENGINE_HOSTS = (
+    "duckduckgo.com", "google.com", "bing.com", "search.brave.com",
+    "mojeek.com", "search.yahoo.com", "startpage.com", "ecosia.org",
+)
 
 
 class FetchBlocked(RuntimeError):
@@ -99,6 +105,11 @@ def normalize_url(raw: str) -> tuple[str, str, int]:
     """Validate an absolute URL and return (normalized, host, port)."""
     if not raw or len(raw) > MAX_URL_LENGTH:
         raise FetchBlocked("URL is empty or too long")
+    if "](" in raw or raw.lstrip().startswith("["):
+        raise FetchBlocked(
+            "URL is a Markdown link or contains Markdown syntax; "
+            "pass the raw destination URL"
+        )
     if any(char in raw for char in ("\\", "\r", "\n", "\t", " ")):
         raise FetchBlocked("URL contains unsafe characters")
     try:
@@ -132,6 +143,13 @@ def normalize_url(raw: str) -> tuple[str, str, int]:
         (".localhost", ".local")
     ):
         raise FetchBlocked("local hostnames are not allowed")
+    if any(
+        host == blocked or host.endswith("." + blocked)
+        for blocked in SEARCH_ENGINE_HOSTS
+    ):
+        raise FetchBlocked(
+            "search-engine result pages are not sources; fetch a result URL instead"
+        )
     host_part = f"[{host}]" if ":" in host else host
     netloc = host_part if parts.port is None else f"{host_part}:{port}"
     path = parts.path or "/"
@@ -189,17 +207,37 @@ def _extract_html(html: str, base_url: str, max_chars: int) -> tuple[str, str, s
     if link and link.get("href"):
         canonical = _canonical_url(urljoin(base_url, link["href"]), base_url)
 
-    for tag in soup(
-        ["script", "style", "noscript", "svg", "form", "header", "footer", "nav", "head"]
+    # Prefer the semantic article body. Large sites often put a very long
+    # navigation/TOC shell before the useful prose; extracting only headings
+    # and substantial paragraphs keeps that shell from consuming max_chars.
+    root = soup.find("main") or soup.find("article") or soup
+    for tag in root(
+        ["script", "style", "noscript", "svg", "form", "header", "footer", "nav",
+         "aside", "head"]
     ):
         tag.decompose()
 
-    lines = []
-    for line in soup.get_text("\n").splitlines():
-        cleaned = re.sub(r"[ \t\f\v]+", " ", line).strip()
-        if cleaned:
-            lines.append(cleaned)
-    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    blocks: list[str] = []
+    substantive_paragraph = False
+    for tag in root.find_all(["h1", "h2", "h3", "h4", "p"]):
+        cleaned = " ".join(tag.get_text(" ", strip=True).split())
+        if not cleaned:
+            continue
+        if tag.name == "p" and len(cleaned) >= 80:
+            substantive_paragraph = True
+        if tag.name.startswith("h") or len(cleaned) >= 80:
+            blocks.append(cleaned)
+    text = "\n\n".join(blocks).strip()
+
+    # Pages that use divs or only short paragraphs still get the old fallback.
+    if not substantive_paragraph:
+        lines = []
+        for line in root.get_text("\n").splitlines():
+            cleaned = re.sub(r"[ \t\f\v]+", " ", line).strip()
+            if cleaned:
+                lines.append(cleaned)
+        text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
     truncated = len(text) > max_chars
     return title, canonical, text[:max_chars].rstrip(), truncated
 
@@ -325,6 +363,16 @@ def _fetch_page(
                                 error=f"HTTP {code}", final_url=current,
                                 status_code=code, content_type=content_type,
                             )
+                        if content_type in PDF_CONTENT_TYPES:
+                            return _failure(
+                                requested_url, "unsupported_content_type", started,
+                                error=(
+                                    "PDF extraction is not supported; "
+                                    "provide an HTML or plain-text source"
+                                ),
+                                final_url=current, status_code=code,
+                                content_type=content_type,
+                            )
                         if content_type not in ALLOWED_CONTENT_TYPES:
                             return _failure(
                                 requested_url, "unsupported_content_type", started,
@@ -342,6 +390,17 @@ def _fetch_page(
                             )
                         if time.monotonic() >= deadline:
                             raise FetchDeadline
+                        if body.lstrip().startswith(PDF_MAGIC):
+                            return _failure(
+                                requested_url, "unsupported_content_type", started,
+                                error=(
+                                    "PDF content is not supported even though the "
+                                    "server labelled it as text; provide an HTML or "
+                                    "plain-text source"
+                                ),
+                                final_url=current, status_code=code,
+                                content_type=content_type,
+                            )
                         encoding = response.charset_encoding or "utf-8"
                         decoded = body.decode(encoding, "replace")
                         if content_type == "text/plain":
@@ -363,8 +422,8 @@ def _fetch_page(
                             status_code=code,
                             text=text,
                             truncated=truncated,
-                            ok=True,
-                            error=None,
+                            ok=bool(text),
+                            error=None if text else "page contained no readable text",
                             elapsed_ms=(time.perf_counter() - started) * 1000,
                         )
             except FetchDeadline:

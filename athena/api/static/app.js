@@ -14,21 +14,97 @@ const WATCHDOG_MS = 5000;
 const LOG_TIMEOUT_MS = 15000;
 const END_GRACE_MS = 1500;
 const STALL_MS = 60000;
+const RESEARCH_TOOLS_KEY = "athena.research.tools";
+const RESEARCH_SCROLL_KEY = "athena.research.scroll.v1";
+const RESEARCH_TOOL_FALLBACK = [
+  { id: "rag_search", label: "Local RAG", description: "Search the indexed local document corpus.", available: true, reason: "" },
+  { id: "web_search", label: "Web search", description: "Search the web through the configured provider.", available: true, reason: "" },
+  { id: "fetch_page", label: "Fetch page", description: "Read the contents of one public web page.", available: true, reason: "" },
+  { id: "calculate", label: "Calculation", description: "Evaluate an arithmetic expression safely.", available: true, reason: "" },
+  { id: "forecast", label: "Forecasting", description: "Project a numeric series with a linear trend or smoothing.", available: true, reason: "" },
+];
 
 const state = {
   view: "run", pattern: L.DEFAULT_PATTERN, runId: null, events: [],
   source: null, retries: 0, replaying: false, playback: false, bundles: [], presets: [],
   profiles: [], active: "", editing: "", rawJson: false, busy: false,
   runs: [], historyLimit: HISTORY_LIMIT, speed: 1,
+  researchTools: loadResearchToolSelection(),
+  researchToolCatalog: RESEARCH_TOOL_FALLBACK.slice(),
+  researchToolsReady: false,
+  traceExpanded: false, traceUserToggled: false,
   tab: L.tabReducer(undefined, { type: "select", tab: "answer" }),
   request: { status: "idle", message: "", rows: [] },
   health: null, healthError: false, noticeKey: "", noticeDismissed: false,
   hasReport: false, mode: null, startFailure: false,
   phase: "idle", connection: "idle", activeRun: null, summary: null,
+  snapshot: null, toolReport: null,
   seenEvents: new Set(), lastSeq: 0, lastEventAt: 0, stalled: false,
   watchdog: null, endTimer: null, logChecking: false, logError: false,
-  streamToken: 0, previousRun: null, phaseDetail: "",
+  streamToken: 0, navToken: 0, loadingRunId: null, eventsError: "",
+  scrollMap: loadResearchScrollMap(), restoreScroll: null, scrollTimer: null,
+  previousRun: null, phaseDetail: "",
+  docPreview: null,
 };
+
+function loadResearchScrollMap() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RESEARCH_SCROLL_KEY) || "{}");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const clean = {};
+    Object.keys(raw).forEach((key) => {
+      const value = Number(raw[key]);
+      if (Number.isFinite(value) && value >= 0) clean[key] = value;
+    });
+    return clean;
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveResearchScrollMap() {
+  try {
+    localStorage.setItem(RESEARCH_SCROLL_KEY, JSON.stringify(state.scrollMap));
+  } catch (_) { /* private mode */ }
+}
+
+function saveResearchScroll() {
+  if (state.view !== "run" || !state.runId) return;
+  const main = $("main");
+  if (!main) return;
+  state.scrollMap[state.runId] = Math.max(0, Math.round(main.scrollTop));
+  saveResearchScrollMap();
+}
+
+function restoreResearchScroll() {
+  if (state.restoreScroll == null) return;
+  const top = state.restoreScroll;
+  state.restoreScroll = null;
+  requestAnimationFrame(() => {
+    const main = $("main");
+    if (!main) return;
+    const max = Math.max(0, main.scrollHeight - main.clientHeight);
+    main.scrollTop = Math.min(top, max);
+  });
+}
+
+function loadResearchToolSelection() {
+  try {
+    const raw = localStorage.getItem(RESEARCH_TOOLS_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((value) => typeof value === "string" && value);
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveResearchToolSelection() {
+  try {
+    localStorage.setItem(RESEARCH_TOOLS_KEY, JSON.stringify(state.researchTools));
+  } catch (_) { /* private mode */ }
+}
 
 const $ = (id) => document.getElementById(id);
 const text = (node, value) => { node.textContent = value == null ? "" : String(value); };
@@ -119,12 +195,13 @@ function setSidebar(collapsed, persist) {
 }
 
 function showView(name) {
+  if (state.view === "run" && name !== "run") saveResearchScroll();
   if (name === "settings") {
     window.AthenaSettings?.open();
     return;
   }
   state.view = name;
-  ["chat", "run", "details", "how", "documents"].forEach((view) => {
+  ["chat", "run", "details", "how", "documents", "eval"].forEach((view) => {
     const node = $("view-" + view);
     if (node) node.classList.toggle("hidden", view !== name);
   });
@@ -139,12 +216,28 @@ function showView(name) {
   if (name === "chat") window.AthenaChat?.activate();
   if (name === "run") { setTab("answer"); renderLiveMap(); }
   if (name === "details") {
+    if (!state.runId || state.loadingRunId) { showView("run"); return; }
     if (state.tab.tab === "answer") setTab("activity");
+    renderDetailsHeader($("user-question").textContent || "");
     renderLiveMap();
+    renderActivityTrace();
   }
   if (name === "how") { renderHowDiagram(); loadTools(); }
+  if (name === "documents") loadDocuments();
+  if (name === "eval") loadEvaluation();
+  window.AthenaContext?.setView(name);
+  if (name === "run") window.AthenaContext?.setSurface("research", state.runId);
+  if (name === "chat") {
+    window.AthenaContext?.setSurface(
+      "chat",
+      window.AthenaChat?.currentMessageId?.() || null,
+    );
+  }
   document.dispatchEvent(new CustomEvent("athena:view", { detail: { view: name } }));
-  try { history.replaceState(null, "", "#" + name + (state.replaying ? "&replay=" + state.runId : "")); } catch (_) { /* ignore */ }
+  try {
+    const hashView = name === "details" ? "run" : name;
+    history.replaceState(null, "", "#" + hashView + (state.replaying ? "&replay=" + state.runId : ""));
+  } catch (_) { /* ignore */ }
 }
 
 function isActiveRunError(error) {
@@ -218,6 +311,15 @@ function updateLockedControls() {
       : "";
     if (locked) closePatternMenu(false);
   }
+  const toolsTrigger = $("research-tools-trigger");
+  if (toolsTrigger) {
+    toolsTrigger.disabled = locked;
+    toolsTrigger.title = locked
+      ? (state.playback ? "Wait for the recording to finish." : "Wait for the current research task to finish.")
+      : "Choose the research tools for the next run";
+    if (locked) closeResearchToolsMenu(false);
+  }
+  updateRunButton();
   document.querySelectorAll("#pattern-chips .chip").forEach((chip) => {
     chip.disabled = locked;
     chip.classList.toggle("locked", locked);
@@ -241,7 +343,7 @@ function renderRunStatus() {
   const node = $("exchange-status");
   const textNode = $("exchange-status-text");
   const reconnect = $("reconnect-run");
-  const details = $("exchange-details");
+  const details = $("report-details");
   let message = "";
   let tone = "";
 
@@ -257,7 +359,7 @@ function renderRunStatus() {
     } else if (state.phase === "starting") {
       message = "Starting research\u2026";
     } else {
-      message = "Researching. Live agent events are shown in Run details.";
+      message = "Researching. Live agent activity is shown below.";
     }
     if (state.endTimer && state.connection !== "lost") {
       message += " The run process has finished; waiting for a completion signal.";
@@ -312,7 +414,9 @@ function renderRunStatus() {
   node.classList.toggle("is-ok", tone === "ok");
   text(textNode, message);
   reconnect.classList.toggle("hidden", !(state.connection === "lost" && isActiveRun()));
-  details.classList.toggle("hidden", !state.runId);
+  if (details) {
+    details.classList.toggle("hidden", !state.runId || Boolean(state.loadingRunId));
+  }
 }
 
 function renderPreviousRun() {
@@ -325,6 +429,147 @@ function renderPreviousRun() {
   }
   node.classList.remove("hidden");
   text(textNode, state.previousRun.message);
+}
+
+function activityStateText() {
+  const active = ["starting", "running", "completing"].includes(state.phase);
+  if (active) {
+    return state.connection === "lost" ? "Reconnecting" : "Researching";
+  }
+  const outcome = state.summary && state.summary.outcome;
+  if (state.phase === "replay") return "Recording";
+  if (state.phase === "failed") return "Failed";
+  if (state.phase === "ended_unconfirmed") return "Ended without confirmation";
+  if (state.phase === "completed_degraded") return "Completed with warnings";
+  if (state.phase === "completed_no_report") return "Completed without a report";
+  if (state.phase === "completed") return "Completed";
+  if (outcome === "approved") return "Completed";
+  if (outcome === "rejected") return "Completed \u00b7 rejected";
+  if (outcome === "failed") return "Failed";
+  if (outcome === "incomplete") return "Completed with limitations";
+  if (state.phase === "history") return "Recorded run";
+  return "Activity";
+}
+
+function activityRow(row) {
+  const item = document.createElement("li");
+  item.className = "activity-row is-" + row.status;
+  const dot = document.createElement("span");
+  dot.className = "activity-row-dot";
+  dot.setAttribute("aria-hidden", "true");
+  item.appendChild(dot);
+
+  const body = document.createElement("div");
+  body.className = "activity-row-body";
+  const head = document.createElement("div");
+  head.className = "activity-row-head";
+  const agent = document.createElement("span");
+  agent.className = "activity-agent";
+  text(agent, L.agentLabel(row.agent));
+  const label = document.createElement("strong");
+  label.className = "activity-label";
+  text(label, row.label || "activity");
+  head.appendChild(agent);
+  head.appendChild(label);
+  if (row.framework && row.framework !== "adk") {
+    const badge = document.createElement("span");
+    badge.className = "activity-badge";
+    text(badge, row.framework);
+    head.appendChild(badge);
+  }
+  if (row.duration != null) {
+    const time = document.createElement("span");
+    time.className = "activity-row-time";
+    text(time, L.duration(row.duration));
+    head.appendChild(time);
+  }
+  body.appendChild(head);
+  if (row.detail && row.detail !== row.label) {
+    const detail = document.createElement("p");
+    detail.className = "activity-detail";
+    text(detail, String(row.detail).slice(0, 240));
+    body.appendChild(detail);
+  }
+  if (row.error) {
+    const error = document.createElement("p");
+    error.className = "activity-error";
+    text(error, String(row.error).slice(0, 240));
+    body.appendChild(error);
+  }
+  item.appendChild(body);
+  return item;
+}
+
+function renderActivityTrace() {
+  const host = $("activity-trace");
+  if (!host) return;
+  if (!state.runId || state.loadingRunId) {
+    host.classList.add("hidden");
+    const list = $("activity-list");
+    if (list) list.replaceChildren();
+    return;
+  }
+  host.classList.remove("hidden");
+  const active = ["starting", "running", "completing"].includes(state.phase);
+  const finished = isTerminalPhase() || state.phase === "history" || state.phase === "replay";
+  const trace = L.researchTrace(state.events, {
+    finished,
+    summary: state.summary || null,
+  });
+  if (state.eventsError) {
+    trace.rows.unshift({
+      id: "events-unavailable",
+      agent: "athena",
+      label: "Activity unavailable",
+      detail: state.eventsError,
+      status: "failed",
+      duration: null,
+      framework: "ui",
+      ts: "",
+      error: "",
+    });
+    trace.failed = true;
+    trace.current = trace.rows[0];
+  }
+  const running = (trace.running || active) && !finished;
+  host.classList.toggle("is-live", running);
+  host.classList.toggle("is-complete", !running);
+  host.classList.toggle("is-failed", trace.failed);
+
+  const stateNode = $("activity-state");
+  if (stateNode) text(stateNode, activityStateText());
+  const current = trace.current;
+  const currentNode = $("activity-current");
+  if (currentNode) {
+    text(currentNode, current
+      ? L.agentLabel(current.agent) + " \u00b7 " + (current.label || "activity")
+      : trace.summary);
+  }
+  const timeNode = $("activity-time");
+  if (timeNode) text(timeNode, trace.elapsed_ms ? L.duration(trace.elapsed_ms) : "");
+  const dot = $("activity-dot");
+  if (dot) {
+    dot.className = "activity-dot"
+      + (trace.failed ? " is-error" : running ? " is-live" : " is-done");
+  }
+
+  const list = $("activity-list");
+  if (list) {
+    list.replaceChildren();
+    trace.rows.forEach((row) => list.appendChild(activityRow(row)));
+  }
+  const expanded = state.traceExpanded;
+  if (list) list.classList.toggle("hidden", !expanded);
+  const toggle = $("activity-toggle");
+  if (toggle) toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  const expand = $("activity-expand");
+  if (expand) text(expand, expanded ? "Collapse" : "Expand");
+}
+
+function toggleActivityTrace() {
+  state.traceExpanded = !state.traceExpanded;
+  state.traceUserToggled = true;
+  renderActivityTrace();
 }
 
 function renderStatus() {
@@ -361,6 +606,11 @@ function renderStatus() {
   $("status-crew-dot").className = dot ? "dot " + dot : "dot";
   renderRunStatus();
   renderPreviousRun();
+  const questionNode = $("user-question");
+  if (state.runId) renderDetailsHeader(questionNode ? questionNode.textContent : "");
+  renderResearchResponseMeta();
+  renderActivityTrace();
+  window.AthenaContext?.refresh("research", state.runId);
   updateLockedControls();
   updateNotice();
 }
@@ -435,6 +685,21 @@ function updateProgress() {
   const strip = L.progressStrip(state.events);
   text($("progress-strip"), strip);
   $("progress-strip").classList.toggle("hidden", !strip || !state.tab.running);
+}
+
+/* The details view holds run panels, not the answer, so its "Answer" tab is a
+ * navigation control: it returns to the conversation, selects the answer
+ * panel and puts focus back on that tab. It never renders a panel of its own,
+ * which is why it used to look like it did nothing. */
+function showAnswerTab() {
+  if (state.view !== "run") showView("run");
+  setTab("answer");
+  const panel = $("panel-answer");
+  if (panel && typeof panel.scrollIntoView === "function") {
+    panel.scrollIntoView({ block: "nearest" });
+  }
+  const tab = $("tab-answer");
+  if (tab && typeof tab.focus === "function") tab.focus({ preventScroll: true });
 }
 
 /* ---------------------------------------------------------------- lists */
@@ -766,6 +1031,213 @@ function choosePatternOption(option) {
   closePatternMenu(true);
 }
 
+/* ------------------------------------------------------- research tools */
+
+function researchToolIds() {
+  return state.researchToolCatalog.map((tool) => tool.id);
+}
+
+function normaliseResearchTools(value) {
+  return L.normaliseToolSelection(value, researchToolIds());
+}
+
+function hasResearchTools() {
+  return state.researchTools === null || state.researchTools.length > 0;
+}
+
+function researchToolsLabel() {
+  return L.toolSelectionLabel(state.researchTools);
+}
+
+function toolMenuOptions() {
+  return Array.from(document.querySelectorAll("#research-tools-menu .tool-option"));
+}
+
+function renderToolMenuOption(id, label, description, checked, extra) {
+  const option = document.createElement("li");
+  option.className = "pattern-option tool-option"
+    + (checked ? " selected" : "")
+    + (extra && extra.disabled ? " is-disabled" : "");
+  option.dataset.tool = id;
+  option.setAttribute("role", "option");
+  option.setAttribute("aria-selected", checked ? "true" : "false");
+  option.setAttribute("aria-disabled", extra && extra.disabled ? "true" : "false");
+  option.tabIndex = -1;
+
+  const check = document.createElement("span");
+  check.className = "tool-check";
+  check.setAttribute("aria-hidden", "true");
+  option.appendChild(check);
+
+  const body = document.createElement("span");
+  body.className = "tool-option-body";
+  const strong = document.createElement("strong");
+  text(strong, label);
+  body.appendChild(strong);
+  if (description) {
+    const desc = document.createElement("span");
+    desc.className = "tool-option-desc";
+    text(desc, description);
+    body.appendChild(desc);
+  }
+  if (extra && extra.reason) {
+    const reason = document.createElement("span");
+    reason.className = "tool-option-reason";
+    text(reason, extra.reason);
+    body.appendChild(reason);
+  }
+  option.appendChild(body);
+  option.addEventListener("click", () => chooseResearchTool(option));
+  return option;
+}
+
+function renderResearchToolMenu() {
+  const host = $("research-tools-menu");
+  if (!host) return;
+  host.replaceChildren();
+  const allSelected = state.researchTools === null;
+  host.appendChild(renderToolMenuOption(
+    "__all__",
+    "All tools",
+    "Let the planner use every enabled research capability.",
+    allSelected,
+    {},
+  ));
+  state.researchToolCatalog.forEach((tool) => {
+    const selected = allSelected
+      || (Array.isArray(state.researchTools) && state.researchTools.includes(tool.id));
+    host.appendChild(renderToolMenuOption(
+      tool.id,
+      tool.label || tool.id,
+      tool.description || "",
+      selected,
+      {
+        disabled: tool.available === false,
+        reason: tool.available === false ? (tool.reason || "Unavailable") : "",
+      },
+    ));
+  });
+}
+
+function syncResearchTools() {
+  const current = $("research-tools-current");
+  if (current) text(current, researchToolsLabel());
+  const trigger = $("research-tools-trigger");
+  if (trigger) {
+    trigger.classList.toggle("is-empty", !hasResearchTools());
+    trigger.title = hasResearchTools()
+      ? "Choose the research tools for the next run"
+      : "Select at least one research tool before starting a run";
+  }
+  const note = $("research-tools-note");
+  if (note) {
+    text(note, hasResearchTools()
+      ? "applies to the next run"
+      : "select at least one tool to run");
+    note.classList.toggle("is-warning", !hasResearchTools());
+  }
+  document.querySelectorAll("#research-tools-menu .tool-option").forEach((option) => {
+    const id = option.dataset.tool;
+    const selected = id === "__all__"
+      ? state.researchTools === null
+      : state.researchTools === null || state.researchTools.includes(id);
+    option.classList.toggle("selected", selected);
+    option.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+  updateRunButton();
+}
+
+function chooseResearchTool(option) {
+  if (!option || option.getAttribute("aria-disabled") === "true") return;
+  const id = option.dataset.tool;
+  state.researchTools = L.toggleToolSelection(state.researchTools, id, researchToolIds());
+  saveResearchToolSelection();
+  renderResearchToolMenu();
+  syncResearchTools();
+  const next = toolMenuOptions().find((item) => item.dataset.tool === id);
+  if (next) next.focus({ preventScroll: true });
+}
+
+function openResearchToolsMenu() {
+  const menu = $("research-tools-menu");
+  const trigger = $("research-tools-trigger");
+  if (!menu || !trigger || trigger.disabled) return;
+  closePatternMenu(false);
+  closeExamples(false);
+  renderResearchToolMenu();
+  menu.classList.remove("hidden");
+  trigger.setAttribute("aria-expanded", "true");
+  syncResearchTools();
+  const selected = toolMenuOptions().find((item) => item.getAttribute("aria-selected") === "true");
+  (selected || toolMenuOptions()[0])?.focus({ preventScroll: true });
+}
+
+function closeResearchToolsMenu(focusTrigger) {
+  const menu = $("research-tools-menu");
+  if (!menu) return;
+  menu.classList.add("hidden");
+  const trigger = $("research-tools-trigger");
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+  if (focusTrigger && trigger) trigger.focus();
+}
+
+function handleResearchToolsKey(event) {
+  const options = toolMenuOptions();
+  const index = options.indexOf(document.activeElement);
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeResearchToolsMenu(true);
+    return;
+  }
+  if (event.key === "Tab") {
+    closeResearchToolsMenu(true);
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!options.length) return;
+    event.preventDefault();
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const next = index < 0
+      ? (step > 0 ? 0 : options.length - 1)
+      : (index + step + options.length) % options.length;
+    options[next].focus();
+    return;
+  }
+  if (event.key === "Home" || event.key === "End") {
+    if (!options.length) return;
+    event.preventDefault();
+    options[event.key === "Home" ? 0 : options.length - 1].focus();
+    return;
+  }
+  if (event.key === "Enter" || event.key === " ") {
+    if (index < 0) return;
+    event.preventDefault();
+    chooseResearchTool(options[index]);
+  }
+}
+
+async function loadResearchTools() {
+  try {
+    const data = await api("/api/research/tools");
+    const tools = Array.isArray(data.tools) ? data.tools : [];
+    if (tools.length) state.researchToolCatalog = tools;
+    state.researchToolsReady = true;
+  } catch (_) {
+    state.researchToolsReady = false;
+  }
+  state.researchTools = normaliseResearchTools(state.researchTools);
+  saveResearchToolSelection();
+  renderResearchToolMenu();
+  syncResearchTools();
+}
+
+function updateRunButton() {
+  const button = $("run-button");
+  if (!button) return;
+  button.disabled = Boolean(state.busy) || !hasResearchTools();
+  text(button, state.busy ? "running..." : "Run");
+}
+
 function pattern() {
   const select = $("composer-pattern");
   return L.patternValue(select ? select.value : state.pattern);
@@ -779,22 +1251,27 @@ function autoGrow() {
 
 function setBusy(busy) {
   state.busy = busy;
-  const button = $("run-button");
-  button.disabled = busy;
-  text(button, busy ? "running..." : "Run");
+  updateRunButton();
   updateLockedControls();
   renderStatus();
 }
 
 function resetReport(message) {
   state.hasReport = false;
-  text($("report-answer"), message || "");
+  fillAnswer($("report-answer"), message || "", 0, () => {});
   $("report-points").replaceChildren();
   $("report-meta").replaceChildren();
   $("critique-detail").replaceChildren();
   $("critique-detail").className = "critique-detail hidden";
   $("report-citations").replaceChildren();
-  $("sources-list").replaceChildren();
+  const provenance = $("provenance-panel");
+  if (provenance) {
+    provenance.classList.add("hidden");
+    const hops = $("provenance-hops");
+    if (hops) hops.replaceChildren();
+    const note = $("provenance-empty");
+    if (note) { note.classList.add("hidden"); text(note, ""); }
+  }
 }
 
 function showExchange(question) {
@@ -825,9 +1302,14 @@ function newChat() {
     return;
   }
   if (isLocked()) { toast(lockedReason()); return; }
+  saveResearchScroll();
   closeStream();
   stopWatchdog();
   clearEndTimer();
+  state.navToken += 1;
+  state.restoreScroll = null;
+  state.loadingRunId = null;
+  state.eventsError = "";
   state.runId = null;
   state.events = [];
   state.retries = 0;
@@ -840,6 +1322,8 @@ function newChat() {
   state.connection = "idle";
   state.phaseDetail = "";
   state.summary = null;
+  state.snapshot = null;
+  state.toolReport = null;
   state.seenEvents.clear();
   state.lastSeq = 0;
   state.lastEventAt = 0;
@@ -847,7 +1331,14 @@ function newChat() {
   state.logChecking = false;
   state.logError = false;
   state.previousRun = null;
+  state.traceExpanded = false;
+  state.traceUserToggled = false;
   clearStartFailure();
+  $("activity-trace").classList.add("hidden");
+  $("activity-list").replaceChildren();
+  renderToolReport(null, null);
+  $("report-details").classList.add("hidden");
+  text($("details-run-label"), "Open a Research answer to inspect its run.");
   $("replay-badge").classList.add("hidden");
   $("replay-speed-row").classList.add("hidden");
   text($("footer-run"), "run: -");
@@ -865,15 +1356,22 @@ function newChat() {
   autoGrow();
   setRunning(false);
   setBusy(false);
+  window.AthenaContext?.setSurface("research", null);
   showView("run");
   showEmpty();
   renderStatus();
+  renderResearchResponseMeta();
   $("question").focus();
 }
 
 async function startRun() {
   const submittedQuestion = $("question").value;
   if (!submittedQuestion.trim()) { toast("Type a question first."); return; }
+  if (!hasResearchTools()) {
+    toast("Select at least one research tool before starting a run.");
+    openResearchToolsMenu();
+    return;
+  }
   if (isLocked()) { toast(lockedReason()); return; }
   const priorPhase = state.phase;
   const priorDetail = state.phaseDetail;
@@ -885,7 +1383,11 @@ async function startRun() {
     setBusy(true);
     const data = await api("/api/runs", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: submittedQuestion, pattern: state.pattern }),
+      body: JSON.stringify({
+        question: submittedQuestion,
+        pattern: state.pattern,
+        tools: state.researchTools === null ? null : state.researchTools.slice(),
+      }),
     });
     if (!L.validRunId(data && data.run_id)) {
       throw new Error("server did not return a valid run id");
@@ -919,14 +1421,19 @@ function beginRun(runId, replaying, mode) {
   closeStream();
   clearStartFailure();
   state.runId = runId;
+  state.loadingRunId = null;
+  state.eventsError = "";
   state.replaying = replaying;
   state.mode = mode || (replaying ? "replay" : "live");
+  if (state.mode === "live") state.restoreScroll = null;
   state.events = [];
   state.seenEvents = new Set();
   state.lastSeq = 0;
   state.lastEventAt = Date.now();
   state.stalled = false;
   state.summary = null;
+  state.snapshot = null;
+  state.toolReport = null;
   state.retries = 0;
   state.logChecking = false;
   state.logError = false;
@@ -934,6 +1441,8 @@ function beginRun(runId, replaying, mode) {
   state.connection = state.mode === "live" ? "connecting" : "idle";
   state.phase = state.mode === "live" ? "starting" : state.mode;
   state.phaseDetail = "";
+  state.traceExpanded = state.mode === "live" || state.mode === "replay";
+  state.traceUserToggled = false;
   resetReport("");
   $("replay-badge").classList.toggle("hidden", !replaying);
   $("replay-speed-row").classList.toggle("hidden", !replaying);
@@ -942,6 +1451,7 @@ function beginRun(runId, replaying, mode) {
   $("link-log").href = "/api/runs/" + runId + "/log";
   $("event-log").replaceChildren();
   $("timeline-body").replaceChildren();
+  renderToolReport(null, null);
   text($("progress-strip"), "");
   $("heatmap").removeAttribute("src");
   resetMetrics("");
@@ -955,6 +1465,7 @@ function beginRun(runId, replaying, mode) {
     setBusy(false);
     setRunning(state.mode === "replay");
   }
+  window.AthenaContext?.setSurface("research", runId);
   renderStatus();
 }
 
@@ -1058,6 +1569,7 @@ function closeStream() {
 
 function addEvent(event) {
   if (!event || typeof event !== "object") return;
+  if (event.run_id && state.runId && event.run_id !== state.runId) return;
   const eventId = typeof event.event_id === "string" ? event.event_id : "";
   const seq = Number(event.seq);
   if (eventId && state.seenEvents.has(eventId)) return;
@@ -1082,6 +1594,9 @@ function addEvent(event) {
   renderTimeline();
   renderLiveMap();
   updateProgress();
+  renderActivityTrace();
+  renderResearchResponseMeta();
+  window.AthenaContext?.refresh("research", state.runId);
   logEvent(event);
 }
 
@@ -1176,6 +1691,7 @@ async function completeRun(runId, summary) {
     state.phase = "completed";
     state.phaseDetail = "Completed.";
   }
+  if (!state.traceUserToggled) state.traceExpanded = false;
   setBusy(false);
   setRunning(false);
   renderStatus();
@@ -1202,6 +1718,7 @@ async function endRunUnconfirmed(runId, exitCode) {
     runId,
     message: failed ? "Previous run failed." : "Previous run ended without a completion signal.",
   };
+  if (!state.traceUserToggled) state.traceExpanded = false;
   setBusy(false);
   setRunning(false);
   renderStatus();
@@ -1230,21 +1747,14 @@ function addLog(kind, message, cssClass) {
   $("event-log").scrollTop = $("event-log").scrollHeight;
 }
 
+/* Every recorded kind gets a row. The formatting is a pure function in
+ * logic.js (`eventLogEntry`) so all kinds — including retry, guardrail,
+ * handoff, recovery, skip, limiter_wait, model_call and stage_start — are
+ * covered by node tests, and an unknown kind still shows its own name. */
 function logEvent(event) {
-  if (event.kind === "a2a_call") {
-    const extra = event.extra || {};
-    addLog("A2A", event.agent + " " + L.bytes(extra.request_bytes) + " out / "
-      + L.bytes(extra.response_bytes) + " in", "a2a");
-  } else if (event.kind === "tool_call") {
-    addLog("tool", event.summary || event.agent, "tool");
-  } else if (event.kind === "blackboard_write") {
-    addLog("board", event.summary || event.agent);
-  } else if (event.kind === "error") {
-    addLog("error", (event.error_type || "error") + ": " + (event.error_message || ""), "error");
-  } else if (event.kind === "stage_end") {
-    addLog("stage", event.agent + " " + L.duration(event.duration_ms) + " \u00b7 "
-      + L.tokens(event.tokens_in, event.tokens_out));
-  }
+  const row = L.eventLogEntry(event);
+  if (!row) return;
+  addLog(row.label, row.text || row.kind, row.tone);
 }
 
 function renderTimeline() {
@@ -1254,7 +1764,8 @@ function renderTimeline() {
     const tr = document.createElement("tr");
     tr.className = row.status;
     [row.agent, row.framework.toUpperCase(), row.status, L.duration(row.ms),
-     L.tokens(row.tokens_in, row.tokens_out), row.stop_reason || ""].forEach((value) => {
+     L.tokens(row.tokens_in, row.tokens_out, row.tokens_known),
+     row.stop_reason || ""].forEach((value) => {
       const cell = document.createElement("td");
       text(cell, value);
       tr.appendChild(cell);
@@ -1287,14 +1798,27 @@ function renderLiveMap() {
 async function openReplay(name, options) {
   const opts = options || {};
   if (isLocked()) { toast(lockedReason()); return; }
+  saveResearchScroll();
+  const token = state.navToken + 1;
+  state.navToken = token;
+  state.restoreScroll = null;
   state.playback = true;
   try {
     const bundle = await api("/api/replay/" + name);
+    if (token !== state.navToken) return;
     const at = typeof opts.at === "number" ? Math.max(0, Math.min(1, opts.at)) : 1;
     showView("run");
     setPattern((bundle.summary && bundle.summary.pattern) || state.pattern, false);
     beginRun(bundle.run_id, true);
     state.summary = bundle.summary || null;
+    state.snapshot = bundle.blackboard
+      ? { ...bundle.blackboard, evidence: bundle.evidence || [] }
+      : null;
+    state.toolReport = (state.snapshot && state.snapshot.tool_report) || null;
+    state.restoreScroll = Number.isFinite(state.scrollMap[bundle.run_id])
+      ? state.scrollMap[bundle.run_id]
+      : null;
+    renderResearchResponseMeta();
     try {
       history.replaceState(null, "", "#replay=" + encodeURIComponent(name) + (at < 1 ? "&at=" + at : ""));
     } catch (_) { /* ignore */ }
@@ -1341,6 +1865,11 @@ async function openReplay(name, options) {
           + (at < 1 ? "&at=" + at : "") + "&tab=" + opts.tab);
       } catch (_) { /* ignore */ }
     }
+    if (at >= 1 && !state.traceUserToggled) state.traceExpanded = false;
+    renderActivityTrace();
+    renderResearchResponseMeta();
+    window.AthenaContext?.refresh("research", state.runId);
+    restoreResearchScroll();
     await refreshHealth();
   } catch (error) {
     toast("Replay failed: " + error.message);
@@ -1352,35 +1881,311 @@ async function openReplay(name, options) {
 
 async function openRun(runId) {
   if (isLocked()) { toast(lockedReason()); return; }
+  saveResearchScroll();
+  const token = state.navToken + 1;
+  state.navToken = token;
+  state.loadingRunId = runId;
+  state.restoreScroll = null;
+  window.AthenaContext?.setSurface("research", null);
   showView("run");
+  renderStatus();
   try {
     const snapshot = await api("/api/runs/" + runId);
+    if (token !== state.navToken) return;
     setPattern(
       (snapshot.task && snapshot.task.value.pattern) || state.pattern,
       false,
     );
     beginRun(runId, false, "history");
     state.summary = snapshot.summary || null;
+    state.snapshot = snapshot;
+    state.toolReport = snapshot.tool_report || null;
+    state.restoreScroll = Number.isFinite(state.scrollMap[runId])
+      ? state.scrollMap[runId]
+      : null;
     try { history.replaceState(null, "", "#run"); } catch (_) { /* ignore */ }
-    showExchange(snapshot.task && snapshot.task.value ? snapshot.task.value.question : "");
+    const question = snapshot.task && snapshot.task.value ? snapshot.task.value.question : "";
+    showExchange(question);
     resetReport("Loading run\u2026");
+    renderDetailsHeader(question);
     renderBlackboard(snapshot);
+    renderToolReport(snapshot.tool_report, state.summary);
+    renderResearchResponseMeta();
+    await loadRunEvents(runId);
+    if (token !== state.navToken) return;
     if (snapshot.final_report) renderReport(snapshot.final_report.value, snapshot.critique);
     if (!state.hasReport) resetReport("No report is available for this run.");
     await loadMetrics(runId);
+    if (token !== state.navToken) return;
     renderLiveMap();
+    renderStatus();
     setRunning(false);
+    restoreResearchScroll();
   } catch (error) {
+    if (token !== state.navToken) return;
+    state.loadingRunId = null;
+    newChat();
     toast("Could not open run: " + error.message);
   }
 }
 
+function renderDetailsHeader(question) {
+  const node = $("details-run-label");
+  if (!node) return;
+  const pattern = (state.summary && state.summary.pattern) || state.pattern;
+  const outcome = state.summary && state.summary.outcome;
+  const bits = [
+    state.runId ? "run " + state.runId.slice(0, 8) : "no run selected",
+    pattern || "",
+    outcome || "",
+  ].filter(Boolean);
+  text(node, bits.join(" \u00b7 ") + (question ? " \u00b7 " + question : ""));
+}
+
+async function loadRunEvents(runId) {
+  let data = null;
+  let failed = false;
+  try {
+    data = await api("/api/runs/" + encodeURIComponent(runId) + "/events");
+  } catch (_) {
+    failed = true;
+  }
+  if (state.runId !== runId) return;
+  state.events = failed ? [] : (Array.isArray(data && data.events) ? data.events : []);
+  state.eventsError = failed
+    ? "Activity could not be loaded for this run."
+    : "";
+  state.seenEvents = new Set(
+    state.events.map((event) => event.event_id).filter(Boolean),
+  );
+  state.lastSeq = state.events.reduce(
+    (last, event) => Math.max(last, Number(event.seq) || 0), 0,
+  );
+  state.lastEventAt = Date.now();
+  const log = $("event-log");
+  if (log) {
+    log.replaceChildren();
+    state.events.forEach((event) => logEvent(event));
+  }
+  renderTimeline();
+  renderLiveMap();
+  updateProgress();
+  renderActivityTrace();
+  renderResearchResponseMeta();
+  window.AthenaContext?.refresh("research", state.runId);
+}
+
+function renderToolReport(report, summary) {
+  const host = $("tool-report");
+  const note = $("tool-report-note");
+  if (!host) return;
+  host.replaceChildren();
+  if (!report) {
+    if (note) text(note, state.runId ? "waiting for run data" : "no tool data recorded");
+    return;
+  }
+  if (note) {
+    text(note, report.all_tools ? "all tools selected" : "selected tools");
+  }
+  const assigned = Object.entries(report.assignments || {})
+    .map(([role, tools]) => role + ": " + ((tools || []).join(", ") || "none"));
+  const blockedEntries = Object.entries(report.blocked || {})
+    .filter(([, tools]) => (tools || []).length)
+    .map(([reason, tools]) => reason.replace(/_/g, " ") + ": " + tools.join(", "));
+  const groups = [
+    ["Enabled by user", report.enabled],
+    ["Assigned workers", assigned],
+    ["Planned as necessary", report.planned],
+    ["Planned but disabled", report.planned_blocked],
+    ["Actually attempted", report.invoked],
+    ["Succeeded", report.succeeded],
+    ["Returned usable evidence", report.usable_evidence],
+    ["Failed", report.failed],
+    ["Mixed success and failure", report.mixed],
+    ["Blocked invocations", blockedEntries],
+  ];
+  groups.forEach(([label, values]) => {
+    const row = document.createElement("div");
+    row.className = "tool-report-row";
+    const name = document.createElement("span");
+    name.className = "sidebar-label";
+    text(name, label);
+    const value = document.createElement("span");
+    text(value, (values || []).join(", ") || "none");
+    row.appendChild(name);
+    row.appendChild(value);
+    host.appendChild(row);
+  });
+  if ((report.skipped || []).length) {
+    const row = document.createElement("div");
+    row.className = "tool-report-row is-warning";
+    const name = document.createElement("span");
+    name.className = "sidebar-label";
+    text(name, "Skipped / blocked");
+    const value = document.createElement("span");
+    text(value, report.skipped.join("; "));
+    row.appendChild(name);
+    row.appendChild(value);
+    host.appendChild(row);
+  }
+  const evidenceLimitations = (summary && summary.evidence_limitations) || [];
+  if (evidenceLimitations.length) {
+    const row = document.createElement("div");
+    row.className = "tool-report-row";
+    const name = document.createElement("span");
+    name.className = "sidebar-label";
+    text(name, "Evidence limitations");
+    const value = document.createElement("span");
+    text(value, evidenceLimitations.join("; "));
+    row.appendChild(name);
+    row.appendChild(value);
+    host.appendChild(row);
+  }
+  const unmet = (summary && summary.unmet_requirements) || [];
+  if (unmet.length) {
+    const row = document.createElement("div");
+    row.className = "tool-report-row is-warning";
+    const name = document.createElement("span");
+    name.className = "sidebar-label";
+    text(name, "Not satisfied");
+    const value = document.createElement("span");
+    text(value, unmet.join("; "));
+    row.appendChild(name);
+    row.appendChild(value);
+    host.appendChild(row);
+  }
+  if ((report.calls || []).length) {
+    const details = document.createElement("details");
+    details.className = "tool-report-calls";
+    const summary = document.createElement("summary");
+    text(summary, report.calls.length + " tool call" + (report.calls.length === 1 ? "" : "s"));
+    details.appendChild(summary);
+    report.calls.forEach((call) => {
+      const row = document.createElement("div");
+      const outcome = call.outcome || (call.ok ? "succeeded" : "failed");
+      row.className = "tool-report-call "
+        + (outcome.startsWith("succeeded") ? "is-ok" : "is-error");
+      const head = document.createElement("strong");
+      text(head, call.tool + " \u00b7 " + call.agent + " \u00b7 "
+        + outcome.replace(/^blocked_/, "blocked by ").replace(/_/g, " "));
+      const detail = document.createElement("span");
+      text(detail, (call.summary || "")
+        + (call.result_status ? " \u2014 status " + call.result_status : "")
+        + (call.error ? " \u2014 " + call.error : ""));
+      row.appendChild(head);
+      row.appendChild(detail);
+      details.appendChild(row);
+    });
+    host.appendChild(details);
+  }
+}
+
+/* ------------------------------------------------------- response context */
+
+/* Answer text where each `[n]` marker is a real button that opens the context
+ * panel at that source. A marker without a matching source stays plain text
+ * (`L.answerSegments` keeps it in the text run). Shared with Chat. */
+function fillAnswer(node, body, maxIndex, onCitation) {
+  if (!node) return;
+  node.replaceChildren();
+  L.answerSegments(body, maxIndex).forEach((segment) => {
+    if (segment.type === "citation") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "citation-marker";
+      button.dataset.citation = String(segment.index);
+      button.title = "Open source [" + segment.index + "] in the context panel";
+      text(button, segment.text);
+      button.addEventListener("click", () => onCitation(segment.index, button));
+      node.appendChild(button);
+      return;
+    }
+    const run = document.createElement("span");
+    text(run, segment.text);
+    node.appendChild(run);
+  });
+}
+
+function renderResponseMeta(host, items, onAction) {
+  if (!host) return;
+  host.replaceChildren();
+  (items || []).forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "response-meta-pill is-" + (item.tone || "muted");
+    text(button, item.label);
+    button.title = item.title || item.label;
+    button.dataset.contextAction = item.action || "context";
+    button.dataset.contextItem = item.id || "";
+    button.addEventListener("click", () => onAction(item, button));
+    host.appendChild(button);
+  });
+  host.classList.toggle("hidden", !(items || []).length);
+}
+
+function researchContextModel() {
+  return L.researchContextModel({
+    runId: state.runId,
+    phase: state.phase,
+    summary: state.summary,
+    snapshot: state.snapshot,
+    events: state.events,
+    pattern: state.pattern,
+    question: $("user-question") ? $("user-question").textContent : "",
+  });
+}
+
+function openResearchContext(tab, trigger) {
+  if (!state.runId) return;
+  window.AthenaContext?.open(tab, "research", state.runId, trigger || null);
+}
+
+/* A clickable `[n]` marker in the answer: open the panel on that source. */
+function openResearchSource(index, trigger) {
+  if (!state.runId) return;
+  window.AthenaContext?.openSource(String(index), "research", state.runId, trigger || null);
+}
+
+/* The explicit "Context" control in the result card head. */
+function toggleResearchContext(trigger) {
+  if (!state.runId) { toast("Open a research answer first."); return; }
+  window.AthenaContext?.toggle("sources", "research", state.runId, trigger || null);
+}
+
+function renderResearchResponseMeta() {
+  const host = $("research-response-meta");
+  if (!host) return;
+  if (!state.runId || state.loadingRunId) {
+    host.replaceChildren();
+    host.classList.add("hidden");
+    return;
+  }
+  const model = researchContextModel();
+  const items = L.responseMetaFromModel(model);
+  renderResponseMeta(host, items, (item, button) => openResearchContext(item.action, button));
+  host.classList.remove("hidden");
+}
+
+function researchContextProvider(runId) {
+  if (!runId || runId !== state.runId || state.loadingRunId) return null;
+  return researchContextModel();
+}
+
+window.AthenaContext?.register("research", researchContextProvider);
+
 /* ---------------------------------------------------------------- snapshot */
 
 async function loadSnapshot(runId) {
+  const token = state.navToken;
   const snapshot = await api("/api/runs/" + runId);
+  if (token !== state.navToken || state.runId !== runId) return;
+  state.snapshot = snapshot;
+  state.toolReport = snapshot.tool_report || null;
   renderBlackboard(snapshot);
+  renderToolReport(snapshot.tool_report, state.summary);
   if (snapshot.final_report) renderReport(snapshot.final_report.value, snapshot.critique);
+  renderResearchResponseMeta();
+  window.AthenaContext?.refresh("research", runId);
   await loadMetrics(runId);
 }
 
@@ -1480,7 +2285,9 @@ function renderBlackboard(snapshot) {
 
 function renderReport(report, critique) {
   state.hasReport = true;
-  text($("report-answer"), report.answer || "(no answer)");
+  const citations = Array.isArray(report.citations) ? report.citations : [];
+  fillAnswer($("report-answer"), report.answer || "(no answer)", citations.length,
+    (index, button) => openResearchSource(index, button));
 
   const points = $("report-points");
   points.replaceChildren();
@@ -1545,18 +2352,19 @@ function renderReport(report, critique) {
     const chip = document.createElement("a");
     chip.className = "citation-chip";
     chip.href = "#source-" + row.index;
+    chip.title = "Trace citation [" + row.index + "] back to its tool call";
+    chip.addEventListener("click", (event) => {
+      if (!state.runId) return;
+      event.preventDefault();
+      loadProvenance(state.runId, row.index);
+    });
     text(chip, "[" + row.index + "] " + row.source_ref);
     chips.appendChild(chip);
   });
-
-  const list = $("sources-list");
-  list.replaceChildren();
-  L.citationRows(report).forEach((row) => {
-    const item = document.createElement("li");
-    item.id = "source-" + row.index;
-    text(item, row.source_ref + " \u2014 " + row.quote);
-    list.appendChild(item);
-  });
+  /* No second inline source list: the context panel holds the one
+   * de-duplicated list, and the answer's [n] markers open it at a source. */
+  renderResearchResponseMeta();
+  window.AthenaContext?.refresh("research", state.runId);
 }
 
 /* ---------------------------------------------------------------- metrics */
@@ -1585,10 +2393,20 @@ function showMetricsEmpty(message) {
 }
 
 async function loadMetrics(runId) {
-  if (!runId) { resetMetrics(""); showMetricsEmpty("No run selected. Open a run to see recorded metrics."); return; }
+  if (!runId) {
+    resetMetrics("");
+    showMetricsEmpty("No run selected. Open a run to see recorded metrics.");
+    resetTelemetry("");
+    showTelemetryEmpty("No run selected. Open a run to see its cost, heat grid and waterfall.");
+    return;
+  }
+  const token = state.navToken;
   resetMetrics("loading recorded metrics\u2026");
+  loadTelemetry(runId);
   try {
     const data = await api("/api/runs/" + encodeURIComponent(runId) + "/metrics");
+    if (token !== state.navToken) return;
+    if (state.runId && state.runId !== runId) return;
     const rows = L.metricRows(data && data.rows);
     if (!rows.length) {
       text($("metrics-note"), "derived from the run event log");
@@ -1623,8 +2441,342 @@ async function loadMetrics(runId) {
     heatmap.classList.remove("hidden");
     $("heatmap-empty").classList.add("hidden");
   } catch (error) {
+    if (token !== state.navToken) return;
     text($("metrics-note"), "metrics unavailable");
     showMetricsEmpty("Could not load per-agent metrics: " + error.message);
+  }
+}
+
+/* -------------------------------------------------------------- telemetry
+ * Cost, heat grids, waterfall and provenance. The numbers are shaped by
+ * static/telemetry.js (pure, node-tested); this section only builds elements
+ * and fetches. Every value comes from the stored event log, and a missing
+ * value is shown as a dash with the reason, never as a zero.
+ */
+
+const TELEMETRY_WATERFALL_WIDTH = 720;
+
+function telemetryKit() {
+  return window.AthenaTelemetry || null;
+}
+
+function hideTelemetryNote(id) {
+  const node = $(id);
+  if (!node) return;
+  node.classList.add("hidden");
+  text(node, "");
+}
+
+function resetTelemetry(message) {
+  ["telemetry-metric-grid", "telemetry-bucket-grid", "telemetry-waterfall",
+   "telemetry-cell-list"].forEach((id) => {
+    const node = $(id);
+    if (node) node.replaceChildren();
+  });
+  ["telemetry-metric-caption", "telemetry-bucket-caption", "telemetry-empty",
+   "telemetry-waterfall-empty", "telemetry-cells-empty", "telemetry-cells"].forEach(hideTelemetryNote);
+  const download = $("heatmap-download");
+  if (download) {
+    download.classList.add("hidden");
+    download.removeAttribute("href");
+  }
+  const status = $("telemetry-status");
+  if (status) text(status, message || "");
+  return telemetryKit();
+}
+
+function showTelemetryEmpty(message) {
+  const node = $("telemetry-empty");
+  if (!node) return;
+  text(node, message);
+  node.classList.remove("hidden");
+}
+
+function renderHeatGrid(containerId, captionId, grid, kind, runId) {
+  const T = telemetryKit();
+  const host = $(containerId);
+  if (!T || !host) return 0;
+  host.replaceChildren();
+  host.style.gridTemplateColumns = "";
+  const caption = $(captionId);
+  if (caption) {
+    const basis = grid && grid.normalisation ? grid.normalisation : "";
+    if (basis) {
+      text(caption, kind + ": " + basis);
+      caption.classList.remove("hidden");
+    } else {
+      hideTelemetryNote(captionId);
+    }
+  }
+  if (!grid || grid.empty) return 0;
+  host.style.gridTemplateColumns =
+    "minmax(92px, max-content) repeat(" + grid.columns.length + ", minmax(50px, 1fr))";
+
+  const corner = document.createElement("div");
+  corner.className = "hg-corner";
+  corner.setAttribute("role", "columnheader");
+  text(corner, "agent");
+  host.appendChild(corner);
+
+  grid.columns.forEach((column) => {
+    const head = document.createElement("div");
+    head.className = "hg-col";
+    head.setAttribute("role", "columnheader");
+    head.title = column.title || column.label;
+    text(head, column.label);
+    host.appendChild(head);
+  });
+
+  grid.rows.forEach((row) => {
+    const label = document.createElement("div");
+    label.className = "hg-row-head";
+    label.setAttribute("role", "rowheader");
+    label.title = row.agent;
+    text(label, row.agent);
+    host.appendChild(label);
+    grid.columns.forEach((column) => {
+      const cell = row.cells[column.name];
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "cell");
+      button.className = "hg-cell" + (cell.hasValue ? "" : " is-empty")
+        + (!cell.hasValue && cell.drillable ? " is-unpriced" : "");
+      button.dataset.key = cell.key;
+      button.style.background = cell.hasValue ? T.heatColour(cell.level) : "";
+      const hint = cell.hasValue
+        ? " \u2014 click for the events behind it"
+        : (cell.drillable
+          ? " \u2014 not priced from the stored events; click for the calls behind it"
+          : " \u2014 not recorded");
+      button.title = row.agent + " \u00b7 " + cell.label + ": " + cell.display + hint;
+      text(button, cell.display);
+      if (!cell.hasValue && !cell.drillable) {
+        button.disabled = true;
+      } else {
+        button.addEventListener("click", () => {
+          document.querySelectorAll(".hg-cell.is-selected")
+            .forEach((node) => node.classList.remove("is-selected"));
+          button.classList.add("is-selected");
+          const target = kind === "stage"
+            ? { agent: row.agent, bucket: Number(column.name) }
+            : { agent: row.agent, metric: column.name };
+          loadCellEvents(runId, target);
+        });
+      }
+      host.appendChild(button);
+    });
+  });
+  return grid.rows.length;
+}
+
+function renderWaterfall(spans, runId) {
+  const T = telemetryKit();
+  const host = $("telemetry-waterfall");
+  if (!T || !host) return 0;
+  host.replaceChildren();
+  const geometry = T.waterfallGeometry(spans, TELEMETRY_WATERFALL_WIDTH);
+  if (!geometry.bars.length) {
+    const empty = $("telemetry-waterfall-empty");
+    if (empty) {
+      text(empty, "No span recorded both a start and an end, so there is nothing to lay out. "
+        + "A span needs a stage_start/stage_end pair or a duration on its own event.");
+      empty.classList.remove("hidden");
+    }
+    return 0;
+  }
+  hideTelemetryNote("telemetry-waterfall-empty");
+  geometry.rows.forEach((row) => {
+    const line = document.createElement("div");
+    line.className = "wf-row";
+    const label = document.createElement("span");
+    label.className = "wf-agent";
+    label.title = row.agent;
+    text(label, row.agent);
+    const track = document.createElement("div");
+    track.className = "wf-track";
+    geometry.bars.filter((bar) => bar.agent === row.agent).forEach((bar) => {
+      const element = document.createElement("div");
+      element.className = "wf-bar" + (bar.ok ? "" : " is-failed") + (bar.open ? " is-open" : "");
+      element.style.left = ((bar.x / geometry.width) * 100).toFixed(3) + "%";
+      element.style.width = Math.max(0.5, (bar.width / geometry.width) * 100).toFixed(3) + "%";
+      element.title = bar.title + " \u00b7 starts at " + bar.offsetLabel + " \u00b7 " + bar.durationLabel;
+      track.appendChild(element);
+    });
+    line.appendChild(label);
+    line.appendChild(track);
+    host.appendChild(line);
+  });
+  const axis = document.createElement("div");
+  axis.className = "wf-axis";
+  axis.appendChild(document.createElement("span"));
+  const ticks = document.createElement("div");
+  ticks.className = "wf-ticks";
+  geometry.ticks.forEach((tick) => {
+    const mark = document.createElement("span");
+    mark.className = "wf-tick";
+    mark.style.left = ((tick.x / geometry.width) * 100).toFixed(3) + "%";
+    text(mark, tick.label);
+    ticks.appendChild(mark);
+  });
+  axis.appendChild(ticks);
+  host.appendChild(axis);
+  return geometry.bars.length;
+}
+
+async function loadCellEvents(runId, target) {
+  const T = telemetryKit();
+  const box = $("telemetry-cells");
+  const list = $("telemetry-cell-list");
+  if (!T || !box || !list || !runId) return;
+  const url = T.cellsUrl(runId, target);
+  if (!url) return;
+  box.classList.remove("hidden");
+  list.replaceChildren();
+  hideTelemetryNote("telemetry-cells-empty");
+  const title = $("telemetry-cells-title");
+  const heading = T.cellListTitle(target);
+  if (title) text(title, heading + " \u00b7 loading\u2026");
+  const showNote = (message) => {
+    const note = $("telemetry-cells-empty");
+    if (!note) return;
+    text(note, message);
+    note.classList.remove("hidden");
+  };
+  try {
+    const data = await api(url);
+    const rows = T.eventRows(data);
+    if (title) text(title, heading + " \u00b7 " + rows.length + " event" + (rows.length === 1 ? "" : "s"));
+    if (!rows.length) {
+      showNote((data && data.reason) || "No stored event sits behind this cell.");
+      return;
+    }
+    rows.forEach((row) => {
+      const item = document.createElement("li");
+      item.className = "cell-event" + (row.ok ? "" : " is-failed");
+      const kind = document.createElement("span");
+      kind.className = "cell-event-kind";
+      text(kind, (row.ts ? row.ts + " \u00b7 " : "") + row.kind + (row.agent ? " \u00b7 " + row.agent : ""));
+      const body = document.createElement("div");
+      text(body, row.text + (row.detail ? " \u2014 " + row.detail : ""));
+      item.appendChild(kind);
+      item.appendChild(body);
+      list.appendChild(item);
+    });
+  } catch (error) {
+    if (title) text(title, heading);
+    showNote("Could not load the events behind this cell: " + error.message);
+  }
+}
+
+async function loadProvenance(runId, citation) {
+  const T = telemetryKit();
+  const panel = $("provenance-panel");
+  const list = $("provenance-hops");
+  if (!T || !panel || !list) return;
+  const title = $("provenance-title");
+  const note = $("provenance-empty");
+  const heading = "Provenance of citation [" + citation + "]";
+  panel.classList.remove("hidden");
+  list.replaceChildren();
+  if (note) {
+    note.classList.add("hidden");
+    text(note, "");
+  }
+  if (title) text(title, heading + " \u00b7 loading\u2026");
+  const showNote = (message) => {
+    if (!note) return;
+    text(note, message);
+    note.classList.remove("hidden");
+  };
+  try {
+    const url = "/api/runs/" + encodeURIComponent(runId) + "/provenance?citation="
+      + encodeURIComponent(String(citation));
+    const data = await api(url);
+    if (title) text(title, heading);
+    const hops = T.provenanceHops(data);
+    if (!hops.length) {
+      showNote(T.provenanceUnavailable(data)
+        || "This run stored no provenance chain for that citation.");
+      return;
+    }
+    hops.forEach((hop) => {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      label.className = "prov-hop-label";
+      text(label, hop.label);
+      const detail = document.createElement("span");
+      detail.className = "prov-hop-detail";
+      text(detail, hop.detail);
+      item.appendChild(label);
+      item.appendChild(detail);
+      list.appendChild(item);
+    });
+    const unavailable = T.provenanceUnavailable(data);
+    if (unavailable) showNote(unavailable);
+  } catch (error) {
+    if (title) text(title, heading);
+    showNote("Could not load provenance: " + error.message);
+  }
+}
+
+async function loadTelemetry(runId) {
+  const T = resetTelemetry("loading recorded telemetry\u2026");
+  if (!T) {
+    text($("telemetry-status"), "telemetry helpers did not load");
+    showTelemetryEmpty("static/telemetry.js is missing, so the heat grid and waterfall cannot be drawn.");
+    return;
+  }
+  if (!runId) {
+    text($("telemetry-status"), "");
+    showTelemetryEmpty("No run selected. Open a run to see its cost, heat grid and waterfall.");
+    return;
+  }
+  const token = state.navToken;
+  const base = "/api/runs/" + encodeURIComponent(runId);
+  let failure = "";
+  const [payload, heat] = await Promise.all([
+    api(base + "/telemetry").catch((error) => { failure = failure || error.message; return null; }),
+    api(base + "/heatmap.json").catch((error) => { failure = failure || error.message; return null; }),
+  ]);
+  if (token !== state.navToken) return;
+  if (state.runId && state.runId !== runId) return;
+
+  if (!payload && !heat) {
+    text($("telemetry-status"), "telemetry unavailable");
+    showTelemetryEmpty("Could not load telemetry for this run: " + failure);
+    return;
+  }
+
+  const shape = T.shapeTelemetry(payload);
+  const basis = shape.costBasis || {};
+  const status = [T.telemetrySummary(shape)];
+  if (basis.as_of) status.push("cost estimate at list prices as of " + basis.as_of);
+  if (shape.missing.length) status.push("not recorded: " + shape.missing.join("; "));
+  text($("telemetry-status"), status.filter(Boolean).join(" \u00b7 "));
+
+  const metricGrid = T.metricGrid(heat);
+  const bucketGrid = T.bucketGrid(heat);
+  const metricRows = renderHeatGrid("telemetry-metric-grid", "telemetry-metric-caption",
+    metricGrid, "agent \u00d7 metric", runId);
+  const bucketRows = renderHeatGrid("telemetry-bucket-grid", "telemetry-bucket-caption",
+    bucketGrid, "agent \u00d7 stage", runId);
+  const bars = renderWaterfall(shape.spans, runId);
+
+  if (!shape.agents.length && !metricRows && !bucketRows && !bars) {
+    showTelemetryEmpty(shape.reason
+      || (heat && heat.reason)
+      || "This run stored no telemetry events, so there is nothing to chart.");
+  } else if (!metricRows && !bucketRows && shape.agents.length) {
+    showTelemetryEmpty("The heat map could not be loaded"
+      + (failure ? " (" + failure + ")" : "")
+      + "; the per-agent table above still shows the recorded values.");
+  }
+
+  const download = $("heatmap-download");
+  const png = (heat && heat.png_fallback) || (base + "/heatmap.png");
+  if (download && png) {
+    download.href = png;
+    download.classList.remove("hidden");
   }
 }
 
@@ -1650,6 +2802,11 @@ function fillCompare(rows) {
 async function compareAll() {
   const question = $("question").value.trim();
   if (!question) { toast("Type a question first."); return; }
+  if (!hasResearchTools()) {
+    toast("Select at least one research tool before comparing.");
+    openResearchToolsMenu();
+    return;
+  }
   if (isLocked()) { toast(lockedReason()); return; }
   const ids = [];
   try {
@@ -1657,7 +2814,11 @@ async function compareAll() {
     for (const name of ["sequential", "parallel", "hierarchical", "p2p"]) {
       const data = await api("/api/runs", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, pattern: name }),
+        body: JSON.stringify({
+          question,
+          pattern: name,
+          tools: state.researchTools === null ? null : state.researchTools.slice(),
+        }),
       });
       ids.push(data.run_id);
       await new Promise((resolve, reject) => {
@@ -1695,7 +2856,262 @@ async function compareAll() {
   }
 }
 
+/* ---------------------------------------------------------------- documents */
+
+/* The preview drawer is read-only and reuses the context panel chrome. It
+ * shows the indexed chunk text for one document; nothing is re-rendered. */
+function closeDocPreview(trigger) {
+  const shell = $("doc-preview");
+  if (!shell) return;
+  shell.classList.add("hidden");
+  shell.setAttribute("aria-hidden", "true");
+  state.docPreview = null;
+  if (trigger && typeof trigger.focus === "function") {
+    trigger.focus({ preventScroll: true });
+  }
+}
+
+function renderDocPreview(data) {
+  const body = $("doc-preview-body");
+  if (!body) return;
+  const chunks = Array.isArray(data.chunks) ? data.chunks : [];
+  text($("doc-preview-title"), data.name || data.id || "Document");
+  const pages = Array.isArray(data.pages) ? data.pages.filter((page) => page != null) : [];
+  text($("doc-preview-subtitle"), [
+    chunks.length + " of " + (data.chunk_count || chunks.length) + " chunk(s)",
+    pages.length ? pages.length + " page(s)" : "",
+    data.truncated ? "truncated" : "",
+  ].filter(Boolean).join(" \u00b7 "));
+  body.replaceChildren();
+  if (!chunks.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    text(empty, "This document has no indexed chunk text to preview.");
+    body.appendChild(empty);
+    return;
+  }
+  chunks.forEach((chunk) => {
+    const row = document.createElement("section");
+    row.className = "doc-chunk";
+    const head = document.createElement("div");
+    head.className = "sidebar-label";
+    text(head, "chunk " + (chunk.index == null ? "?" : chunk.index)
+      + (chunk.page == null ? "" : " \u00b7 page " + chunk.page));
+    const para = document.createElement("p");
+    para.className = "doc-chunk-text";
+    text(para, chunk.text || "");
+    row.appendChild(head);
+    row.appendChild(para);
+    body.appendChild(row);
+  });
+  if (data.truncated) {
+    const note = document.createElement("p");
+    note.className = "hint";
+    text(note, "The preview is size-capped; open the source file for the rest.");
+    body.appendChild(note);
+  }
+}
+
+async function openDocPreview(docId, trigger) {
+  const shell = $("doc-preview");
+  const body = $("doc-preview-body");
+  if (!shell || !body) return;
+  state.docPreview = { id: docId, trigger: trigger || null };
+  shell.classList.remove("hidden");
+  shell.setAttribute("aria-hidden", "false");
+  text($("doc-preview-title"), docId);
+  text($("doc-preview-subtitle"), "loading\u2026");
+  body.replaceChildren();
+  try {
+    const data = await api("/api/library/documents/" + encodeURIComponent(docId));
+    if (!state.docPreview || state.docPreview.id !== docId) return;
+    renderDocPreview(data);
+  } catch (error) {
+    if (!state.docPreview || state.docPreview.id !== docId) return;
+    text($("doc-preview-subtitle"), "");
+    const note = document.createElement("p");
+    note.className = "empty-state";
+    text(note, "preview unavailable: " + error.message);
+    body.replaceChildren(note);
+  }
+}
+
+/* --------------------------------------------------------------- evaluation */
+
+/* The Evaluation nav item only exists when there is real harness output. */
+async function refreshEvalNav() {
+  const nav = $("nav-eval");
+  if (!nav) return false;
+  try {
+    const data = await api("/api/eval/runs");
+    const has = Boolean(((data && data.runs) || []).length);
+    nav.classList.toggle("hidden", !has);
+    return has;
+  } catch (_) {
+    nav.classList.add("hidden");
+    return false;
+  }
+}
+
+function evalCell(value, formatter) {
+  const cell = document.createElement("td");
+  const text_ = value == null || value === "" ? "\u2014" : formatter(value);
+  text(cell, text_);
+  return cell;
+}
+
+function renderEvaluation(summary) {
+  const rows = (summary && summary.patterns) || [];
+  const body = $("eval-body");
+  const table = $("eval-table");
+  const empty = $("eval-empty");
+  const charts = $("eval-charts");
+  if (!body || !table) return;
+  body.replaceChildren();
+  if (charts) charts.replaceChildren();
+  if (!rows.length) {
+    table.classList.add("hidden");
+    if (empty) {
+      empty.classList.remove("hidden");
+      text(empty, "No scored runs in this batch. "
+        + ((summary && summary.problems) || []).join("; "));
+    }
+    return;
+  }
+  if (empty) empty.classList.add("hidden");
+  table.classList.remove("hidden");
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const name = document.createElement("td");
+    text(name, row.pattern);
+    tr.appendChild(name);
+    tr.appendChild(evalCell(row.runs, (value) => String(value)));
+    tr.appendChild(evalCell(row.success_rate == null ? null : row.success_rate,
+      (value) => (row.successes || 0) + "/" + (row.scored || 0)
+        + " (" + Math.round(Number(value) * 100) + "%)"));
+    tr.appendChild(evalCell(row.latency_median_s,
+      (value) => Number(value).toFixed(1) + " s"));
+    tr.appendChild(evalCell(row.tokens_median,
+      (value) => Math.round(Number(value)).toLocaleString()));
+    tr.appendChild(evalCell(row.cost_median_usd,
+      (value) => "$" + Number(value).toFixed(4)));
+    tr.appendChild(evalCell(row.citation_precision_median,
+      (value) => Number(value).toFixed(2)));
+    body.appendChild(tr);
+  });
+  if (charts && (summary.charts || []).length) {
+    summary.charts.forEach((chart) => {
+      const link = document.createElement("a");
+      link.className = "eval-chart";
+      link.href = chart.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      const image = document.createElement("img");
+      image.src = chart.href;
+      image.alt = chart.name;
+      image.loading = "lazy";
+      link.appendChild(image);
+      charts.appendChild(link);
+    });
+  }
+}
+
+async function loadEvaluation(runId) {
+  const picker = $("eval-run-picker");
+  const status = $("eval-status");
+  try {
+    const data = await api("/api/eval/runs");
+    const runs = (data && data.runs) || [];
+    const nav = $("nav-eval");
+    if (nav) nav.classList.toggle("hidden", !runs.length);
+    if (!runs.length) {
+      if (status) text(status, "No evaluation results are present yet.");
+      renderEvaluation({ patterns: [] });
+      if (picker) picker.replaceChildren();
+      return;
+    }
+    const wanted = runId || (picker && picker.value) || runs[0].id;
+    if (picker) {
+      picker.replaceChildren();
+      runs.forEach((run) => {
+        const option = document.createElement("option");
+        option.value = run.id;
+        text(option, run.id + " \u00b7 " + run.runs + " run(s)");
+        option.selected = run.id === wanted;
+        picker.appendChild(option);
+      });
+    }
+    const summary = await api("/api/eval/summary?run=" + encodeURIComponent(wanted));
+    if (status) {
+      text(status, [
+        wanted,
+        (summary.records || 0) + " recorded",
+        (summary.scored || 0) + " scored",
+        ...((summary.problems || []).length ? [(summary.problems || []).length + " problem(s)"] : []),
+      ].join(" \u00b7 "));
+    }
+    renderEvaluation(summary);
+  } catch (error) {
+    if (status) text(status, "evaluation unavailable: " + error.message);
+    renderEvaluation({ patterns: [] });
+  }
+}
+
 /* ---------------------------------------------------------------- tools */
+
+async function loadDocuments() {
+  const host = $("documents-content");
+  const status = $("documents-status");
+  if (!host) return;
+  host.replaceChildren();
+  if (status) text(status, "loading indexed documents\u2026");
+  try {
+    const data = await api("/api/settings/library");
+    const rag = (data && data.rag) || {};
+    const documents = Array.isArray(rag.documents) ? rag.documents : [];
+    if (!documents.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state";
+      text(empty, rag.chunks
+        ? "The index has chunks but no readable document metadata."
+        : "No documents are indexed yet. Add files to data/corpus and rebuild in Settings \u2192 Library.");
+      host.appendChild(empty);
+    } else {
+      const list = document.createElement("ul");
+      list.className = "documents-list";
+      documents.forEach((entry) => {
+        const item = document.createElement("li");
+        item.className = "document-row";
+        const name = document.createElement("strong");
+        text(name, entry.name || entry.id || "document");
+        const meta = document.createElement("span");
+        text(meta, (entry.chunks || 0) + " chunks"
+          + (entry.page_count ? " \u00b7 " + entry.page_count + " pages" : ""));
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "link-button document-open";
+        text(open, "preview");
+        open.title = "Read the indexed text of this document";
+        open.addEventListener("click", () => {
+          openDocPreview(entry.id || entry.name || "", open);
+        });
+        item.appendChild(name);
+        item.appendChild(meta);
+        item.appendChild(open);
+        list.appendChild(item);
+      });
+      host.appendChild(list);
+    }
+    if (status) {
+      text(status, (rag.chunks || 0) + " indexed chunk"
+        + (rag.chunks === 1 ? "" : "s") + " \u00b7 "
+        + documents.length + " document" + (documents.length === 1 ? "" : "s")
+        + (rag.corpus_dir ? " \u00b7 " + rag.corpus_dir : ""));
+    }
+  } catch (error) {
+    if (status) text(status, "documents unavailable: " + error.message);
+  }
+}
 
 async function loadTools() {
   const host = $("tools-list");
@@ -1812,6 +3228,32 @@ document.querySelectorAll("#pattern-chips .chip").forEach((chip) => {
 });
 setPattern(state.pattern, false);
 
+const researchToolsTrigger = $("research-tools-trigger");
+const researchToolsMenu = $("research-tools-menu");
+if (researchToolsTrigger) {
+  researchToolsTrigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (researchToolsMenu && researchToolsMenu.classList.contains("hidden")) {
+      openResearchToolsMenu();
+    } else {
+      closeResearchToolsMenu(false);
+    }
+  });
+  researchToolsTrigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      openResearchToolsMenu();
+    }
+    if (event.key === "Escape") closeResearchToolsMenu(false);
+  });
+}
+if (researchToolsMenu) {
+  researchToolsMenu.addEventListener("keydown", handleResearchToolsKey);
+  researchToolsMenu.addEventListener("click", (event) => event.stopPropagation());
+}
+renderResearchToolMenu();
+syncResearchTools();
+
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
     if (window.innerWidth <= 680) setSidebar(true, false);
@@ -1825,14 +3267,17 @@ document.querySelectorAll(".nav-item").forEach((item) => {
 
 document.querySelectorAll("#run-tabs .tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    if (tab.dataset.tab === "answer") { showView("run"); return; }
+    if (tab.dataset.tab === "answer") { showAnswerTab(); return; }
     setTab(tab.dataset.tab);
   });
 });
 
 $("new-chat").addEventListener("click", newChat);
 $("reconnect-run").addEventListener("click", reconnectRun);
-$("exchange-details").addEventListener("click", () => showView("details"));
+$("report-details").addEventListener("click", () => showView("details"));
+$("details-back").addEventListener("click", () => showView("run"));
+$("activity-toggle").addEventListener("click", toggleActivityTrace);
+$("documents-refresh").addEventListener("click", loadDocuments);
 $("previous-run-dismiss").addEventListener("click", () => {
   state.previousRun = null;
   renderStatus();
@@ -1879,13 +3324,31 @@ document.addEventListener("pointerdown", (event) => {
   if (picker && menu && !menu.classList.contains("hidden") && !picker.contains(event.target)) {
     closePatternMenu(false);
   }
+  const toolsPicker = $("research-tools-picker");
+  const toolsMenu = $("research-tools-menu");
+  if (toolsPicker && toolsMenu && !toolsMenu.classList.contains("hidden")
+      && !toolsPicker.contains(event.target)) {
+    closeResearchToolsMenu(false);
+  }
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  const preview = $("doc-preview");
+  if (preview && !preview.classList.contains("hidden")) {
+    event.preventDefault();
+    closeDocPreview();
+    return;
+  }
   const panel = $("examples-popover");
   if (panel && !panel.classList.contains("hidden")) {
     event.preventDefault();
     closeExamples(true);
+    return;
+  }
+  const toolsMenu = $("research-tools-menu");
+  if (toolsMenu && !toolsMenu.classList.contains("hidden")) {
+    event.preventDefault();
+    closeResearchToolsMenu(true);
     return;
   }
   const menu = $("pattern-menu");
@@ -1897,9 +3360,18 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("athena:view", () => {
   closeExamples(false);
   closePatternMenu(false);
+  closeResearchToolsMenu(false);
 });
 window.addEventListener("resize", scheduleExamplePosition);
 document.querySelector(".main")?.addEventListener("scroll", scheduleExamplePosition, { passive: true });
+document.querySelector(".main")?.addEventListener("scroll", () => {
+  if (state.scrollTimer) clearTimeout(state.scrollTimer);
+  state.scrollTimer = setTimeout(() => {
+    state.scrollTimer = null;
+    saveResearchScroll();
+  }, 150);
+}, { passive: true });
+window.addEventListener("beforeunload", saveResearchScroll);
 $("replay-toggle").addEventListener("click", () => {
   const panel = $("replay-panel");
   const hidden = panel.classList.toggle("hidden");
@@ -1923,6 +3395,22 @@ $("copy-markdown").addEventListener("click", () => {
 $("toggle-raw").addEventListener("click", () => {
   state.rawJson = !state.rawJson;
   document.querySelectorAll(".raw").forEach((node) => node.classList.toggle("hidden", !state.rawJson));
+});
+$("telemetry-cells-close").addEventListener("click", () => {
+  const box = $("telemetry-cells");
+  if (box) box.classList.add("hidden");
+});
+$("provenance-close").addEventListener("click", () => {
+  const panel = $("provenance-panel");
+  if (panel) panel.classList.add("hidden");
+});
+$("research-context-toggle").addEventListener("click", (event) => {
+  toggleResearchContext(event.currentTarget);
+});
+$("doc-preview-close").addEventListener("click", () => closeDocPreview());
+$("doc-preview-backdrop").addEventListener("click", () => closeDocPreview());
+$("eval-run-picker").addEventListener("change", (event) => {
+  loadEvaluation(event.currentTarget.value);
 });
 $("sidebar-toggle").addEventListener("click", () => {
   setSidebar(!document.body.classList.contains("sidebar-collapsed"));
@@ -1952,6 +3440,7 @@ window.AthenaUi = {
   applyTheme,
   applySize,
   openRun,
+  activityRow,
   refreshHealth,
   isBusy: () => isLocked() || state.busy || Boolean(state.activeRun),
   currentView: () => state.view,
@@ -2006,6 +3495,9 @@ refreshHealth();
 loadQuestions().catch(() => {});
 loadHistory();
 loadReplays().catch(() => {});
+loadResearchTools().catch(() => {});
+/* The Evaluation nav item only exists once the harness has written results. */
+refreshEvalNav().catch(() => {});
 
 if (boot.view.startsWith("replay=")) {
   const name = boot.view.slice(7);
@@ -2013,7 +3505,7 @@ if (boot.view.startsWith("replay=")) {
   openReplay(name, { at: Number.isFinite(at) ? at : 1, tab: bootTab });
 } else if (boot.view === "chat") {
   showView("chat");
-} else if (["settings", "how", "documents"].includes(boot.view) || boot.view === "details") {
+} else if (["settings", "how", "documents"].includes(boot.view)) {
   if (boot.view === "settings") {
     showView("run");
     setTimeout(() => window.AthenaSettings?.open(), 0);

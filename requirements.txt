@@ -40,3 +40,10 @@ pytest==9.1.1
 # --- Dev tools (not imported by the app) ---
 # Static undefined-name check; tests/test_static_names.py drives it.
 pyflakes==4.0.3
+
+# --- Deployment (pinned from the verified .venv; already installed there) ---
+# Both are imported by the app (the settings vault encrypts provider keys, the
+# crew-server probe uses httpx) but were only transitive before, so a fresh
+# container could have resolved either one to something untested.
+cryptography==50.0.2
+httpx==0.28.1

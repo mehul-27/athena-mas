@@ -58,12 +58,57 @@ def chunk_overlap() -> int:
     return int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
 
 
+def rag_adjacent_chunks() -> int:
+    return max(0, min(2, int(os.getenv("RAG_ADJACENT_CHUNKS", "1"))))
+
+
 def search_provider() -> str:
     return (os.getenv("SEARCH_PROVIDER") or "duckduckgo").lower()
 
 
+def searxng_url() -> str:
+    """The SearXNG base URL, from ``ATHENA_SEARXNG_URL`` or ``SEARXNG_INSTANCE``.
+
+    ``ATHENA_SEARXNG_URL`` is the documented, self-describing name; the older
+    ``SEARXNG_INSTANCE`` keeps working so existing profiles need no migration.
+    Both may include a trailing slash and a ``/search`` suffix; the adapter
+    appends ``/search`` itself and normalizes the base.
+    """
+    for name in ("ATHENA_SEARXNG_URL", "SEARXNG_INSTANCE"):
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value.rstrip("/")
+    return ""
+
+
 def searxng_instance() -> str:
-    return (os.getenv("SEARXNG_INSTANCE") or "").rstrip("/")
+    return searxng_url()
+
+
+def search_fallback_provider() -> str:
+    """The optional fallback provider, or "" when no fallback is configured.
+
+    Setting ``ATHENA_SEARXNG_URL`` is enough to enable the SearXNG fallback: the
+    URL *is* the opt-in. An explicit ``SEARCH_FALLBACK_PROVIDER`` wins, and an
+    empty value there (or ``none``/``off``) disables the fallback entirely.
+    """
+    explicit = (os.getenv("SEARCH_FALLBACK_PROVIDER") or "").strip().lower()
+    if explicit:
+        return "" if explicit in {"none", "off", "disabled"} else explicit
+    if (os.getenv("ATHENA_SEARXNG_URL") or "").strip():
+        return "searxng"
+    return ""
+
+
+def search_fallback_endpoint() -> str:
+    return (
+        os.getenv("SEARCH_FALLBACK_ENDPOINT")
+        or searxng_url()
+    ).strip().rstrip("/")
+
+
+def search_cooldown() -> float:
+    return float(os.getenv("SEARCH_THROTTLE_COOLDOWN", "60"))
 
 
 def user_agent() -> str:

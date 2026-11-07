@@ -2,6 +2,12 @@
 
 Deliberately separate from the research event store and Blackboard: a chat turn
 is not a run, has no critic, and may run concurrently with other chats.
+
+Message content is redacted on the way in *and* on the way out. A chat turn can
+carry a pasted key, a bearer header or a token-shaped ID, and everything stored
+here is later rendered by the conversation, message and transcript routes, so
+the store — not each route — is the one place that has to get it right. The read
+path is redacted too, so rows written before this rule existed cannot leak.
 """
 
 from __future__ import annotations
@@ -14,6 +20,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator
+
+from athena.guardrails.secrets import redact_text, redact_tree
 
 DEFAULT_TITLE = "New chat"
 HISTORY_FALLBACK_TURNS = 20
@@ -58,6 +66,13 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _safe_text(text: Any) -> str:
+    """Redact a free-text field before it is written or returned."""
+    if not text:
+        return ""
+    return redact_text(str(text)) or ""
+
+
 def _loads(raw: str | None, fallback: Any) -> Any:
     try:
         value = json.loads(raw or "")
@@ -72,7 +87,7 @@ def _db_path() -> Path:
 
 def derive_title(message: str) -> str:
     """A working title from the first message, with no extra model call."""
-    words = (message or "").strip().split()
+    words = _safe_text(message).strip().split()
     if not words:
         return DEFAULT_TITLE
     title = " ".join(words[:6])
@@ -109,7 +124,7 @@ class ChatStore:
 
     def create(self, title: str = DEFAULT_TITLE) -> dict[str, Any]:
         conv_id = str(uuid.uuid4())
-        clean = (title or "").strip()[:200] or DEFAULT_TITLE
+        clean = _safe_text(title).strip()[:200] or DEFAULT_TITLE
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO conversations (id, title, profile_id, created_at, updated_at)"
@@ -134,7 +149,7 @@ class ChatStore:
         return [self.summary(dict(row)) for row in rows]
 
     def rename(self, conversation_id: str, title: str) -> bool:
-        clean = (title or "").strip()[:200]
+        clean = _safe_text(title).strip()[:200]
         if not clean:
             return False
         with self._connect() as conn:
@@ -197,18 +212,18 @@ class ChatStore:
                     message_id,
                     conversation_id,
                     role,
-                    content or "",
+                    _safe_text(content),
                     status,
                     provider or "",
                     model or "",
                     profile_id or "",
                     _json(list(capabilities or [])),
                     _json(list(tools or [])),
-                    _json(list(sources or [])),
-                    _json(list(tool_events or [])),
+                    _json(redact_tree(list(sources or []))),
+                    _json(redact_tree(list(tool_events or []))),
                     _json(usage) if usage else "",
-                    error or "",
-                    _json(meta or {}),
+                    _safe_text(error),
+                    _json(redact_tree(meta or {})),
                     created,
                 ),
             )
@@ -229,11 +244,13 @@ class ChatStore:
             if key not in allowed:
                 continue
             if key in {"capabilities", "tools", "sources", "tool_events"}:
-                value = _json(list(value or []))
+                value = _json(redact_tree(list(value or [])))
             elif key == "usage":
                 value = _json(value) if value else ""
             elif key == "meta":
-                value = _json(value or {})
+                value = _json(redact_tree(value or {}))
+            elif key in {"content", "error"}:
+                value = _safe_text(value)
             assignments.append(f"{key} = ?")
             values.append(value)
         if not assignments:
@@ -320,11 +337,16 @@ class ChatStore:
     @staticmethod
     def _message(row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)
+        # Read-side redaction: rows written before the write-side rule existed
+        # (or by an older version) must not leak through the conversation and
+        # transcript routes either.
+        data["content"] = _safe_text(data.get("content"))
+        data["error"] = _safe_text(data.get("error"))
         data["capabilities"] = _loads(data.get("capabilities"), [])
         data["tools"] = _loads(data.get("tools"), [])
-        data["sources"] = _loads(data.get("sources"), [])
-        data["tool_events"] = _loads(data.get("tool_events"), [])
-        data["meta"] = _loads(data.get("meta"), {})
+        data["sources"] = redact_tree(_loads(data.get("sources"), []))
+        data["tool_events"] = redact_tree(_loads(data.get("tool_events"), []))
+        data["meta"] = redact_tree(_loads(data.get("meta"), {}))
         usage = _loads(data.get("usage"), {})
         data["usage"] = usage if isinstance(usage, dict) and usage else None
         return data

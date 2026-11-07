@@ -19,6 +19,8 @@ DEFAULT_MAX_TOOL_CALLS = 3
 DEFAULT_MAX_MODEL_CALLS = 6
 DEFAULT_RESEARCHER_MAX_TOOL_CALLS = 8
 DEFAULT_RESEARCHER_MAX_MODEL_CALLS = 10
+DEFAULT_CALC_MAX_TOOL_CALLS = 4
+DEFAULT_CALC_MAX_MODEL_CALLS = 4
 RESEARCHER_ROLES = frozenset(
     {"researcher", "web_researcher", "rag_researcher", "calc_researcher"}
 )
@@ -27,6 +29,11 @@ STOP_TEXT = "Budget reached; findings are recorded on the blackboard."
 DUPLICATE_RESULT = {
     "duplicate": True,
     "note": "Result already recorded. Stop calling tools and reply with one sentence.",
+    "isError": True,
+    "error": "Blocked: this tool call was already made.",
+    "error_type": "ToolDuplicateBlocked",
+    "blocked_by": "duplicate",
+    "block_reason": "duplicate",
 }
 
 
@@ -36,6 +43,11 @@ def _limit(name: str, default: int) -> int:
 
 
 def budget_limits(role: str | None = None) -> tuple[int, int]:
+    if role == "calc_researcher":
+        return (
+            _limit("ATHENA_CALC_MAX_TOOL_CALLS", DEFAULT_CALC_MAX_TOOL_CALLS),
+            _limit("ATHENA_CALC_MAX_MODEL_CALLS", DEFAULT_CALC_MAX_MODEL_CALLS),
+        )
     if role in RESEARCHER_ROLES:
         return (
             _limit("ATHENA_RESEARCHER_MAX_TOOL_CALLS", DEFAULT_RESEARCHER_MAX_TOOL_CALLS),
@@ -94,7 +106,15 @@ class Budget:
             return dict(DUPLICATE_RESULT)
         if self.tool_calls >= self.max_tool_calls:
             self.stop_reason = self.stop_reason or "tool_budget"
-            return {"budget": "tool_calls", "note": STOP_TEXT}
+            return {
+                "budget": "tool_calls",
+                "note": STOP_TEXT,
+                "isError": True,
+                "error": "Blocked: the tool-call budget for this worker is exhausted.",
+                "error_type": "ToolBudgetBlocked",
+                "blocked_by": "budget",
+                "block_reason": "tool_budget",
+            }
         self.seen.add(key)
         self.tool_calls += 1
         return None
@@ -142,10 +162,10 @@ def make_budget_callbacks(budget: Budget, recorder=None, agent: str = ""):
         return response
 
     def before_tool(tool, args, tool_context):
-        result = budget.before_tool(tool, args, tool_context)
-        if result is not None and budget.stop_reason:
-            _emit_stop(recorder, agent)
-        return result
+        # The monitoring plugin records the blocked invocation itself (with
+        # tool name, arguments, duration and blocked_by), so a second generic
+        # budget_stop event here would duplicate the same attempt.
+        return budget.before_tool(tool, args, tool_context)
 
     return before_model, before_tool
 

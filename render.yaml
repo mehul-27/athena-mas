@@ -1,0 +1,44 @@
+# Render blueprint: the documented alternative to Fly.io.
+#
+# Chosen shape: ONE Docker web service with a persistent disk mounted at
+# /app/data, no autoscaling, no cron, no worker. The free instance type has no
+# disks, so this needs a paid instance; `starter` is the smallest that can
+# attach one. Nothing here creates resources: Render only reads it when a
+# Blueprint is connected to the repository, which is a user action.
+#
+# Note: Render injects PORT itself (10000 by default) - the image reads PORT,
+# so no override is needed. Set the two per-deployment values in the dashboard
+# (or `sync: false` prompts for them on first deploy): ATHENA_ACCESS_TOKEN and
+# ATHENA_ALLOWED_HOSTS.
+
+services:
+  - type: web
+    name: athena-mas
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    numInstances: 1
+    autoDeploy: false
+    disk:
+      name: athena-data
+      mountPath: /app/data
+      sizeGB: 10
+    envVars:
+      - key: ATHENA_DATA_DIR
+        value: /app/data
+      - key: ATHENA_START_CREW
+        value: "1"
+      - key: ATHENA_LOG_FORMAT
+        value: json
+      - key: ATHENA_SHUTDOWN_TIMEOUT_S
+        value: "8"
+      - key: MPLCONFIGDIR
+        value: /app/.run/mpl
+      # Prompts on first deploy; never stored in the repository.
+      - key: ATHENA_ACCESS_TOKEN
+        sync: false
+      - key: ATHENA_ALLOWED_HOSTS
+        sync: false

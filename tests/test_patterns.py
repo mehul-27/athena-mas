@@ -121,6 +121,7 @@ def test_sequential_stage_order_is_unchanged(monkeypatch) -> None:
         "analyst",
         "writer",
         "critic",
+        "recovery_review",
     ]
 
 
@@ -279,6 +280,71 @@ def test_hierarchical_rejection_requests_bounded_research_recovery(
     assert recovery_calls == [1]
     assert blackboard.read("critique")[0].approved is True
 
+
+
+def test_hierarchical_skips_research_recovery_when_evidence_is_sufficient(
+    tmp_path, monkeypatch
+) -> None:
+    store = SQLiteStore(tmp_path / "bb.db")
+    blackboard = Blackboard.create(
+        Task(question="What changed in Python 3.13?"), store=store
+    )
+    blackboard.append(
+        "evidence",
+        EvidenceItem(
+            id="fetch-1",
+            source_type="web",
+            source_ref="https://docs.python.org/3.13/whatsnew/3.13.html",
+            content="Python 3.13 release notes explain the changed behavior. " * 5,
+            retrieved_by="web_researcher",
+        ),
+        author="web_researcher",
+    )
+    writer_calls: list[int] = []
+
+    def write_plan(_=None):
+        blackboard.write(
+            "plan",
+            Plan(steps=[PlanStep(id="s1", description="search", assigned_to="web_researcher")]),
+            author="planner",
+        )
+
+    def write_critique(call_number):
+        rejected = call_number == 1
+        blackboard.write(
+            "critique",
+            Critique(
+                issues=["the draft ignored the recorded evidence"] if rejected else [],
+                severity="high" if rejected else "low",
+                approved=not rejected,
+            ),
+            author="critic",
+        )
+
+    def fail_if_research_called(*_args, **_kwargs):
+        raise AssertionError("research recovery must not run when evidence is sufficient")
+
+    monkeypatch.setattr(
+        "athena.patterns.hierarchical.build_role_researcher",
+        fail_if_research_called,
+    )
+
+    agent = HierarchicalAgent(
+        name="supervisor",
+        planner=StubStage("planner", write_plan),
+        workers={role: StubStage(role) for role in
+                 ("rag_researcher", "web_researcher", "calc_researcher")},
+        analyst=StubStage("analyst"),
+        writer=StubStage("writer", lambda number: writer_calls.append(number)),
+        critic=StubStage("critic", write_critique),
+        run_id=blackboard.run_id,
+        store=store,
+        revision_limit=1,
+    )
+
+    _collect(agent)
+
+    assert len(writer_calls) == 2
 
 
 def test_hierarchical_revises_once_when_rejected(tmp_path) -> None:

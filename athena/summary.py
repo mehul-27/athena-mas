@@ -38,6 +38,7 @@ class RunSummary:
     evidence_count: int = 0
     tool_calls: int = 0
     revision_rounds: int = 0
+    recovery_rounds: int = 0
     confidence: float | None = None
     approved: bool | None = None
     severity: str | None = None
@@ -49,6 +50,36 @@ class RunSummary:
     degraded: bool = False
     failed: bool = False
     estimated: bool = False
+    tools_enabled: list[str] = field(default_factory=list)
+    tools_planned: list[str] = field(default_factory=list)
+    tools_invoked: list[str] = field(default_factory=list)
+    tools_succeeded: list[str] = field(default_factory=list)
+    tools_failed: list[str] = field(default_factory=list)
+    tools_usable_evidence: list[str] = field(default_factory=list)
+    tools_skipped: list[str] = field(default_factory=list)
+    unmet_requirements: list[str] = field(default_factory=list)
+    evidence_limitations: list[str] = field(default_factory=list)
+    subject_specific: bool = False
+    general_background: bool = False
+    answer_as_asked: bool = False
+    qualified_possible: bool = False
+    supported_aspects: list[str] = field(default_factory=list)
+    missing_aspects: list[str] = field(default_factory=list)
+    missing_subjects: list[str] = field(default_factory=list)
+    # Requested facts the evidence does not establish, and unresolved conflicts.
+    missing_requirements: list[str] = field(default_factory=list)
+    conflict_notes: list[str] = field(default_factory=list)
+    evidence_quality: str = "none"
+    confidence_ceiling: float | None = None
+    confidence_notes: list[str] = field(default_factory=list)
+    # Claim-level validation of the shipped answer.
+    claim_checks: int = 0
+    claim_issues: list[str] = field(default_factory=list)
+    # Exactly one terminal state per run, and the reason for it.
+    terminal_state: str = ""
+    terminal_reason: str = ""
+    recovery_reason: str = ""
+    recovery_skipped_reason: str = ""
 
     def row(self) -> tuple[str, ...]:
         return (
@@ -138,43 +169,88 @@ def note_critique(summary: "RunSummary", critique) -> "RunSummary":
     return summary
 
 
+TERMINAL_STATES = ("success", "failure", "cancelled", "timeout")
+
+
+def set_terminal(summary: RunSummary, state: str, reason: str = "") -> str:
+    """Stamp the run's single terminal state; the first state wins.
+
+    A run must end in exactly one of ``TERMINAL_STATES``. Calling this twice
+    therefore never overwrites the state a run already reached: a cancelled run
+    that later reports "success" is still cancelled, and the discrepancy is
+    recorded in ``terminal_reason``.
+    """
+    from athena.agents.lifecycle import normalise_terminal
+
+    state = normalise_terminal(state)
+    if summary.terminal_state:
+        if state != summary.terminal_state and reason:
+            note = f"{summary.terminal_state} (ignored {state}: {reason})"
+            if note != summary.terminal_reason:
+                summary.terminal_reason = note[:400]
+        return summary.terminal_state
+    summary.terminal_state = state
+    if reason:
+        summary.terminal_reason = reason[:400]
+    return state
+
+
 def finish(summary: RunSummary) -> RunSummary:
     """A run with any failed stage is degraded, whatever the end state looks like."""
     summary.degraded = summary.degraded or bool(summary.stage_errors)
+    if not summary.terminal_state:
+        set_terminal(
+            summary,
+            "success" if summary.outcome == "approved" else "failure",
+            summary.terminal_reason or f"outcome {summary.outcome}",
+        )
     return summary
 
 
 def set_outcome(
     summary: RunSummary, report_present: bool, evidence_sufficient: bool
 ) -> RunSummary:
-    """Classify a normally terminated run without calling it a success by default."""
+    """Classify a normally terminated run without calling it a success by default.
+
+    Only a recorded approval counts as one, and it still needs enough evidence.
+    A missing or failed critique never sets ``approved``, so it falls through to
+    ``incomplete``; a recorded rejection stays a rejection. The verdict is
+    authoritative for approval, so a stale default ``critic_status`` cannot
+    demote a run that already carries an explicit approval.
+    """
     summary.evidence_sufficient = evidence_sufficient
     if summary.failed:
         outcome = "failed"
     elif not report_present:
         outcome = "incomplete"
-    elif summary.critic_status in {"failed", "missing"}:
-        outcome = "incomplete"
+    elif summary.approved is True:
+        outcome = "approved" if evidence_sufficient else "incomplete"
     elif summary.approved is False:
         outcome = "rejected"
-    elif summary.approved is True and evidence_sufficient:
-        outcome = "approved"
     else:
+        # No approval was recorded: nothing here is a success.
         outcome = "incomplete"
     summary.outcome = outcome
     if outcome != "approved":
         summary.degraded = True
+    set_terminal(
+        summary,
+        "success" if outcome == "approved" else "failure",
+        summary.terminal_reason or f"outcome {outcome}",
+    )
     return summary
 
 def summary_line(summary: RunSummary) -> str:
     """One line for the runner: cost, size and health of the run."""
     errors = f" ({', '.join(summary.stage_errors)})" if summary.stage_errors else ""
+    terminal = summary.terminal_state or "unset"
     return (
-        f"summary: {summary.pattern} | wall {summary.wall_s:.0f}s | "
+        f"summary: {summary.pattern} | terminal {terminal} | wall {summary.wall_s:.0f}s | "
         f"ADK tokens {summary.adk_tokens} | "
         f"A2A {summary.a2a_bytes_out}B out / {summary.a2a_bytes_in}B in | "
         f"evidence {summary.evidence_count} | tools {summary.tool_calls} | "
-        f"revisions {summary.revision_rounds} | degraded {summary.degraded}{errors} | "
+        f"revisions {summary.revision_rounds} | recoveries {summary.recovery_rounds} | "
+        f"degraded {summary.degraded}{errors} | "
         f"critic {_verdict(summary)} | "
         + ("cost basis: partly estimated" if summary.estimated else "cost basis: measured")
     )

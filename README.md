@@ -31,6 +31,15 @@ Repository: <https://github.com/mehul-27/athena-mas>
 - Supports `sequential`, `parallel`, `hierarchical`, and `p2p` orchestration.
 - Streams progress over Server-Sent Events (SSE), including safe reconnection.
 - Persists run history, event metrics, heatmaps, logs, and final summaries.
+- Selects research tools beside the Pattern pill (All tools, multiple tools, or
+  an explicit no-tools state) and enforces that selection in every pattern.
+- Shows a compact, expandable execution trace above Chat and Research answers,
+  then keeps the completed trace visible in a muted state.
+- Opens per-run diagnostics from the Research response header (**Run details**),
+  always bound to the selected conversation's run id. There is no global Run
+  details navigation item.
+- Lists the indexed documents in the **Documents** view and uses the same corpus
+  for Chat's explicit **Documents** capability.
 - Adds a separate **Chat** surface with persisted conversations, token streaming,
   stop, model selection, opt-in RAG/web grounding, selected tools, sources and
   usage — without starting a research run.
@@ -269,11 +278,17 @@ The most important settings:
 | `LLM_API_BASE` | Optional OpenAI-compatible API root. |
 | `LLM_REASONING_EFFORT` | Optional `low`, `medium`, or `high`. |
 | `LLM_MAX_TOKENS_<ROLE>` | Per-role output caps. |
-| `ATHENA_MAX_REVISIONS` | Hierarchical recovery cycles after a high rejection. |
+| `ATHENA_MAX_REVISIONS` | Bounded revision/recovery cycles after a high rejection or evidence gap. |
 | `ATHENA_RESEARCHER_MAX_TOOL_CALLS` | Researcher tool-call budget (default 8). |
 | `ATHENA_RESEARCHER_MAX_MODEL_CALLS` | Researcher model-call budget (default 10). |
+| `ATHENA_CALC_MAX_TOOL_CALLS` | Calculation-worker tool-call budget (default 4). |
+| `ATHENA_CALC_MAX_MODEL_CALLS` | Calculation-worker model-call budget (default 4). |
 | `SEARCH_PROVIDER` | `duckduckgo`, `searxng`, or `disabled`. |
 | `SEARXNG_INSTANCE` | Base URL for self-hosted SearXNG. |
+| `SEARCH_FALLBACK_PROVIDER` | Optional fallback provider (`searxng`) when the primary throttles. |
+| `SEARCH_FALLBACK_ENDPOINT` | Fallback SearXNG base URL; falls back to `SEARXNG_INSTANCE`. |
+| `SEARCH_THROTTLE_COOLDOWN` | Seconds to skip a provider after repeated throttling (default 60). |
+| `RAG_ADJACENT_CHUNKS` | Adjacent chunks added around top RAG hits (default 1; 0 disables). |
 | `EMBEDDING_PROVIDER` | `fastembed` (default) or `hashing`. |
 | `CORPUS_DIR` | Local PDF corpus directory. |
 | `CHROMA_PATH` | Local Chroma index directory. |
@@ -368,12 +383,34 @@ Choose a pattern in the UI or with `--pattern`.
 
 | Pattern | How it works | Research workers | Recovery |
 |---|---|---|---|
-| `sequential` | planner → researcher → analyst → writer → critic | one researcher with all tools | evidence gate; no research revision loop |
+| `sequential` | planner → researcher → analyst → writer → critic | one researcher with the selected tools | evidence gate; no research revision loop |
 | `parallel` | planner → role-specific researchers concurrently → analyst → writer → critic | RAG, web, calc workers named by the plan | evidence gate; no research revision loop |
 | `hierarchical` | planner dispatches plan steps by `assigned_to`; writer/critic run as a loop | role-specific researchers | high-severity critic rejection can trigger one targeted research recovery plus a writer revision |
-| `p2p` | stages exchange context in A2A messages; supervisor audits to Blackboard afterwards | one researcher with all tools | evidence gate; no research revision loop |
+| `p2p` | stages exchange context in A2A messages; supervisor audits to Blackboard afterwards | one researcher with the selected tools | evidence gate; no research revision loop |
 
 All four produce the same Blackboard sections and comparable final reports.
+
+### Tool selection
+
+The composer's **Tools** pill sends a `tools` value with the run:
+
+- omitted or `null` — **All tools**;
+- `[]` — explicitly **No tools** (the UI requires at least one tool before
+  starting, but the API accepts the explicit empty state);
+- `["web_search", "fetch_page"]` — only those tools.
+
+The API validates every id against `athena/tools/registry.py` and returns HTTP
+422 for an unknown id. The selection is stored on the run's `Task` and enforced
+in every pattern: MCP servers are filtered before ADK sees a tool schema, a
+second guard refuses calls outside the selection, disabled workers are skipped,
+and planner steps that require disabled tools are recorded as blocked rather
+than silently dropped. Retries and hierarchical recovery never re-enable a
+disabled tool.
+
+The planner receives the enabled/disabled list. Planned, enabled, invoked,
+successful, failed and skipped tools are recorded separately in the run summary
+and the Run details **Tools** section. An enabled tool is never presented as
+used unless the event log contains a real `tool_call`.
 
 The `hierarchical` loop is bounded by `ATHENA_MAX_REVISIONS` (default `1`). A
 missing critique is never treated as approval. If recovery budget is exhausted,
@@ -495,9 +532,11 @@ The demo server listens on `127.0.0.1:8000` by default.
 |---|---|
 | `GET /api/health` | App, provider, and crew-server status. |
 | `GET /api/questions` | Curated demo questions. |
-| `POST /api/runs` | Start a run (`{"question": "...", "pattern": "sequential"}`). |
+| `POST /api/runs` | Start a run (`{"question": "...", "pattern": "sequential", "tools": ["web_search"]}`; `tools` is optional, `null`/omitted means All tools, `[]` means no tools). |
+| `GET /api/research/tools` | Canonical research tool catalogue and availability. |
 | `GET /api/runs` | Run history and summaries. |
-| `GET /api/runs/{run_id}` | Blackboard snapshot for a run. |
+| `GET /api/runs/{run_id}` | Blackboard snapshot for a run, including planned/actual tool status. |
+| `GET /api/runs/{run_id}/events` | Persisted event log, used to restore a completed activity trace. |
 | `GET /api/runs/{run_id}/stream` | SSE progress stream. |
 | `GET /api/runs/{run_id}/log` | Process log and termination watchdog state. |
 | `GET /api/runs/{run_id}/metrics` | Per-agent metrics. |
@@ -511,7 +550,7 @@ The demo server listens on `127.0.0.1:8000` by default.
 | `GET/POST /api/chat/conversations` | List or create conversations. |
 | `GET/PATCH/DELETE /api/chat/conversations/{id}` | Reopen, rename or delete a conversation. |
 | `PUT /api/chat/conversations/{id}/model` | Select the profile for a conversation. |
-| `POST /api/chat/messages` | Send a message; returns an SSE stream (`meta`, `delta`, `tool`, `sources`, `usage`, `note`, `done`). |
+| `POST /api/chat/messages` | Send a message; returns an SSE stream (`meta`, `trace`, `delta`, `tool`, `sources`, `usage`, `note`, `done`). The `trace` events are persisted on the assistant message's `meta.trace`. |
 | `POST /api/chat/conversations/{id}/stop` | Cancel the active reply. |
 | `GET /api/chat/conversations/{id}/transcript` | Plain-text transcript for copy. |
 

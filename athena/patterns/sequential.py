@@ -8,6 +8,7 @@ from athena.agents.a2a_stage import DEFAULT_CARD_URL, build_a2a_stage
 from athena.agents.planner import build_planner
 from athena.agents.researcher import build_researcher
 from athena.agents.supervisor import SupervisorAgent
+from athena.patterns.recovery import build_recovery_review
 
 
 def build(run_id: str, store: Any = None, card_url: str = DEFAULT_CARD_URL) -> SupervisorAgent:
@@ -22,5 +23,6 @@ def build(run_id: str, store: Any = None, card_url: str = DEFAULT_CARD_URL) -> S
             build_a2a_stage("analyst", run_id, card_url, store),
             build_a2a_stage("writer", run_id, card_url, store),
             build_a2a_stage("critic", run_id, card_url, store),
+            build_recovery_review(run_id, store, card_url),
         ],
     )

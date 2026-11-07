@@ -20,6 +20,8 @@ from google.adk.events import Event
 from google.genai import types
 
 from athena.agents import bb_io
+from athena.agents.confidence import finalize_confidence
+from athena.agents.lifecycle import close_toolsets
 from athena.blackboard import Blackboard
 
 
@@ -57,19 +59,35 @@ class SupervisorAgent(BaseAgent):
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
         pause = stage_pause_seconds()
-        for index, stage in enumerate(self.stages):
-            if index and pause > 0:
-                await asyncio.sleep(pause)
-            async for event in timed_stage(self.name, stage, ctx):
-                yield event
+        blackboard = Blackboard.open(self.run_id, self.store)
+        try:
+            for index, stage in enumerate(self.stages):
+                if index and pause > 0:
+                    await asyncio.sleep(pause)
+                async for event in timed_stage(self.name, stage, ctx):
+                    yield event
 
-        report = bb_io.section(Blackboard.open(self.run_id, self.store), "final_report")
-        text = report.to_markdown() if report else "(no final report was written)"
-        yield Event(
-            author=self.name,
-            content=types.Content(parts=[types.Part(text=text)]),
-            custom_metadata={"final": True},
-        )
+            # The report's confidence is settled here, after sanitization and
+            # after the critic reviewed the shipped answer, so the number and
+            # the answer it describes cannot disagree.
+            decision = finalize_confidence(blackboard, self.run_id, author=self.name)
+            report = bb_io.section(blackboard, "final_report")
+            text = report.to_markdown() if report else "(no final report was written)"
+            metadata: dict[str, Any] = {"final": True}
+            if decision is not None:
+                metadata["confidence"] = decision.confidence
+                metadata["confidence_notes"] = list(decision.notes)
+            yield Event(
+                author=self.name,
+                content=types.Content(parts=[types.Part(text=text)]),
+                custom_metadata=metadata,
+            )
+        finally:
+            # Every stage may own an MCP stdio toolset. Release them here so a
+            # finished (or cancelled) run leaves no tool-server subprocess and
+            # no worker task behind.
+            await close_toolsets(self.stages)
+
 
 
 def build_supervisor(

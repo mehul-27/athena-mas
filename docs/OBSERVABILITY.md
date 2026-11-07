@@ -119,14 +119,14 @@ sources:
 | a | logger never installed at server startup | **No.** `python -m athena.agents.crew_server` (`crew_server.py:193`) calls `create_app()`, which runs `configure_process()` and `install_usage_logger()` in the serving process. uvicorn runs one process, no reload. |
 | b | litellm dispatches callbacks on another thread/task | **No for these calls.** `success_handler` (`litellm_core_utils/litellm_logging.py:2786`) runs `_success_handler_body` inline on the completing thread; the async path likewise. It is still an assumption worth removing, and the redesign no longer depends on it. |
 | c | crewai runs the call in a thread without context copy | **No.** The scope in `_crew_call` was opened in the same thread that runs `crew.kickoff()`, so the ContextVar was visible. |
-| d | crewai replaces `litellm.callbacks` | **YES � the cause.** |
+| d | crewai replaces `litellm.callbacks` | **YES � the cause.** |
 | e | no fallback when the hook misses | **Yes, contributing.** `CrewOutput.token_usage` is empty on the `is_litellm` path, so nothing covered for it. |
 
 Cause (d), concretely: `crewai/llm.py:704-709` is a
 `@model_validator(mode="after")` named `_init_litellm` that runs on **every LLM
 construction** and calls `self.set_callbacks(self.callbacks or [])`.
 `LLM.set_callbacks` (`crewai/llm.py:2496`) finishes with
-`litellm.callbacks = callbacks` (`crewai/llm.py:2519`) � a wholesale
+`litellm.callbacks = callbacks` (`crewai/llm.py:2519`) � a wholesale
 **replacement** of the global list with the LLM's own, which is empty.
 
 `_crew_call` builds a fresh LLM for every role, so the sequence was: install our
@@ -208,3 +208,140 @@ nothing stopped it. The A2A client now defaults to
 After a call, more than 3x the role cap is flagged as a runaway: an
 `error` event with `error_type: runaway_output` is recorded and the role fails
 with `RunawayOutputError` (ok:false, no blackboard write).
+
+## Telemetry: cost, heatmap and provenance
+
+The event log stays the single source of truth. Everything below is read-only
+shaping of stored events plus the blackboard — nothing calls a model, recomputes
+a pipeline value, or fills a gap with a plausible number. When a datum was never
+recorded the field is `null`, the list is empty, and a `missing`/`reason` string
+says why.
+
+### Cost is a list-price estimate from a cited table
+
+`data/pricing.json` (`ATHENA_PRICING` overrides the path) holds, per model
+pattern, input and output USD per million tokens, plus `as_of`, `source`,
+`sources[]` and a `note` that states what is *not* modelled (batch, cached
+input, off-peak, long-context tiers, free tiers). `athena/observability/cost.py`
+prices one call:
+
+```python
+from athena.observability.cost import estimate_cost
+
+estimate_cost("groq/llama-3.3-70b-versatile", 1000, 200)   # -> cost_usd, cost_basis="list_price"
+estimate_cost("some-new-model", 1000, 200)                  # -> cost_usd=None, cost_basis="unpriced"
+```
+
+Matching is case-insensitive: whole id first, then with leading route segments
+stripped (`groq/llama-3.3-70b-versatile` → `llama-3.3-70b-versatile`), then glob
+in file order, so the most specific pattern must come first. An unknown model, a
+missing model name, an unreadable table, or an entry without usable rates all
+return `cost_usd=None` with `cost_basis="unpriced"` and a reason. `pricing_meta()`
+is what the API states about the basis (`as_of`, `source`, `entries`, currency,
+unit) so a number on screen can always be dated and attributed.
+
+**The live default model is deliberately unpriced.** `LLM_MODEL` defaults to
+`groq/qwen/qwen3.8-27b`, and that id is not on the public GroqCloud price page
+under that name, so no rate can be stated **with a source** for it. It is
+therefore listed under `unlisted` in `data/pricing.json` — with `why`,
+`checked_as_of`, `checked_source` and the family member that *is* citable
+(`qwen/qwen3-32b`, 0.29 in / 0.59 out per Mtok, Groq pricing page) — and it stays
+`cost_usd: null`, `cost_basis: "unpriced"`. The `unlisted` block is documentation
+only: it is never matched, and `nearest_listed` is never used for arithmetic,
+because a different model size is a different model. Add a real `models` entry
+the day the provider publishes the id. `pricing_meta()` returns the block as
+`unlisted`/`unlisted_note` so the UI can say *why* a run shows no cost.
+
+Totals keep unpriced calls visible instead of treating them as zero:
+`cost_basis` is `list_price`, `partly_unpriced`, `unpriced` or `no_model_calls`,
+with `priced_calls`, `unpriced_calls` and `unpriced_models` alongside. **Re-read
+the provider page before quoting a number and bump `as_of` when you do.**
+
+### Additive event kinds
+
+`athena/observability/events.py` widened `EventKind` only — nothing was renamed
+or removed, so rows stored before these existed still validate:
+
+- `retry` — one attempt was made again after a failure (`extra.attempt`,
+  `extra.reason`, `extra.stage`).
+- `guardrail` — a guardrail or clamp decision fired (`extra.rule`,
+  `extra.action`, `extra.detail`).
+- `handoff` — control moved between agents/frameworks. A `a2a_call` event that
+  carries `extra.handoff` is also counted as a handoff.
+
+Until an emit site exists, the telemetry view stays honest by reporting two
+things side by side: `retries` (real `retry` events) and `retries_inferred`
+(`error` events whose `error_type` is `empty_reply` or `runaway_output`, which
+the pipeline retries without a retry event). A zero in `retries` therefore never
+claims "nothing was retried".
+
+**Where to emit next** (files not owned by the telemetry work):
+
+| event | suggested site | fields |
+| --- | --- | --- |
+| `retry` | `athena/config/reply_guard.py`, `athena/agents/crew_writer.py` (the retry loops around empty/runaway replies) | `attempt`, `reason`, `stage` |
+| `guardrail` | `athena/guardrails/**` at each clamp/reject decision, and the output-cap wrapper | `rule`, `action`, `detail` |
+| `handoff` | the supervisor→researcher dispatch and the ADK→A2A crew hop | `from`, `to`, `reason` |
+
+### Endpoints
+
+All four are registered from `athena/api/app.py` via
+`athena/api/telemetry_routes.py` and guarded like the rest of `/api`:
+
+- `GET /api/runs/{id}/telemetry` — `agents[]` (`start_ms`/`end_ms`/`duration_ms`
+  with `duration_basis`, tokens with `tokens_source`, `cost_usd` + `cost_basis`,
+  counts for model/tool/tool-error/error/retry/retries_inferred/guardrail/
+  handoff/recovery, `limiter_wait_ms`, `a2a_bytes`, `evidence_contributions`,
+  `terminal_state`, `event_ids`), `spans[]` for the waterfall (real events, start
+  and end offsets from `ts` and `duration_ms`, `open` when a stage never ended),
+  and `totals[]`. Top level also carries `cost_basis` (the pricing metadata) and
+  `missing[]`.
+- `GET /api/runs/{id}/heatmap.json` — `metric_matrix` (agent × metric) **and**
+  `bucket_matrix` (agent × completed stage, in stage order) with `raw`,
+  `normalised`, `unit` and the `event_ids` behind every cell; normalisation is
+  min–max per column and the basis is stated (`metric_normalisation`,
+  `bucket_normalisation`). A bucket cell is the overlap in ms of the agent's own
+  **non-stage** spans with that stage window (stage spans are excluded so a stage
+  is not counted twice — its duration is the bucket width), and the owner's own
+  cell additionally names the bucket's `stage_end` event id first, which is
+  exactly the record `/cells?bucket=` returns first. `png_fallback` points at the
+  PNG.
+- `GET /api/runs/{id}/cells?agent=&metric=` or `?agent=&bucket=` — the real
+  stored events behind one cell (an `evidence_items` cell also lists the
+  blackboard evidence items). An impossible cell returns `count: 0` with a
+  `reason`, never a made-up row.
+- `GET /api/runs/{id}/provenance?citation=` (1-based index or a `source_ref`) or
+  `?claim=` — `chain[]` hops citation → evidence item → source (URL / document +
+  page) → tool invocation → agent → run. `match` says how a reference was
+  matched (`exact`, `normalised`, `document`, or a clearly labelled fallback such
+  as `unmatched_same_agent_latest`); a claim that no stored evidence contains
+  returns `reason` and `missing` instead of a link.
+
+### Frontend
+
+`athena/api/static/telemetry.js` is the pure half (no DOM, `AthenaTelemetry` in
+the browser, `require` in node): `shapeTelemetry`, `telemetrySummary`,
+`metricGrid`/`bucketGrid`, `heatLevel`/`heatColour`, `waterfallGeometry`,
+`cellsUrl`/`eventRows`, `provenanceHops`. `app.js` only builds elements from
+those shapes, so the numbers on screen are exactly the ones the API returned:
+
+- two CSS-grid heat matrices in the run details **Metrics** tab (agent × metric,
+  agent × stage) with the raw value printed in every cell;
+- a waterfall of span bars per agent with a time axis;
+- clicking a cell lists the underlying events under the grid (`/cells`), with
+  "not recorded" cells disabled rather than blank; a cell with recorded calls but
+  no value (an unpriced cost cell) stays clickable, because those calls are the
+  reason the price is null;
+- loading, empty and failure states are distinct: "loading…", the API's own
+  `reason` when there is nothing to chart, and "could not load … <error>";
+- the PNG stays available as a *download* fallback (`download PNG`);
+- citation chips open a provenance drill-down (`/provenance?citation=N`).
+
+Tests: `tests/test_telemetry_cost.py` (pricing table, matching, unpriced cases,
+the deliberately-unlisted live id never pricing anything),
+`tests/test_telemetry_routes.py` (shaping, cost, heatmap, cells, provenance,
+empty run, new event kinds, bucket-cell/`/cells` consistency, and static wiring:
+the Metrics-tab containers, `telemetry.js` loading before `app.js`, the CSS rules
+and the four endpoint calls) and
+`node athena/api/static/telemetry.test.js` (pure shaping, heat grids, waterfall
+geometry, drill-down rows and the `drillable` flag, provenance hops).

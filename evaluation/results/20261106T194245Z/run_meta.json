@@ -1,0 +1,35 @@
+{
+  "harness_version": "1.0.0",
+  "started_at": "2026-11-06T19:42:57+00:00",
+  "git_commit": "cdb99e1",
+  "python": "3.13.3",
+  "backend": "in_process",
+  "model": "groq/qwen/qwen3.8-27b",
+  "timeout_s": 1200.0,
+  "dataset_path": "evaluation/dataset.json",
+  "dataset_sha256": "bcff0a98e2813d7211912954d624cfe34241f90350bcc19c39c310dbf5faac28",
+  "config_sha256": "b4ae52961dc711e5df78525db324f2f44a8c4301e844de41cace663a44aef61e",
+  "dataset_items": 48,
+  "plan_id": "stratified-72",
+  "plan_entries": 72,
+  "already_recorded": [],
+  "pricing": {
+    "source": "athena.observability.cost",
+    "table": "M:\\Athena\\athena-mas\\data\\pricing.json",
+    "as_of": "2026-11-06",
+    "entries": 30,
+    "unit": "usd_per_million_tokens",
+    "unknown_model_basis": "unpriced"
+  },
+  "budget": {
+    "runs_started": 6,
+    "spent_usd_estimate": 0.0,
+    "max_runs": 72,
+    "max_total_usd": 8.0,
+    "max_run_usd": 0.6,
+    "max_total_wall_s": 28800.0
+  },
+  "stopped_reason": "max_total_wall_s=28800 reached",
+  "records_written": 6,
+  "ended_at": "2026-11-07T07:04:50+00:00"
+}

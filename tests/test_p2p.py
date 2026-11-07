@@ -9,7 +9,7 @@ import pytest
 from athena.agents import bb_io
 from athena.agents.a2a_client import build_payload
 from athena.agents.untrusted import UNTRUSTED_BEGIN, UNTRUSTED_END
-from athena.blackboard import Blackboard, SQLiteStore, Task
+from athena.blackboard import Blackboard, EvidenceItem, SQLiteStore, Task
 from athena.patterns.context import P2PContext
 from athena.patterns.p2p import P2PAgent
 
@@ -118,7 +118,18 @@ def test_p2p_agents_never_read_the_blackboard(setup) -> None:
     bb_io.forbid_reads(True)
     try:
         agent._audit_analysis(json.dumps({"key_findings": ["a"], "gaps": []}))
-        agent._audit_report(json.dumps(report), items=[])
+        agent._audit_report(
+            json.dumps(report),
+            items=[
+                EvidenceItem(
+                    id="doc_1",
+                    source_type="rag",
+                    source_ref="handbook.pdf#p11-chunk-28",
+                    content="Systems engineering is an interdisciplinary discipline. " * 3,
+                    retrieved_by="rag_researcher",
+                )
+            ],
+        )
         agent._audit_critique(json.dumps({"issues": [], "severity": "low", "approved": True}))
     finally:
         bb_io.forbid_reads(False)

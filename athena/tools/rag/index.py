@@ -124,6 +124,41 @@ class RagIndex:
         )
         return {"added": len(keep), "skipped": len(ids) - len(keep)}
 
+    def adjacent(
+        self,
+        document_id: str,
+        chunk_index: int,
+        radius: int = 1,
+    ) -> list[dict[str, Any]]:
+        """Chunks immediately around one hit, for list/table continuity."""
+        if radius <= 0 or not document_id:
+            return []
+        try:
+            raw = self.collection.get(
+                where={"document_id": document_id},
+                include=["documents", "metadatas"],
+            )
+        except Exception:
+            return []
+        ids = raw.get("ids") or []
+        documents = raw.get("documents") or []
+        metadatas = raw.get("metadatas") or []
+        rows = []
+        for index, chunk in enumerate(ids):
+            meta = (metadatas[index] if index < len(metadatas) else {}) or {}
+            position = int(meta.get("chunk_index", -1))
+            if abs(position - chunk_index) > radius or position == chunk_index:
+                continue
+            rows.append(
+                {
+                    "id": chunk,
+                    "text": documents[index] if index < len(documents) else "",
+                    "metadata": meta,
+                    "distance": 1.0,
+                }
+            )
+        return rows
+
     def query(self, text: str, k: int) -> list[dict[str, Any]]:
         """Raw nearest-neighbour rows: id, text, metadata, distance."""
         total = self.count()

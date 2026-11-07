@@ -1,0 +1,70 @@
+# Build context hygiene. The image must never contain a secret, a local
+# database, a virtualenv or the user's corpus. Anything the app needs at
+# runtime is copied explicitly in the Dockerfile.
+
+# --- Secrets and local settings (never in an image) -------------------------
+.env
+.env.*
+!.env.example
+**/master.key
+**/secrets.enc.json
+**/*.pem
+**/*.key
+**/id_rsa*
+**/*credentials*
+data/settings/
+data/settings/**
+
+# --- Local state: databases, corpus, vector index, model caches -------------
+# The demo/replay bundles and the small eval CSV are versioned application data
+# and are copied into the image on purpose (see the Dockerfile).
+data/*
+!data/demo/**
+!data/eval/**
+!data/presets.json
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# --- Working directories from a local checkout ------------------------------
+.venv/
+venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+.test-tmp/
+pytest-cache-files-*/
+.tmp/
+.run/
+.uv-cache/
+.crewai/
+.acl-recovery/
+.commandcode/
+untitled-project/
+
+# --- VCS, editors, CI, docs -------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+.github/
+.vscode/
+.idea/
+docs/
+evaluation/
+spike/
+tests/
+Dockerfile
+.dockerignore
+fly.toml
+render.yaml
+
+# --- Build noise and local experiment captures ------------------------------
+install.log
+*.log
+report*.txt
+run_*.txt
+usage_lines.txt
+/crewai

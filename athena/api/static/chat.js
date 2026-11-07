@@ -7,6 +7,7 @@
   const ICONS = () => root.AthenaIcons;
   const CAPS_KEY = "athena.chat.caps";
   const TOOLS_KEY = "athena.chat.tools";
+  const SCROLL_KEY = "athena.chat.scroll.v1";
 
   const state = {
     active: false,
@@ -26,6 +27,12 @@
     controller: null,
     streamEls: null,
     empty: null,
+    traceOpen: new Set(),
+    traceClosed: new Set(),
+    scrollMap: {},
+    restoreScroll: null,
+    scrollTimer: null,
+    navToken: 0,
   };
 
   function emptyNode() {
@@ -41,6 +48,47 @@
 
   function saveList(key, values) {
     try { localStorage.setItem(key, JSON.stringify([...values])); } catch (_) { /* private mode */ }
+  }
+
+  function loadScrollMap() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SCROLL_KEY) || "{}");
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+      const clean = {};
+      Object.keys(raw).forEach((key) => {
+        const value = Number(raw[key]);
+        if (Number.isFinite(value) && value >= 0) clean[key] = value;
+      });
+      return clean;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveScrollMap() {
+    try { localStorage.setItem(SCROLL_KEY, JSON.stringify(state.scrollMap)); } catch (_) { /* private mode */ }
+  }
+
+  function saveCurrentScroll() {
+    const main = UI().$("main");
+    if (!main || !state.conversationId) return;
+    state.scrollMap[state.conversationId] = Math.max(0, Math.round(main.scrollTop));
+    saveScrollMap();
+  }
+
+  function restoreAfterRender() {
+    if (state.restoreScroll == null) {
+      scrollToBottom();
+      return;
+    }
+    const top = state.restoreScroll;
+    state.restoreScroll = null;
+    requestAnimationFrame(() => {
+      const main = UI().$("main");
+      if (!main) return;
+      const max = Math.max(0, main.scrollHeight - main.clientHeight);
+      main.scrollTop = Math.min(top, max);
+    });
   }
 
   function el(tag, className, value) {
@@ -83,17 +131,108 @@
       host.appendChild(emptyNode());
       return;
     }
-    state.messages.forEach((message) => host.appendChild(renderMessage(message)));
+    state.messages.forEach((message, index) => host.appendChild(renderMessage(message, index)));
     const last = state.messages[state.messages.length - 1];
     if (last && last.role === "assistant" && last.status === "streaming") {
       const node = host.lastElementChild;
       const textNode = node && node.querySelector(".chat-text, .chat-typing");
       state.streamEls = { text: textNode };
     }
-    scrollToBottom();
+    restoreAfterRender();
   }
 
-  function renderMessage(message) {
+  function userBefore(index) {
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (state.messages[cursor].role === "user") return state.messages[cursor];
+    }
+    return null;
+  }
+
+  function messageModel(message, index) {
+    return L().chatContextModel({
+      message,
+      userMessage: userBefore(index),
+      conversation: state.conversation,
+    });
+  }
+
+  function responseMeta(message, model) {
+    const row = el("div", "response-meta chat-response-meta");
+    L().responseMetaFromModel(model).forEach((item) => {
+      const button = el("button", "response-meta-pill is-" + (item.tone || "muted"), item.label);
+      button.type = "button";
+      button.title = item.title || item.label;
+      button.dataset.contextAction = item.action || "context";
+      button.addEventListener("click", () => {
+        root.AthenaContext?.open(item.action || "context", "chat", message.id, button);
+      });
+      row.appendChild(button);
+    });
+    return row;
+  }
+
+  function contextModel(id) {
+    const message = state.messages.find((item) => item.id === id && item.role === "assistant");
+    if (!message) return null;
+    return messageModel(message, state.messages.indexOf(message));
+  }
+
+  /* Assistant prose where each `[n]` marker is a real button that opens the
+   * context panel on that source. A marker with no matching source stays plain
+   * text, because `answerSegments` keeps it in the text run. */
+  function answerBody(message, value) {
+    const node = el("p", "chat-text prose");
+    const factory = L();
+    const sources = Array.isArray(message.sources) ? message.sources : [];
+    if (!factory || typeof factory.answerSegments !== "function") {
+      UI().text(node, value);
+      return node;
+    }
+    factory.answerSegments(value, sources.length).forEach((segment) => {
+      if (segment.type !== "citation") {
+        node.appendChild(el("span", "", segment.text));
+        return;
+      }
+      const button = el("button", "citation-marker", segment.text);
+      button.type = "button";
+      button.title = "Open source [" + segment.index + "] in the context panel";
+      button.addEventListener("click", () => {
+        root.AthenaContext?.openSource(String(segment.index), "chat", message.id, button);
+      });
+      node.appendChild(button);
+    });
+    return node;
+  }
+
+  /* The explicit "Context" control in the chat head: it opens the panel on the
+   * newest assistant response and closes it again when it is already open. */
+  function toggleContext(trigger) {
+    const id = currentMessageId();
+    if (!id) {
+      UI().toast("Send a message first.");
+      return;
+    }
+    root.AthenaContext?.toggle("sources", "chat", id, trigger || null);
+  }
+
+  function currentMessageId() {
+    for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+      if (state.messages[index].role === "assistant") return state.messages[index].id || null;
+    }
+    return null;
+  }
+
+  function syncContextSurface() {
+    if (!root.AthenaContext) return;
+    const target = root.AthenaContext.target();
+    if (target && target.kind === "chat"
+        && state.messages.some((message) => message.id === target.id)) {
+      return;
+    }
+    root.AthenaContext.setSurface("chat", currentMessageId());
+  }
+
+  function renderMessage(message, index = -1) {
     if (message.role === "user") {
       const wrap = el("div", "chat-turn user");
       wrap.appendChild(el("span", "turn-label", "You"));
@@ -109,6 +248,8 @@
     }
 
     const wrap = el("div", "chat-turn assistant");
+    if (message.id) wrap.dataset.messageId = message.id;
+    wrap.dataset.contextKind = "chat";
     const head = el("div", "chat-turn-head");
     head.appendChild(el("span", "turn-label", "athena"));
     if (message.provider || message.model) {
@@ -116,18 +257,27 @@
     }
     wrap.appendChild(head);
 
+    const trace = message.meta && Array.isArray(message.meta.trace)
+      ? message.meta.trace
+      : [];
+    if (trace.length) {
+      wrap.appendChild(traceBlock(message, trace));
+    }
+
     const text = message.content || "";
     if (message.status === "streaming" && !text) {
       const typing = el("span", "chat-typing");
       typing.append(el("i"), el("i"), el("i"));
       wrap.appendChild(typing);
     } else {
-      wrap.appendChild(el("p", "chat-text prose", text));
+      wrap.appendChild(answerBody(message, text));
     }
 
-    if (message.tool_events && message.tool_events.length) {
+    if (!trace.length && message.tool_events && message.tool_events.length) {
       wrap.appendChild(toolActivity(message.tool_events));
     }
+    const model = messageModel(message, index);
+    wrap.appendChild(responseMeta(message, model));
     if (message.sources && message.sources.length) {
       wrap.appendChild(sourcesBlock(message.sources));
     }
@@ -144,6 +294,73 @@
     if (meta.tool_note) wrap.appendChild(el("p", "chat-note", meta.tool_note));
     (meta.grounding_notes || []).forEach((note) => wrap.appendChild(el("p", "chat-note", note)));
     return wrap;
+  }
+
+  function traceRow(row) {
+    const item = el("li", "activity-row is-" + row.status);
+    item.appendChild(el("span", "activity-row-dot"));
+    const body = el("div", "activity-row-body");
+    const head = el("div", "activity-row-head");
+    head.appendChild(el("strong", "activity-label", row.label || "Activity"));
+    if (row.duration != null) {
+      head.appendChild(el("span", "activity-row-time", L().duration(row.duration)));
+    }
+    body.appendChild(head);
+    if (row.detail && row.detail !== row.label) {
+      body.appendChild(el("p", "activity-detail", String(row.detail).slice(0, 240)));
+    }
+    if (row.error) {
+      body.appendChild(el("p", "activity-error", String(row.error).slice(0, 240)));
+    }
+    item.appendChild(body);
+    return item;
+  }
+
+  function traceBlock(message, trace) {
+    const key = message.id || "local-assistant";
+    const view = L().chatTrace(trace);
+    const live = message.status === "streaming" || view.running;
+    const details = document.createElement("details");
+    details.className = "activity-trace chat-trace "
+      + (live ? "is-live" : "is-complete")
+      + (view.failed ? " is-failed" : "");
+    details.open = state.traceOpen.has(key)
+      || (live && !state.traceClosed.has(key));
+
+    const summary = el("summary", "activity-head");
+    summary.appendChild(el("span", "activity-dot " + (view.failed ? "is-error" : live ? "is-live" : "is-done")));
+    summary.appendChild(el("span", "activity-state", live ? "Working" : "Activity"));
+    summary.appendChild(el("span", "activity-sep", "·"));
+    const current = view.current;
+    summary.appendChild(el("span", "activity-current", current
+      ? current.label + (current.detail && current.detail !== current.label ? " · " + current.detail : "")
+      : view.summary));
+    if (view.elapsed_ms) {
+      summary.appendChild(el("span", "activity-time", L().duration(view.elapsed_ms)));
+    }
+    const expand = el("span", "activity-expand", details.open ? "Collapse" : "Expand");
+    summary.appendChild(expand);
+    details.appendChild(summary);
+
+    const list = el("ol", "activity-list");
+    view.rows.forEach((row) => list.appendChild(traceRow(row)));
+    details.appendChild(list);
+    summary.addEventListener("click", () => {
+      // Read the browser's post-click state; programmatic `open` changes must
+      // never be mistaken for a user's preference.
+      requestAnimationFrame(() => {
+        if (details.open) {
+          state.traceOpen.add(key);
+          state.traceClosed.delete(key);
+          UI().text(expand, "Collapse");
+        } else {
+          state.traceOpen.delete(key);
+          state.traceClosed.add(key);
+          UI().text(expand, "Expand");
+        }
+      });
+    });
+    return details;
   }
 
   function toolActivity(events) {
@@ -301,35 +518,52 @@
 
   async function openConversation(id) {
     if (state.streaming) { UI().toast("Stop the current reply first."); return; }
+    saveCurrentScroll();
+    const token = state.navToken + 1;
+    state.navToken = token;
+    if (root.AthenaContext) root.AthenaContext.setSurface("chat", null);
     try {
       const data = await UI().api("/api/chat/conversations/" + encodeURIComponent(id));
+      if (token !== state.navToken) return;
       state.conversationId = id;
       state.conversation = data.conversation;
       state.messages = data.messages || [];
       state.profileId = data.conversation.profile_id || "";
+      state.restoreScroll = Number.isFinite(state.scrollMap[id]) ? state.scrollMap[id] : null;
+      state.traceOpen.clear();
+      state.traceClosed.clear();
       renderHeader();
       renderTranscript();
       renderEmptyHint();
+      syncContextSurface();
       await refreshList();
       await loadCapabilities();
       await loadTools();
     } catch (error) {
+      if (token !== state.navToken) return;
+      root.AthenaContext?.setSurface("chat", currentMessageId());
       UI().toast("Could not open chat: " + error.message);
     }
   }
 
   function newConversation() {
     if (state.streaming) { UI().toast("Stop the current reply first."); return; }
+    saveCurrentScroll();
+    state.navToken += 1;
     state.conversationId = null;
     state.conversation = null;
     state.messages = [];
     state.profileId = "";
     state.streamEls = null;
+    state.restoreScroll = null;
+    state.traceOpen.clear();
+    state.traceClosed.clear();
     UI().$("chat-error").classList.add("hidden");
     UI().text(UI().$("chat-error"), "");
     renderHeader();
     renderTranscript();
     renderEmptyHint();
+    syncContextSurface();
     if (root.AthenaChat) refreshList();
     const input = UI().$("chat-input");
     if (input) { input.value = ""; input.focus(); }
@@ -515,26 +749,46 @@
         if (user) Object.assign(user, payload.user_message);
       }
       if (payload.assistant_message) {
+        const previousId = assistant.id;
         Object.assign(assistant, payload.assistant_message);
         assistant.content = "";
         assistant.tool_events = [];
         assistant.sources = [];
+        if (root.AthenaContext) {
+          const target = root.AthenaContext.target();
+          if (target && target.kind === "chat" && target.id === previousId) {
+            root.AthenaContext.setSurface("chat", assistant.id);
+          }
+        }
       }
+      return;
+    }
+    if (name === "trace") {
+      assistant.meta = assistant.meta || {};
+      const trace = assistant.meta.trace || (assistant.meta.trace = []);
+      const index = trace.findIndex((event) => event.id === payload.id);
+      if (index >= 0) trace[index] = payload;
+      else trace.push(payload);
+      renderTranscript();
+      root.AthenaContext?.refresh("chat", assistant.id);
       return;
     }
     if (name === "sources") {
       assistant.sources = payload.sources || [];
       renderTranscript();
+      root.AthenaContext?.refresh("chat", assistant.id);
       return;
     }
     if (name === "tool") {
       upsertToolEvent(assistant, payload);
       renderTranscript();
+      root.AthenaContext?.refresh("chat", assistant.id);
       return;
     }
     if (name === "usage") {
       assistant.usage = payload;
       renderTranscript();
+      root.AthenaContext?.refresh("chat", assistant.id);
       return;
     }
     if (name === "note") {
@@ -542,11 +796,13 @@
       const notes = assistant.meta.grounding_notes || (assistant.meta.grounding_notes = []);
       if (payload.text && !notes.includes(payload.text)) notes.push(payload.text);
       renderTranscript();
+      root.AthenaContext?.refresh("chat", assistant.id);
       return;
     }
     if (name === "error") {
       assistant.error = payload.detail || "The reply failed.";
       renderTranscript();
+      root.AthenaContext?.refresh("chat", assistant.id);
       return;
     }
     if (name === "delta") {
@@ -581,6 +837,7 @@
             state.conversationId = payload.conversation.id;
           }
           state.streaming = false;
+          root.AthenaContext?.refresh("chat", assistant.id);
           return;
         }
         applyEvent(assistant, frame.event, payload);
@@ -594,6 +851,7 @@
 
   async function send() {
     if (state.streaming) return;
+    state.navToken += 1;
     const input = UI().$("chat-input");
     const message = input ? input.value.trim() : "";
     if (!message) return;
@@ -751,8 +1009,11 @@
     if (!state.conversationId) { UI().toast("No chat to delete."); return; }
     if (!root.confirm("Delete this chat? Its messages are removed.")) return;
     try {
-      await UI().api("/api/chat/conversations/" + encodeURIComponent(state.conversationId), { method: "DELETE" });
+      const removedId = state.conversationId;
+      await UI().api("/api/chat/conversations/" + encodeURIComponent(removedId), { method: "DELETE" });
       newConversation();
+      delete state.scrollMap[removedId];
+      saveScrollMap();
       refreshList();
       UI().toast("Chat deleted.");
     } catch (error) {
@@ -777,6 +1038,7 @@
     } else {
       renderTranscript();
     }
+    syncContextSurface();
   }
 
   function autoGrow() {
@@ -787,7 +1049,25 @@
   }
 
   function wire() {
+    if (root.AthenaContext) root.AthenaContext.register("chat", contextModel);
+    state.scrollMap = loadScrollMap();
     state.empty = UI().$("chat-empty");
+    const main = UI().$("main");
+    if (main) {
+      main.addEventListener("scroll", () => {
+        if (state.scrollTimer) clearTimeout(state.scrollTimer);
+        state.scrollTimer = setTimeout(() => {
+          state.scrollTimer = null;
+          if (UI().currentView() === "chat") saveCurrentScroll();
+        }, 150);
+      }, { passive: true });
+    }
+    window.addEventListener("beforeunload", saveCurrentScroll);
+    document.addEventListener("athena:view", (event) => {
+      const view = event.detail && event.detail.view;
+      if (view === "chat") syncContextSurface();
+      else saveCurrentScroll();
+    });
     const form = UI().$("chat-form");
     if (form) form.addEventListener("submit", (event) => { event.preventDefault(); send(); });
     const input = UI().$("chat-input");
@@ -825,6 +1105,12 @@
     }
     const model = UI().$("chat-model");
     if (model) model.addEventListener("change", () => changeModel(model.value));
+    const contextToggle = UI().$("context-toggle");
+    if (contextToggle) {
+      contextToggle.addEventListener("click", (event) => {
+        toggleContext(event.currentTarget);
+      });
+    }
     const refresh = UI().$("chat-refresh");
     if (refresh) refresh.addEventListener("click", refreshList);
     const title = UI().$("chat-title-btn");
@@ -870,6 +1156,7 @@
     refresh: refreshList,
     stop,
     isStreaming: () => state.streaming,
+    currentMessageId,
     state: () => state,
   };
 }(typeof globalThis !== "undefined" ? globalThis : this));

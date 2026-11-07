@@ -4,6 +4,11 @@ The whole contract is the message body: ``{"run_id", "role", "instruction"}``.
 The server reads inputs from the blackboard and replies with a short JSON
 acknowledgement (section + version). No content ever travels back over A2A.
 
+When the deployment sets ``ATHENA_A2A_SHARED_TOKEN``, a body carrying an HMAC is
+verified before any role runs: a forged or cross-run message is refused with an
+acknowledgement instead of being dispatched. With no token configured the
+single-host flow is unchanged (see :func:`peer_auth_error`).
+
 Run with ``python -m athena.agents.crew_server`` or via ``scripts/dev_up.py``.
 """
 
@@ -11,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import sys
 from pathlib import Path
@@ -38,6 +44,12 @@ from athena.agents.crew_p2p import P2P_ROLES
 from athena.agents.crew_writer import write_report
 from athena.blackboard import Blackboard
 from athena.config.llm import configure_process
+from athena.guardrails.interagent import (
+    REQUIRE_SIG_ENV,
+    SIG_FIELD,
+    TOKEN_ENV,
+    PeerAuth,
+)
 from athena.observability.usage_hook import callback_count, install_usage_logger
 from athena.observability.recorder import Recorder, set_recorder
 from athena.observability.redact import redact
@@ -55,6 +67,31 @@ def _ack(**fields) -> str:
     return json.dumps(fields, separators=(",", ":"), default=str)
 
 
+def peer_auth_error(body: dict) -> str | None:
+    """Why this body's signature is unacceptable, or None to accept it.
+
+    Three cases, in order:
+
+    * no shared token configured — nothing to verify against, so an unsigned
+      local-dev flow behaves exactly as it did before;
+    * a signature is present — it must verify against this process's token,
+      otherwise the body was forged or signed for a different deployment;
+    * no signature but a token is configured — allowed (a warning-only
+      downgrade) unless ``ATHENA_A2A_REQUIRE_SIG=1`` turns it into an error.
+    """
+    if not (os.getenv(TOKEN_ENV) or "").strip():
+        return None
+    auth = PeerAuth()
+    signature = body.get(SIG_FIELD)
+    if signature:
+        if auth.verify_message(body):
+            return None
+        return "signature mismatch: forged body or a different shared token"
+    if auth.require_signature:
+        return f"signature required ({REQUIRE_SIG_ENV}=1)"
+    return None
+
+
 def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
     """Parse one request, run the role, return a short acknowledgement.
 
@@ -68,6 +105,11 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         return _ack(ok=False, error="body must be JSON: {run_id, role, instruction}")
     if not isinstance(body, dict):
         return _ack(ok=False, error="body must be a JSON object")
+
+    forged = peer_auth_error(body)
+    if forged is not None:
+        return _ack(ok=False, error=forged)
+
 
     run_id = str(body.get("run_id") or "").strip()
     role = str(body.get("role") or "").strip().lower()
@@ -85,7 +127,12 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         return _ack(ok=False, error=f"unknown run_id {run_id!r}")
 
     recorder = Recorder.for_run(run_id)
-    recorder.emit("stage_start", role, "crewai")
+    recorder.emit(
+        "stage_start",
+        role,
+        "crewai",
+        extra={"stage_scope": "crewai-remote", "handoff": "a2a"},
+    )
     previous = set_recorder(recorder)
     started = time.perf_counter()
     try:
@@ -101,6 +148,16 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=error_type, error_message=message,
         )
+        # A failed CrewAI role still owns a started stage. Terminalize it before
+        # returning the acknowledgement; otherwise the trace keeps a phantom
+        # "running" analyst/writer/critic row.
+        recorder.emit(
+            "stage_end", role, "crewai", ok=False,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            error_type=error_type, error_message=message,
+            extra={"stage_scope": "crewai-remote", "terminal": "failure",
+                   "handoff": "a2a"},
+        )
         # The ADK side decides what to tell the user from these two fields.
         return _ack(ok=False, role=role, error_type=error_type, error=message)
     finally:
@@ -109,8 +166,12 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         "stage_end", role, "crewai",
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         tokens_in=result.get("tokens_in"), tokens_out=result.get("tokens_out"),
+        ok=True,
         extra={"reasoning_tokens": result.get("reasoning_tokens"),
-               "calls": result.get("calls")},
+               "calls": result.get("calls"),
+               "terminal": "success",
+               "stage_scope": "crewai-remote",
+               "handoff": "a2a"},
     )
 
     ack: dict = {"ok": True, "role": role}
@@ -175,6 +236,16 @@ def build_agent_card() -> AgentCard:
 
 def create_app(roles: dict | None = None, store=None) -> FastAPI:
     configure_process()  # export the endpoint and arm the guard
+    # Safe startup identity: never print a key. Knowing which model/base this
+    # process actually loaded is essential when ADK and CrewAI are separate
+    # processes with different environment inheritance.
+    print(
+        "crew model:",
+        os.getenv("LLM_MODEL") or "(default)",
+        "| api host:",
+        os.getenv("LLM_API_BASE") or "(provider default)",
+        flush=True,
+    )
     # CrewAI calls end in litellm, so usage is captured there, not in CrewOutput.
     install_usage_logger()
     print(f"usage logger installed (callbacks: {callback_count()})")

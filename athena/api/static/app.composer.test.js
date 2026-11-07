@@ -20,6 +20,7 @@ function makeHarness() {
       className: "",
       children: [],
       style: {},
+      dataset: {},
       disabled: false,
       classList: {
         _set: new Set(),
@@ -57,11 +58,38 @@ function makeHarness() {
   const script = source.slice(0, end) + `
     globalThis.__composer = {
       startRun,
+      openRun,
+      loadRunEvents,
       state,
       renderEvidenceTable,
       loadMetrics,
       resetMetrics,
       setApi(fn) { api = fn; },
+      installEventRender(overrides) {
+        renderTimeline = overrides.renderTimeline || (() => {});
+        renderLiveMap = overrides.renderLiveMap || (() => {});
+        updateProgress = overrides.updateProgress || (() => {});
+        renderActivityTrace = overrides.renderActivityTrace || (() => {});
+        logEvent = overrides.logEvent || (() => {});
+      },
+      installOpenRun(overrides) {
+        api = overrides.api;
+        showView = overrides.showView;
+        setPattern = overrides.setPattern;
+        beginRun = overrides.beginRun;
+        showExchange = overrides.showExchange;
+        resetReport = overrides.resetReport;
+        renderDetailsHeader = overrides.renderDetailsHeader;
+        renderBlackboard = overrides.renderBlackboard;
+        renderToolReport = overrides.renderToolReport;
+        loadRunEvents = overrides.loadRunEvents;
+        renderReport = overrides.renderReport;
+        loadMetrics = overrides.loadMetrics;
+        renderLiveMap = overrides.renderLiveMap;
+        renderStatus = overrides.renderStatus;
+        setRunning = overrides.setRunning;
+        toast = overrides.toast;
+      },
       install(overrides) {
         api = overrides.api;
         setBusy = overrides.setBusy;
@@ -80,6 +108,7 @@ function makeHarness() {
   const context = {
     window: { AthenaLogic: logic, AthenaDiagram: {} },
     document,
+    history: { replaceState() {} },
     console,
   };
   context.globalThis = context;
@@ -127,7 +156,7 @@ test("successful submission sends the original question and clears after a valid
 
   await app.startRun();
 
-  assert.deepEqual(calls.bodies, [{ question, pattern: "p2p" }]);
+  assert.deepEqual(calls.bodies, [{ question, pattern: "p2p", tools: null }]);
   assert.deepEqual(calls.shown, [question]);
   assert.deepEqual(calls.begun, ["run-123"]);
   assert.equal(calls.questionAtBegin, "", "the valid run id unlocks the clear");
@@ -179,6 +208,134 @@ test("missing or invalid run ids preserve the question", async () => {
     assert.equal(calls.begun.length, 0);
     assert.equal(app.state.pattern, "sequential");
   }
+});
+
+test("a custom tool selection is sent with the run", async () => {
+  const { app, document } = prepare("Which release changed this?");
+  app.state.researchTools = ["web_search", "fetch_page"];
+  const calls = install(app, document, () => ({ run_id: "run-tools" }));
+
+  await app.startRun();
+
+  assert.deepEqual(calls.bodies, [{
+    question: "Which release changed this?",
+    pattern: "hierarchical",
+    tools: ["web_search", "fetch_page"],
+  }]);
+});
+
+test("no tools blocks the run and explains the state", async () => {
+  const { app, document } = prepare("Do not start this");
+  app.state.researchTools = [];
+  let requested = false;
+  const calls = install(app, document, () => {
+    requested = true;
+    return { run_id: "should-not-start" };
+  });
+
+  await app.startRun();
+
+  assert.equal(requested, false);
+  assert.deepEqual(calls.bodies, []);
+  assert.ok(calls.toasts.some((message) => /at least one research tool/i.test(message)));
+});
+
+function installOpenRun(app) {
+  const calls = { begun: [], shown: [], toasts: [] };
+  app.installOpenRun({
+    api: () => Promise.reject(new Error("not configured")),
+    showView: () => {},
+    setPattern: () => {},
+    beginRun: (runId) => {
+      app.state.runId = runId;
+      app.state.loadingRunId = null;
+      calls.begun.push(runId);
+    },
+    showExchange: (question) => calls.shown.push(question),
+    resetReport: () => {},
+    renderDetailsHeader: () => {},
+    renderBlackboard: () => {},
+    renderToolReport: () => {},
+    loadRunEvents: async () => {},
+    renderReport: () => {},
+    loadMetrics: async () => {},
+    renderLiveMap: () => {},
+    renderStatus: () => {},
+    setRunning: () => {},
+    toast: (message) => calls.toasts.push(message),
+  });
+  return calls;
+}
+
+test("rapid history switches keep the last selected run", async () => {
+  const { app } = makeHarness();
+  const calls = installOpenRun(app);
+  const pending = {};
+  app.installOpenRun({
+    ...{
+      api: (url) => new Promise((resolve) => { pending[url] = resolve; }),
+      showView: () => {},
+      setPattern: () => {},
+      beginRun: (runId) => {
+        app.state.runId = runId;
+        app.state.loadingRunId = null;
+        calls.begun.push(runId);
+      },
+      showExchange: () => {},
+      resetReport: () => {},
+      renderDetailsHeader: () => {},
+      renderBlackboard: () => {},
+      renderToolReport: () => {},
+      loadRunEvents: async () => {},
+      renderReport: () => {},
+      loadMetrics: async () => {},
+      renderLiveMap: () => {},
+      renderStatus: () => {},
+      setRunning: () => {},
+      toast: () => {},
+    },
+  });
+
+  const first = app.openRun("run-a");
+  const second = app.openRun("run-b");
+  assert.equal(app.state.loadingRunId, "run-b");
+  pending["/api/runs/run-b"]({ task: { value: { question: "B" } } });
+  await second;
+  pending["/api/runs/run-a"]({ task: { value: { question: "A" } } });
+  await first;
+
+  assert.equal(app.state.runId, "run-b");
+  assert.equal(app.state.loadingRunId, null);
+  assert.deepEqual(calls.begun, ["run-b"]);
+});
+
+test("a failed event load is explicit instead of looking empty", async () => {
+  const { app } = makeHarness();
+  app.installEventRender({});
+  app.state.runId = "run-a";
+  app.state.events = [{ event_id: "old" }];
+  app.setApi(async () => { throw new Error("offline"); });
+
+  await app.loadRunEvents("run-a");
+
+  assert.deepEqual(app.state.events, []);
+  assert.equal(app.state.eventsError, "Activity could not be loaded for this run.");
+});
+
+test("stale event loads cannot overwrite the selected run", async () => {
+  const { app } = makeHarness();
+  const previous = [{ event_id: "keep" }];
+  app.state.runId = "run-a";
+  app.state.events = previous;
+  let resolve;
+  app.setApi(() => new Promise((done) => { resolve = done; }));
+
+  const pending = app.loadRunEvents("run-a");
+  app.state.runId = "run-b";
+  resolve({ events: [{ event_id: "stale" }] });
+  await pending;
+
+  assert.deepEqual(app.state.events, previous);
 });
 
 test("blackboard evidence renderer keeps the full text behind a preview", () => {

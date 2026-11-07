@@ -238,6 +238,185 @@ def test_stop_finalises_the_placeholder(tmp_path, profile) -> None:
     assert store.get_message(ctx.assistant_message["id"])["status"] == "stopped"
 
 
+def test_trace_streams_before_done_and_is_persisted(
+    client: TestClient, profile, monkeypatch
+) -> None:
+    monkeypatch.setattr(service, "stream_completion", _fake_stream("Hello there"))
+
+    events = _events(client, {"message": "Hi"})
+    names = [name for name, _ in events]
+    trace = [payload for name, payload in events if name == "trace"]
+
+    assert names[0] == "meta"
+    assert names[1] == "trace"
+    assert any(event["stage"] == "model" and event["status"] == "running" for event in trace)
+    assert any(event["id"] == "turn-done" and event["status"] == "ok" for event in trace)
+
+    done = _done(events)
+    persisted = done["message"]["meta"]["trace"]
+    assert any(event["id"] == "turn-done" for event in persisted)
+    assert any(event["stage"] == "model" for event in persisted)
+
+    conversation_id = done["conversation"]["id"]
+    reloaded = client.get(f"/api/chat/conversations/{conversation_id}").json()
+    assert reloaded["messages"][-1]["meta"]["trace"]
+
+
+def test_document_retrieval_appears_in_the_trace(
+    client: TestClient, profile, monkeypatch
+) -> None:
+    async def fake_grounding(*_args, **_kwargs):
+        return Grounded(
+            context="[1] Document: handbook.pdf, page 2\nEvidence text",
+            sources=[
+                {
+                    "kind": "document",
+                    "index": 1,
+                    "document": "handbook.pdf",
+                    "page": 2,
+                    "score": 0.8,
+                    "snippet": "Evidence text",
+                }
+            ],
+            events=[
+                {
+                    "tool": "rag_search",
+                    "label": "Document search",
+                    "status": "ok",
+                    "summary": "1 passage(s) used",
+                    "error": "",
+                    "elapsed_ms": 3.0,
+                }
+            ],
+        )
+
+    monkeypatch.setattr(service.tools, "availability", lambda *a, **k: (True, ""))
+    monkeypatch.setattr(service.grounding, "collect", fake_grounding)
+    monkeypatch.setattr(service, "stream_completion", _fake_stream("Grounded answer"))
+
+    events = _events(client, {"message": "Hi", "capabilities": ["rag"]})
+    trace = [payload for name, payload in events if name == "trace"]
+
+    assert any(
+        event.get("tool") == "rag_search"
+        and event["stage"] == "retrieval"
+        and event["status"] == "ok"
+        for event in trace
+    )
+    done = _done(events)
+    assert any(
+        event.get("tool") == "rag_search"
+        for event in done["message"]["meta"]["trace"]
+    )
+
+
+def test_rag_zero_passages_is_not_reported_as_grounded(
+    client: TestClient, profile, monkeypatch
+) -> None:
+    async def fake_grounding(*_args, **_kwargs):
+        return Grounded(
+            notes=["No document passage cleared the relevance threshold."],
+            refusal="I couldn't find a relevant document passage.",
+            events=[{
+                "tool": "rag_search",
+                "label": "Document search",
+                "status": "ok",
+                "summary": "0 passage(s) used",
+                "error": "",
+                "elapsed_ms": 2.0,
+            }],
+        )
+
+    monkeypatch.setattr(service.tools, "availability", lambda *a, **k: (True, ""))
+    monkeypatch.setattr(service.grounding, "collect", fake_grounding)
+
+    events = _events(client, {"message": "Hi", "capabilities": ["rag"]})
+    done = _done(events)
+    trace = done["message"]["meta"]["trace"]
+
+    assert done["message"]["sources"] == []
+    assert "couldn't find a relevant document" in done["message"]["content"]
+    assert any(
+        event.get("tool") == "rag_search"
+        and event["status"] == "ok"
+        and event["summary"] == "0 passage(s) used"
+        for event in trace
+    )
+    assert not any(event.get("stage") == "model" for event in trace)
+
+
+def test_rag_retrieval_failure_is_an_error_trace(
+    client: TestClient, profile, monkeypatch
+) -> None:
+    async def fake_grounding(*_args, **_kwargs):
+        return Grounded(
+            notes=["Document search failed"],
+            refusal="Document search failed; I have not guessed an answer.",
+            events=[{
+                "tool": "rag_search",
+                "label": "Document search",
+                "status": "error",
+                "summary": "Search failed",
+                "error": "chroma offline",
+                "elapsed_ms": 4.0,
+            }],
+        )
+
+    monkeypatch.setattr(service.tools, "availability", lambda *a, **k: (True, ""))
+    monkeypatch.setattr(service.grounding, "collect", fake_grounding)
+
+    events = _events(client, {"message": "Hi", "capabilities": ["rag"]})
+    done = _done(events)
+    trace = done["message"]["meta"]["trace"]
+
+    assert done["message"]["sources"] == []
+    assert any(
+        event.get("tool") == "rag_search" and event["status"] == "error"
+        for event in trace
+    )
+    assert any(event.get("stage") == "done" for event in trace)
+
+
+def test_grounding_exception_becomes_a_visible_error_turn(
+    client: TestClient, profile, monkeypatch
+) -> None:
+    async def broken_grounding(*_args, **_kwargs):
+        raise RuntimeError("chroma offline")
+
+    def fail_model(*_args, **_kwargs):
+        raise AssertionError("the model must not answer after a grounding exception")
+
+    monkeypatch.setattr(service.tools, "availability", lambda *a, **k: (True, ""))
+    monkeypatch.setattr(service.grounding, "collect", broken_grounding)
+    monkeypatch.setattr(service, "stream_completion", fail_model)
+
+    events = _events(client, {"message": "Hi", "capabilities": ["rag"]})
+    done = _done(events)
+    trace = done["message"]["meta"]["trace"]
+
+    assert done["message"]["status"] == "ok"
+    assert "couldn't retrieve" in done["message"]["content"].lower()
+    assert any(
+        event.get("tool") == "rag_search" and event["status"] == "error"
+        for event in trace
+    )
+
+
+def test_no_capability_means_no_retrieval_trace(
+    client: TestClient, profile, monkeypatch
+) -> None:
+    async def fail_grounding(*_args, **_kwargs):
+        raise AssertionError("grounding must not run when capabilities are off")
+
+    monkeypatch.setattr(service.grounding, "collect", fail_grounding)
+    monkeypatch.setattr(service, "stream_completion", _fake_stream("plain"))
+
+    events = _events(client, {"message": "Hi"})
+    trace = [payload for name, payload in events if name == "trace"]
+
+    assert not any(event.get("stage") == "retrieval" for event in trace)
+
+
 def test_conversation_crud_and_model_selection(client: TestClient, profile) -> None:
     created = client.post("/api/chat/conversations", json={"title": "A chat"}).json()
     conversation_id = created["conversation"]["id"]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -18,14 +19,24 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from athena.agents.a2a_stage import DEFAULT_CARD_URL
+from athena.agents.tool_report import build_tool_report
 from athena.api import replay
+from athena.api.auth import AccessTokenMiddleware
+from athena.api.auth import router as auth_router
+from athena.api.guards import guard
+from athena.api.health_routes import build_lifespan, configure_logging
+from athena.api.health_routes import router as health_router
 from athena.api.runs import BusyError, RunRegistry
 from athena.blackboard import Blackboard
+from athena.guardrails.input import refusal_message, screen_input
+from athena.guardrails.secrets import redact_tree
 from athena.observability.heatmap import render_heatmap
 from athena.observability.metrics import agent_metrics
+from athena.observability.recorder import Recorder
 from athena.observability.redact import redact
 from athena.observability.store import SQLiteEventStore
 from athena.patterns import VALID_PATTERNS
+from athena.tools import registry as tool_registry
 
 STATIC = Path(__file__).parent / "static"
 QUESTIONS_CSV = Path("data/eval/nasa_rag_40_questions.csv")
@@ -34,16 +45,59 @@ STREAM_POLL_S = 0.3
 STREAM_MAX_S = 1800
 STREAM_EXIT_WAIT_S = 5.0
 
+# Named with a leading underscore: ``create_app`` has a route function called
+# ``log``, which would shadow a module-level ``log`` inside that scope.
+_LOG = logging.getLogger("athena.api")
+
 REGISTRY = RunRegistry()
 
 
 class RunRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     pattern: str = Field(default="sequential")
+    tools: list[str] | None = Field(
+        default=None,
+        max_length=16,
+        description=(
+            "Research tool ids enabled for this run. Omit or send null for All "
+            "tools; send [] for no tools."
+        ),
+    )
 
 
 def _store() -> SQLiteEventStore:
     return SQLiteEventStore()
+
+
+def _record_guardrails(run_id: str, verdict) -> None:
+    """Write one ``guardrail`` event per flag, so the run's trace shows them.
+
+    Recording must never fail a request: the recorder already swallows store
+    errors, and the loop is wrapped for anything it re-raises.
+    """
+    flags = list(getattr(verdict, "flags", ()) or ())
+    if not flags:
+        return
+    recorder = Recorder.for_run(run_id)
+    for flag in flags[:20]:
+        try:
+            recorder.emit(
+                "guardrail",
+                "guardrails",
+                "api",
+                ok=flag.action != "blocked",
+                payload_summary=f"{flag.stage}:{flag.rule} {flag.action}",
+                extra={
+                    "stage": flag.stage,
+                    "rule": flag.rule,
+                    "action": flag.action,
+                    "detail": flag.detail,
+                    "screen": "POST /api/runs",
+                },
+            )
+        except Exception:  # noqa: BLE001 - a guardrail log must not fail the request
+            _LOG.debug("guardrail event not recorded for %s", run_id, exc_info=True)
+            return
 
 
 def _evidence_attribution(run_id: str) -> dict[str, list[str]]:
@@ -86,7 +140,10 @@ def _snapshot(run_id: str, runs: RunRegistry | None = None) -> dict:
         found = blackboard.read(name)
         if not found:
             return None
-        return {"value": found[0].model_dump(mode="json"), "version": found[1]}
+        # Snapshot sections carry generated prose (``final_report``, ``draft``…)
+        # and can quote a tool payload. Redact field by field rather than trusting
+        # every section to have been clean on the way in.
+        return {"value": redact_tree(found[0].model_dump(mode="json")), "version": found[1]}
 
     evidence = blackboard.read("evidence")
     return {
@@ -99,10 +156,18 @@ def _snapshot(run_id: str, runs: RunRegistry | None = None) -> dict:
         "critique": section("critique"),
         "final_report": section("final_report"),
         "evidence": [
-            {"id": item.id, "source_ref": item.source_ref, "score": item.score,
-             "retrieved_by": item.retrieved_by, "text": redact(item.content)}
+            {
+                "id": item.id,
+                "source_type": item.source_type,
+                "source_ref": item.source_ref,
+                "score": item.score,
+                "retrieved_by": item.retrieved_by,
+                "text": redact(item.content),
+                "content": redact(item.content),
+            }
             for item in (evidence[0] if evidence else [])
         ],
+        "tool_report": build_tool_report(run_id, blackboard.store),
         "history": [
             {"seq": entry["seq"], "author": entry["author"],
              "section": entry["section"], "version": entry["version"]}
@@ -134,8 +199,11 @@ def _summary(run_id: str, runs: RunRegistry | None = None) -> dict:
                 assessment = assess(
                     task[0].question if task else "",
                     evidence[0] if evidence else [],
+                    enabled_tools=task[0].tools if task else None,
                 )
                 summary.setdefault("evidence_sufficient", assessment.ok)
+                summary.setdefault("unmet_requirements", list(assessment.issues))
+                summary.setdefault("evidence_limitations", list(assessment.limitations))
                 if "outcome" not in summary:
                     approved = summary.get("approved")
                     if summary.get("failed"):
@@ -198,8 +266,11 @@ def _with_process_status(
 
 
 def create_app(registry: RunRegistry | None = None) -> FastAPI:
-    app = FastAPI(title="Athena demo")
+    configure_logging()
     runs = registry or REGISTRY
+    # The lifespan creates the writable data directories at startup and stops
+    # the active run plus the child crew server on SIGTERM (see health_routes).
+    app = FastAPI(title="Athena demo", lifespan=build_lifespan(runs))
 
     @app.get("/api/health")
     def health() -> dict:
@@ -226,19 +297,48 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
         return {"demo": _demo_questions(), "eval": _eval_questions()}
 
     @app.post("/api/runs")
-    def start_run(request: RunRequest) -> dict:
-        if request.pattern not in VALID_PATTERNS:
-            raise HTTPException(status_code=422, detail=f"unknown pattern {request.pattern!r}")
+    def start_run(payload: RunRequest, request: Request) -> dict:
+        guard(request)
+        if payload.pattern not in VALID_PATTERNS:
+            raise HTTPException(status_code=422, detail=f"unknown pattern {payload.pattern!r}")
+        verdict = screen_input(payload.question)
+        if verdict.blocking:
+            _LOG.warning(
+                "run request blocked by guardrails: %s",
+                ", ".join(verdict.categories) or "blocked",
+            )
+            raise HTTPException(status_code=422, detail=refusal_message(verdict))
         try:
-            return {"run_id": runs.start(request.question, request.pattern)}
+            tools = tool_registry.normalise_selection(payload.tools)
+        except tool_registry.UnknownToolError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        try:
+            run_id = runs.start(
+                payload.question,
+                payload.pattern,
+                list(tools) if tools is not None else None,
+            )
         except BusyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        _record_guardrails(run_id, verdict)
+        return {
+            "run_id": run_id,
+            "guardrail_flags": [flag.model_dump() for flag in verdict.flags],
+        }
 
     @app.get("/api/runs/{run_id}")
     def snapshot(run_id: str) -> dict:
         return _snapshot(run_id, runs)
+
+    @app.get("/api/runs/{run_id}/events")
+    def run_events(run_id: str) -> dict:
+        """Persisted events, for restoring a completed run's trace."""
+        return {
+            "run_id": run_id,
+            "events": [_event_payload(event) for event in _store().events(run_id)],
+        }
 
     @app.get("/api/runs/{run_id}/metrics")
     def metrics(run_id: str) -> dict:
@@ -313,6 +413,17 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     def tools() -> dict:
         return {"servers": _tool_catalog()}
 
+    @app.get("/api/research/tools")
+    def research_tools() -> dict:
+        """The canonical research selector catalogue."""
+        from athena.api.activation import active_env
+
+        provider = active_env().get("SEARCH_PROVIDER") or None
+        return {
+            "tools": tool_registry.catalog(provider),
+            "all_tools": list(tool_registry.ALL_TOOL_IDS),
+        }
+
     @app.get("/api/replay")
     def replay_index() -> dict:
         return {"bundles": replay.index()}
@@ -325,18 +436,38 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.exception_handler(Exception)
-    async def unhandled(_request, exc: Exception):  # noqa: ANN001 - FastAPI hook
+    async def unhandled(request, exc: Exception):  # noqa: ANN001 - FastAPI hook
+        _LOG.exception(
+            "unhandled error on %s %s",
+            request.method,
+            request.url.path,
+            extra={"event": "unhandled", "method": request.method, "path": request.url.path},
+        )
         detail = redact(f"{type(exc).__name__}: {exc}") or "internal error"
         return JSONResponse(status_code=500, content={"detail": detail[:300]})
 
     from athena.api.chat_routes import router as chat_router
+    from athena.api.eval_routes import router as eval_router
+    from athena.api.library_routes import documents_router as documents_router
     from athena.api.library_routes import router as library_router
     from athena.api.settings_routes import router as settings_router
+    from athena.api.telemetry_routes import router as telemetry_router
 
+    # Probe/login routes first: /healthz and /readyz must answer before the
+    # static mount and outside the optional token gate.
+    app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(settings_router)
     app.include_router(chat_router)
     app.include_router(library_router)
+    app.include_router(documents_router)
+    app.include_router(telemetry_router)
+    app.include_router(eval_router)
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
+
+    # No-op unless ATHENA_ACCESS_TOKEN is set; exempt paths and static assets
+    # are handled inside the middleware.
+    app.add_middleware(AccessTokenMiddleware)
     return app
 
 

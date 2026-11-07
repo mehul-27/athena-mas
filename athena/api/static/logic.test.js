@@ -37,6 +37,7 @@ test("formatting helpers", () => {
   assert.equal(logic.bytes(156), "156 B");
   assert.equal(logic.bytes(2048), "2.0 kB");
   assert.equal(logic.tokens(3, 4), "3 in / 4 out");
+  assert.equal(logic.tokens(0, 0, false), "tokens unavailable");
 });
 
 test("verdict label never renders an element", () => {
@@ -318,6 +319,192 @@ test("the status pill is short with a full tooltip", () => {
   assert.equal(replay.short, "crew up - replay");
 });
 
+/* ------------------------------------------------------ response context tests */
+
+test("chat context distinguishes RAG off, passages, empty and failure", () => {
+  const base = {
+    role: "assistant", id: "m1", status: "ok", content: "answer",
+    provider: "openai", model: "test", capabilities: [], tools: [], sources: [],
+    tool_events: [], usage: null, meta: {},
+  };
+  const off = logic.chatContextModel({ message: base, userMessage: { content: "q" } });
+  assert.equal(off.rag.state, "off");
+  assert.equal(off.context.prompt, "q");
+  assert.ok(off.context.notes.some((note) => /upload/i.test(note)));
+
+  const passages = logic.chatContextModel({
+    message: {
+      ...base,
+      capabilities: ["rag"],
+      sources: [{ kind: "document", index: 1, document: "handbook.pdf", page: 4, snippet: "excerpt" }],
+      meta: { trace: [{ id: "retrieval-rag_search", stage: "retrieval", tool: "rag_search", label: "Document search", status: "ok", summary: "1 passage(s) used" }] },
+    },
+    userMessage: { content: "q" },
+  });
+  assert.equal(passages.rag.state, "passages");
+  assert.equal(passages.rag.count, 1);
+  assert.equal(passages.sources[0].title, "handbook.pdf");
+  assert.equal(passages.sources[0].badges[0], "Retrieved");
+
+  const empty = logic.chatContextModel({
+    message: {
+      ...base,
+      capabilities: ["rag"],
+      meta: { trace: [{ id: "retrieval-rag_search", stage: "retrieval", tool: "rag_search", label: "Document search", status: "ok", summary: "0 passage(s) used" }] },
+    },
+    userMessage: { content: "q" },
+  });
+  assert.equal(empty.rag.state, "empty");
+
+  const failed = logic.chatContextModel({
+    message: {
+      ...base,
+      capabilities: ["rag"],
+      meta: { trace: [{ id: "retrieval-rag_search", stage: "retrieval", tool: "rag_search", label: "Document search", status: "error", error: "offline" }] },
+    },
+    userMessage: { content: "q" },
+  });
+  assert.equal(failed.rag.state, "failed");
+});
+
+test("chat metadata row reflects real response state and actions", () => {
+  const model = logic.chatContextModel({
+    message: {
+      role: "assistant", id: "m1", status: "ok", content: "answer",
+      provider: "openai", model: "test", capabilities: [],
+      sources: [{ kind: "web", index: 1, title: "Docs", url: "https://example.com/docs", snippet: "s" }],
+      tools: [], tool_events: [], usage: { tokens_in: 10, tokens_out: 4 }, meta: {},
+    },
+    userMessage: { content: "q" },
+  });
+  const meta = logic.responseMetaFromModel(model);
+  assert.deepEqual(meta.map((item) => item.id), ["status", "rag", "sources", "context"]);
+  assert.equal(meta[0].label, "Completed");
+  assert.equal(meta[1].label, "RAG off");
+  assert.equal(meta[2].label, "Sources 1");
+});
+
+test("research context identifies fetched pages, snippets and cited sources", () => {
+  const snapshot = {
+    task: { value: { question: "What changed?", pattern: "parallel", tools: ["rag_search", "web_search", "fetch_page"] } },
+    tool_report: {
+      enabled: ["rag_search", "web_search", "fetch_page"],
+      planned: ["rag_search", "web_search", "fetch_page"],
+      planned_blocked: [],
+      invoked: ["fetch_page", "web_search"],
+      failed: [],
+      skipped: [],
+      calls: [{ tool: "fetch_page", ok: true }],
+    },
+    evidence: [
+      { id: "fetch-1", source_type: "web", source_ref: "https://docs.example/release", retrieved_by: "web_researcher", score: null, content: "Release notes\nA fetched page body" },
+      { id: "web-1", source_type: "web", source_ref: "https://search.example/result", retrieved_by: "web_researcher", score: null, content: "Search snippet" },
+      { id: "rag-1", source_type: "rag", source_ref: "handbook.pdf#p4-chunk-2", retrieved_by: "rag_researcher", score: 0.7, content: "Document passage" },
+    ],
+    final_report: { value: { citations: [{ source_ref: "https://docs.example/release" }], confidence: 0.8 } },
+  };
+  const model = logic.researchContextModel({
+    runId: "run-1234", phase: "history", summary: { pattern: "parallel", outcome: "approved", evidence_sufficient: true },
+    snapshot, events: [], pattern: "parallel",
+  });
+
+  assert.equal(model.kind, "research");
+  assert.equal(model.rag.state, "passages");
+  assert.equal(model.rag.count, 1);
+  assert.equal(model.citationCount, 1);
+  assert.equal(model.sources.find((source) => source.id === "research-source-fetch-1").badges.includes("Page fetched"), true);
+  assert.equal(model.sources.find((source) => source.id === "research-source-fetch-1").badges.includes("Cited in report"), true);
+  assert.equal(model.sources.find((source) => source.id === "research-source-web-1").badges.includes("Search snippet"), true);
+  assert.equal(model.sources.find((source) => source.id === "research-source-rag-1").badges.includes("Document passage"), true);
+  assert.equal(model.run.canOpenDetails, true);
+  assert.equal(model.status.label, "Completed");
+});
+
+test("research sources accept the snapshot text field and source type", () => {
+  const model = logic.researchContextModel({
+    runId: "r1",
+    phase: "history",
+    summary: { pattern: "sequential" },
+    snapshot: {
+      task: { value: { question: "q", pattern: "sequential", tools: ["rag_search"] } },
+      tool_report: { enabled: ["rag_search"], invoked: ["rag_search"], failed: [], calls: [{ tool: "rag_search", ok: true }], skipped: [] },
+      evidence: [{
+        id: "doc_1", source_type: "rag", source_ref: "handbook.pdf#p7-chunk-3",
+        retrieved_by: "rag_researcher", score: 0.8,
+        text: "The snapshot text body",
+      }],
+    },
+    events: [],
+  });
+
+  assert.equal(model.rag.state, "passages");
+  assert.equal(model.rag.count, 1);
+  assert.equal(model.sources[0].type, "Document passage");
+  assert.match(model.sources[0].excerpt, /snapshot text body/);
+});
+
+test("research context reports disabled, pending and failed RAG accurately", () => {
+  const base = {
+    runId: "r1",
+    phase: "history",
+    summary: { pattern: "sequential" },
+    snapshot: {
+      task: { value: { question: "q", pattern: "sequential", tools: ["web_search"] } },
+      tool_report: { enabled: ["web_search"], invoked: [], failed: [], calls: [], skipped: [] },
+      evidence: [],
+    },
+    events: [],
+  };
+  assert.equal(logic.researchContextModel(base).rag.state, "off");
+
+  const pending = {
+    ...base,
+    phase: "running",
+    snapshot: {
+      task: { value: { question: "q", pattern: "sequential", tools: ["rag_search"] } },
+      tool_report: { enabled: ["rag_search"], invoked: [], failed: [], calls: [], skipped: [] },
+      evidence: [],
+    },
+  };
+  assert.equal(logic.researchContextModel(pending).rag.state, "pending");
+
+  const failed = {
+    ...base,
+    snapshot: {
+      task: { value: { question: "q", pattern: "sequential", tools: ["rag_search"] } },
+      tool_report: { enabled: ["rag_search"], invoked: ["rag_search"], failed: ["rag_search"], calls: [{ tool: "rag_search", ok: false, error: "offline" }], skipped: [] },
+      evidence: [],
+    },
+  };
+  assert.equal(logic.researchContextModel(failed).rag.state, "failed");
+});
+
+test("research status and response metadata do not claim success when incomplete", () => {
+  const model = logic.researchContextModel({
+    runId: "r1",
+    phase: "history",
+    summary: {
+      pattern: "hierarchical",
+      outcome: "incomplete",
+      evidence_sufficient: false,
+      critic_status: "rejected",
+      critique_reason: "missing fetched page",
+      unmet_requirements: ["no successful fetch"],
+    },
+    snapshot: {
+      task: { value: { question: "q", pattern: "hierarchical", tools: [] } },
+      tool_report: { enabled: [], invoked: [], failed: ["fetch_page"], calls: [], skipped: [] },
+      evidence: [],
+    },
+    events: [],
+  });
+  assert.equal(model.status.label, "Incomplete");
+  const meta = logic.responseMetaFromModel(model);
+  assert.equal(meta[0].label, "Incomplete");
+  assert.ok(meta.some((item) => item.id === "warnings" && /gap/.test(item.label)));
+  assert.equal(logic.safeHttpUrl("javascript:alert(1)"), "");
+});
+
 /* ------------------------------------------------------------ chat tests */
 
 test("the SSE parser handles frames split across chunks", () => {
@@ -423,4 +610,151 @@ test("tutorial persistence and auto-start rules are pure", () => {
   assert.equal(logic.shouldAutoStartTutorial({ view: "run", params: {} }, null, true), false);
   assert.equal(logic.shouldAutoStartTutorial({ view: "settings", params: {} }, null, false), false);
   assert.equal(logic.shouldAutoStartTutorial({ view: "replay=x", params: {} }, null, false), false);
+});
+
+/* ------------------------------------------------------ tool selection tests */
+
+const TOOL_IDS = ["rag_search", "web_search", "fetch_page", "calculate", "forecast"];
+
+test("all tools is the default and selecting an individual clears it", () => {
+  assert.equal(logic.normaliseToolSelection(null, TOOL_IDS), null);
+  assert.equal(logic.toolSelectionLabel(null), "All tools");
+
+  const one = logic.toggleToolSelection(null, "web_search", TOOL_IDS);
+  assert.deepEqual(one, ["web_search"]);
+  assert.equal(logic.toolSelectionLabel(one), "1 tool");
+});
+
+test("multiple tools can be selected and deselecting the last is explicit", () => {
+  let selected = logic.toggleToolSelection(null, "web_search", TOOL_IDS);
+  selected = logic.toggleToolSelection(selected, "fetch_page", TOOL_IDS);
+  assert.deepEqual(selected, ["web_search", "fetch_page"]);
+  assert.equal(logic.toolSelectionLabel(selected), "2 tools");
+
+  selected = logic.toggleToolSelection(selected, "web_search", TOOL_IDS);
+  selected = logic.toggleToolSelection(selected, "fetch_page", TOOL_IDS);
+  assert.deepEqual(selected, []);
+  assert.equal(logic.toolSelectionLabel(selected), "No tools");
+  assert.equal(logic.toolSelectionLabel(null), "All tools");
+});
+
+test("selecting every individual tool normalises to all tools", () => {
+  let selected = null;
+  TOOL_IDS.forEach((id) => { selected = logic.toggleToolSelection(selected, id, TOOL_IDS); });
+  assert.equal(selected, null);
+  assert.equal(logic.toggleToolSelection(["rag_search"], "__all__", TOOL_IDS), null);
+});
+
+/* --------------------------------------------------------- activity trace tests */
+
+test("research trace derives agent, tool, skip and failure rows", () => {
+  const trace = logic.researchTrace([
+    { event_id: "1", seq: 1, kind: "stage_start", agent: "planner", framework: "adk", ts: "2026-01-01T00:00:00Z" },
+    { event_id: "2", seq: 2, kind: "stage_end", agent: "planner", framework: "adk", duration_ms: 1200, ts: "2026-01-01T00:00:01Z" },
+    { event_id: "3", seq: 3, kind: "stage_start", agent: "web_researcher", framework: "adk", ts: "2026-01-01T00:00:02Z" },
+    { event_id: "4", seq: 4, kind: "tool_call", agent: "web_researcher", payload_summary: "fetch_page: https://example.com", ok: true, duration_ms: 800, ts: "2026-01-01T00:00:03Z", extra: { sources: [{ title: "Example page", url: "https://example.com" }] } },
+    { event_id: "5", seq: 5, kind: "skip", agent: "rag_researcher", payload_summary: "rag_researcher skipped: no plan step", framework: "adk", ts: "2026-01-01T00:00:03Z" },
+    { event_id: "6", seq: 6, kind: "error", agent: "critic", error_type: "Timeout", error_message: "critic timed out", framework: "crewai", ts: "2026-01-01T00:00:04Z" },
+  ], { finished: true });
+
+  assert.equal(trace.rows.length, 5);
+  assert.equal(trace.rows[0].status, "done");
+  assert.equal(trace.rows[2].label, "fetch_page");
+  assert.ok(trace.rows[2].detail.includes("Example page"));
+  assert.equal(trace.rows[3].status, "skipped");
+  assert.equal(trace.rows[4].status, "failed");
+  assert.equal(trace.rows[4].framework, "crewai");
+  assert.equal(trace.failed, true);
+  assert.equal(trace.elapsed_ms, 4000);
+});
+
+test("an empty research trace is explicit rather than fabricated", () => {
+  const trace = logic.researchTrace([], { finished: true });
+  assert.deepEqual(trace.rows, []);
+  assert.equal(trace.running, false);
+  assert.equal(trace.failed, false);
+  assert.equal(trace.summary, "No activity recorded");
+  assert.equal(trace.current, null);
+});
+
+test("wrapper and remote A2A stages are distinct and both complete", () => {
+  const trace = logic.researchTrace([
+    { event_id: "s1", seq: 1, kind: "stage_start", agent: "analyst", framework: "adk", extra: { stage_scope: "adk-wrapper" } },
+    { event_id: "s2", seq: 2, kind: "stage_start", agent: "analyst", framework: "crewai", extra: { stage_scope: "crewai-remote" } },
+    { event_id: "m1", seq: 3, kind: "model_call", agent: "analyst", framework: "crewai", tokens_in: 20, tokens_out: 8 },
+    { event_id: "s3", seq: 4, kind: "stage_end", agent: "analyst", framework: "crewai", duration_ms: 900, tokens_in: 20, tokens_out: 8 },
+    { event_id: "a1", seq: 5, kind: "a2a_call", agent: "analyst", framework: "adk", duration_ms: 1000, extra: { request_bytes: 156, response_bytes: 146, handoff: "adk->crewai" } },
+    { event_id: "s4", seq: 6, kind: "stage_end", agent: "analyst", framework: "adk", duration_ms: 1000 },
+  ], { finished: true });
+
+  const stages = trace.rows.filter((row) => row.agent === "analyst");
+  assert.equal(stages.length, 3, "two stage rows plus the A2A handoff");
+  assert.equal(stages[0].label, "Analyst (handoff)");
+  assert.equal(stages[0].status, "done");
+  assert.equal(stages[1].label, "Analyst (remote)");
+  assert.equal(stages[1].status, "done");
+  assert.equal(stages[2].label, "A2A handoff");
+  assert.equal(trace.rows.some((row) => row.status === "running"), false);
+});
+
+test("supervisor duration survives a summary stage_end and tokens stay unavailable", () => {
+  const rows = logic.reduceTimeline([
+    { kind: "stage_start", agent: "supervisor", framework: "adk" },
+    { kind: "stage_end", agent: "supervisor", framework: "adk", duration_ms: 160901.41, tokens_in: null, tokens_out: null },
+    { kind: "stage_end", agent: "supervisor", framework: "adk", duration_ms: null, tokens_in: null, tokens_out: null, payload_summary: "run_summary hierarchical" },
+  ]);
+  const supervisor = rows[0];
+  assert.equal(supervisor.ms, 160901);
+  assert.equal(supervisor.tokens_known, false);
+  assert.equal(logic.tokens(supervisor.tokens_in, supervisor.tokens_out, supervisor.tokens_known), "tokens unavailable");
+});
+
+test("research trace renders a recovery decision without inventing execution", () => {
+  const trace = logic.researchTrace([
+    { event_id: "r1", seq: 1, kind: "recovery", agent: "supervisor", framework: "adk", payload_summary: "research recovery skipped: existing evidence is sufficient", extra: { skipped: true, reason: "existing evidence is sufficient" } },
+    { event_id: "r2", seq: 2, kind: "recovery", agent: "supervisor", framework: "adk", payload_summary: "research recovery: web_researcher missing evidence", extra: { skipped: false, role: "web_researcher", reason: "missing evidence" } },
+  ], { finished: true });
+
+  assert.equal(trace.rows[0].label, "Recovery skipped");
+  assert.equal(trace.rows[0].status, "skipped");
+  assert.equal(trace.rows[1].label, "Research recovery");
+  assert.equal(trace.rows[1].status, "done");
+});
+
+test("research trace carries the recorded verdict, revisions and evidence gaps", () => {
+  const trace = logic.researchTrace([], {
+    finished: true,
+    summary: {
+      critic_status: "rejected",
+      critique_reason: "missing source evidence",
+      revision_rounds: 1,
+      evidence_sufficient: false,
+      unmet_requirements: ["no successful fetch of the requested URL"],
+    },
+  });
+
+  assert.equal(trace.rows[0].label, "Verdict");
+  assert.equal(trace.rows[0].status, "failed");
+  assert.ok(trace.rows[0].detail.includes("missing source evidence"));
+  assert.equal(trace.rows[1].label, "Revisions");
+  assert.equal(trace.rows[1].detail, "1 revision round");
+  assert.equal(trace.rows[2].label, "Evidence gap");
+  assert.equal(trace.rows[2].status, "failed");
+});
+
+test("chat trace maps running, tool and done events without inventing stages", () => {
+  const trace = logic.chatTrace([
+    { id: "turn-start", stage: "start", label: "Preparing response", status: "ok" },
+    { id: "retrieval-rag_search", stage: "retrieval", label: "Searching documents", status: "running", tool: "rag_search" },
+    { id: "retrieval-rag_search", stage: "retrieval", label: "Document search", status: "ok", tool: "rag_search", summary: "2 passages used", elapsed_ms: 120 },
+    { id: "call-1", stage: "tool", label: "Calculator", status: "ok", tool: "calculate", summary: "= 42", elapsed_ms: 5 },
+    { id: "turn-done", stage: "done", label: "Completed", status: "ok", elapsed_ms: 500 },
+  ]);
+  assert.equal(trace.rows.length, 4, "the duplicate retrieval event is merged");
+  assert.equal(trace.rows[1].label, "Document search");
+  assert.equal(trace.rows[1].detail, "2 passages used");
+  assert.equal(trace.rows[1].tool, "rag_search");
+  assert.equal(trace.rows[3].label, "Completed");
+  assert.equal(trace.running, false);
+  assert.equal(trace.elapsed_ms, 500);
 });

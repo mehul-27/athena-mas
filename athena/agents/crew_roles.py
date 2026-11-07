@@ -12,6 +12,8 @@ from typing import Callable
 from athena.agents import bb_io
 from athena.agents.critique_rules import calibrate
 from athena.agents.requirements import finding_requirement
+from athena.agents.sufficiency import assess, coverage_text
+from athena.agents.tool_report import build_tool_report, format_tool_status
 from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import (
     Analysis,
@@ -159,7 +161,10 @@ def analyse(
         f"{UNTRUSTED_DATA_RULE}\n\n"
         f"{finding_requirement(task_text)}\n\n"
         "Return key_findings (2-4 short bullets) and gaps (what the evidence does "
-        "not answer).\n"
+        "not answer). Search snippets may support a short general definition only; "
+        "do not assert specific hardware, numeric, performance, or organization-"
+        "specific claims from a snippet. Use fetched page text for those, or mark "
+        "them as unverified.\n"
         "When you name a source, cite it by its source_ref exactly as shown "
         "(document name plus page, e.g. nasa_Systems_handbook.pdf#p12-chunk-32). "
         "Never cite an internal id such as doc_1a2b3c."
@@ -183,16 +188,57 @@ def critique(
 ) -> dict:
     """Review draft + report + evidence, write section ``critique`` as ``critic``."""
     blackboard = Blackboard.open(run_id, store)
+    task = bb_io.section(blackboard, "task")
     task_text = bb_io.task_text(blackboard)
+    report_tools = build_tool_report(run_id, store)
+    assessment = assess(
+        task.question if task else task_text,
+        bb_io.load_evidence(blackboard, limit=None),
+        enabled_tools=task.tools if task else None,
+        tool_report=report_tools,
+    )
+    tool_status = format_tool_status(
+        report_tools, assessment.issues, assessment.limitations
+    )
     prompt = (
         f"{instruction}\n\nTASK:\n{task_text}\n\n"
+        f"TOOL AND EVIDENCE STATUS:\n{tool_status}\n\n"
+        f"EVIDENCE COVERAGE:\n{coverage_text(assessment)}\n\n"
         f"EVIDENCE:\n{bb_io.evidence_text(blackboard)}\n\n"
+        f"DRAFT:\n{bb_io.draft_text(blackboard)}\n\n"
         f"REPORT:\n{bb_io.report_text(blackboard)}\n\n"
         f"{UNTRUSTED_DATA_RULE}\n\n"
         f"{finding_requirement(task_text)}\n\n"
         "Grade strictly but fairly:\n"
+        "- If the tool status shows a required tool was not invoked, failed, or was "
+        "disabled, reject and name the missing capability and evidence in issues.\n"
+        "- A failed invocation does not invalidate independently successful evidence. "
+        "Do not reject solely because a search was throttled when usable fetched page "
+        "content supports the answer; reject only when the answer relies on an unmet "
+        "capability or a claim lacks support.\n"
+        "- Non-blocking evidence limitations must be reflected in the answer's wording; "
+        "they are not by themselves a reason to reject a supported answer.\n"
+        "- If the question names an organization or vehicle and no organization-specific "
+        "source was retrieved, a qualified answer is acceptable when it (a) explains the "
+        "supported general principle, (b) directly answers the part the evidence can "
+        "support, and (c) explicitly says which organization-specific details remain "
+        "unverified. Do not reject solely because those unavailable details are absent; "
+        "reject only unsupported claims or a refusal to answer the supported part.\n"
+        "- If only search snippets were recorded for a claim that specifically "
+        "depends on unread page content, reject that claim and say so explicitly. "
+        "A short definition supported by multiple snippets is not a page-read claim.\n"
+        "- Reject a claim that states a patch number, date, specification, absolute "
+        "superlative or a planned capability that the recorded evidence does not "
+        "state, and reject an answer that presents a disagreement between sources "
+        "when no retrieved source pair actually supports both sides. An unresolved "
+        "conflict or an unestablished requirement listed in the evidence coverage "
+        "must be named in the answer, not filled in.\n"
+        "- An enabled tool is not evidence that it ran; a plan is not proof of "
+        "execution.\n"
         "- approved=true when every claim in the answer is traceable to the "
-        "recorded evidence and the answer is complete.\n"
+        "recorded evidence and the answer is complete for what the evidence supports. "
+        "A clearly qualified partial answer is complete in this sense when it answers "
+        "the supported part and names the unverified remainder.\n"
         "- approved=false only for concrete issues, and list each one in issues.\n"
         "- For a fixed finding count, reject if any finding lacks a distinct "
         "primary source, grounded explanation, practical impact, or source URL, "
@@ -212,9 +258,17 @@ def critique(
     result, stats = unpack_result(generate(prompt))
     if not isinstance(result, Critique):
         result = Critique.model_validate(result)
-    # A report that admits it cannot answer must not be approved.
+    # A report that admits it cannot answer, that claims more than the ceiling
+    # allows, or that states more than every supporting source does must not be
+    # approved.
     report = blackboard.read("final_report")
-    result = calibrate(result, report[0] if report else None)
+    evidence = bb_io.load_evidence(blackboard, limit=None)
+    result = calibrate(
+        result,
+        report[0] if report else None,
+        assessment,
+        evidence_texts=[item.content for item in evidence],
+    )
     version = blackboard.write("critique", result, author="critic")
     return {"section": "critique", "version": version, **stats}
 

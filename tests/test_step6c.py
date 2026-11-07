@@ -129,6 +129,29 @@ def test_failure_ack_redacts_a_key(blackboard: Blackboard, monkeypatch) -> None:
     assert "gsk_live" not in (stored.error_message or "")
 
 
+def test_a_failed_crew_role_always_terminalizes_its_stage(blackboard: Blackboard) -> None:
+    def boom(run_id, instruction, store=None):
+        raise TypeError("model rejected the request")
+
+    ack = json.loads(
+        run_role_request(
+            _request(blackboard, "critic"),
+            roles={"critic": boom},
+            store=blackboard.store,
+        )
+    )
+
+    events = SQLiteEventStore().events(blackboard.run_id)
+    starts = [event for event in events if event.kind == "stage_start"]
+    ends = [event for event in events if event.kind == "stage_end"]
+    assert ack["ok"] is False
+    assert len(starts) == 1
+    assert len(ends) == 1
+    assert ends[0].ok is False
+    assert ends[0].extra["terminal"] == "failure"
+    assert ends[0].duration_ms is not None
+
+
 def test_a2a_stage_emits_error_on_failure(blackboard: Blackboard) -> None:
     set_recorder(Recorder(blackboard.run_id, SQLiteEventStore()))
     agent = A2AStageAgent(

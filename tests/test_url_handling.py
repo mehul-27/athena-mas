@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from athena.agents import bb_io, researcher
+from athena.tools.web.fetch import FetchBlocked, normalize_url
 from athena.agents.untrusted import UNTRUSTED_BEGIN
 from athena.blackboard import Blackboard, EvidenceItem, SQLiteStore, Task
 from athena.patterns.context import P2PContext
@@ -18,6 +21,19 @@ def test_markdown_and_angle_bracket_urls_are_normalized() -> None:
     assert plain_http_url(f"<{url}>") == url
     assert plain_http_url(url) == url
     assert plain_http_url("[not a link]") == "[not a link]"
+
+
+def test_ambiguous_markdown_is_rejected_rather_than_guessed() -> None:
+    url = "https://docs.python.org/3.13/whatsnew/3.13.html"
+    ambiguous = f"see [What's New]({url}) for details"
+
+    assert plain_http_url(ambiguous) == ambiguous
+    with pytest.raises(FetchBlocked, match="Markdown"):
+        normalize_url(ambiguous)
+    with pytest.raises(FetchBlocked, match="Markdown"):
+        normalize_url(f"[What's New]({url})")
+    with pytest.raises(FetchBlocked, match="http and https|only http"):
+        normalize_url("javascript:alert(1)")
 
 
 def test_fetch_callback_receives_a_plain_url() -> None:

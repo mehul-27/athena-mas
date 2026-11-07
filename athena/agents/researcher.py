@@ -11,6 +11,7 @@ which reads the actual response.
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
 
@@ -25,11 +26,12 @@ from athena.agents import bb_io
 from athena.agents.budget import Budget, make_budget_callbacks
 from athena.agents.evidence_recorder import make_evidence_recorder
 from athena.agents.requirements import finding_requirement
-from athena.agents.routing import source_guidance
+from athena.agents.routing import preferred_roles, source_guidance
 from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import Blackboard, BlackboardStore
 from athena.config.llm import get_adk_model
 from athena.observability.recorder import get_recorder
+from athena.tools import registry
 from athena.tools.settings import REPO_ROOT
 from athena.tools.web.urls import plain_http_url
 
@@ -58,6 +60,10 @@ Rules:
   or `forecast` and put the exact figures in the expression/values.
 - When a web result is a relevant primary source, call `fetch_page` on that URL
   before relying on it. Cite the fetched page text, not the search snippet.
+- Do not fetch PDF URLs: the fetcher does not extract PDF content. Prefer HTML
+  article pages with substantive body text over navigation-heavy landing pages.
+- Never fetch a search-engine URL (DuckDuckGo, Bing, Mojeek, etc.). If a search
+  is throttled, try one broader synonym query, not a search-results page.
 - If a required finding still lacks a primary source, use the remaining fetch
   budget to find it; if it remains unavailable, record the gap instead of
   inventing evidence.
@@ -70,9 +76,20 @@ Rules:
 ROLE_INSTRUCTIONS = {
     "rag_researcher": "Search the NASA document corpus. Call `rag_search` once "
     "with a short focused query (top_k=3). Ignore the other tools.",
-    "web_researcher": "Search the web with `web_search` once (max_results=3), "
-    "then call `fetch_page` on the most relevant primary-source result(s). "
-    "Ignore the NASA corpus and calculator tools.",
+    "web_researcher": "Your FIRST `web_search` query must be a general technical "
+    "query with no company, vehicle, or product name (for example, 'cold gas "
+    "thruster nitrogen working principle'), max_results=3. Search for "
+    "organization/product-specific terms only in a later query if budget remains. "
+    "If a search is throttled, try one broader synonym query; if two distinct "
+    "queries are throttled and no fallback is configured, stop searching and "
+    "record the gap instead of exhausting the budget. Never fetch a "
+    "search-engine result page. Then call `fetch_page` on the most relevant "
+    "HTML article result(s); if one returns 403, 404, empty, or unsupported "
+    "content, try the next distinct HTML result instead of repeating it. Do not "
+    "fetch URLs ending in .pdf; fetch_page cannot extract PDFs. Prefer article "
+    "pages with substantive body text over navigation-heavy landing pages; use "
+    "max_chars=20000 for long technical pages. Ignore the NASA corpus and "
+    "calculator tools.",
     "calc_researcher": "Work the numbers. Call `calculate` or `forecast` with "
     "the exact figures the task mentions. Ignore the other tools.",
 }
@@ -90,17 +107,49 @@ ROLE_SERVER = {
 }
 
 
-def build_toolset(module: str, timeout: float = 120.0) -> MCPToolset:
-    """One stdio MCP server as an ADK toolset."""
+_MCP_ENV_PREFIXES = (
+    "ATHENA_", "SEARCH_", "SEARXNG_", "WEB_FETCH_", "RAG_",
+    "EMBEDDING_", "FASTEMBED_",
+)
+_MCP_ENV_EXACT = {
+    "PATH", "PYTHONPATH", "PYTHONIOENCODING", "TEMP", "TMP", "TMPDIR",
+    "HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "SYSTEMROOT",
+    "WINDIR", "COMSPEC", "CHROMA_PATH", "CORPUS_DIR",
+}
+
+
+def mcp_environment() -> dict[str, str]:
+    """Environment for local MCP tool servers: settings, never model secrets."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key in _MCP_ENV_EXACT or key.startswith(_MCP_ENV_PREFIXES)
+    }
+
+
+def build_toolset(
+    module: str,
+    timeout: float = 120.0,
+    tools: list[str] | None = None,
+) -> MCPToolset:
+    """One stdio MCP server as an ADK toolset, filtered to ``tools``.
+
+    Filtering happens before the model sees a schema, so a disabled tool is not
+    merely hidden in the UI: it is never offered for a call. MCP's stdio client
+    uses a restricted default environment, so search/fetch/RAG settings must be
+    passed explicitly or the tool process silently falls back to defaults.
+    """
     return MCPToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=sys.executable,
                 args=["-m", module],
                 cwd=str(REPO_ROOT),
+                env=mcp_environment(),
             ),
             timeout=timeout,
-        )
+        ),
+        tool_filter=list(tools) if tools is not None else None,
     )
 
 
@@ -114,30 +163,109 @@ def plain_fetch_urls(callback):
     return before_tool
 
 
+def selection_guard(
+    allowed: set[str],
+    agent: str,
+    run_enabled: set[str] | None = None,
+):
+    """Refuse a tool outside this worker's assignment.
+
+    The toolset filter is the primary boundary. This guard is defence in depth:
+    a server that ignores filtering, or a model that hallucinates a tool name,
+    still cannot run it.
+
+    A worker is assigned only the tools its role owns. A name that is enabled
+    for the run but absent from this worker is therefore a worker-assignment
+    restriction, not a user-level selection restriction.
+    """
+    enabled = set(allowed if run_enabled is None else run_enabled)
+
+    def before_tool(tool, args, tool_context):
+        name = getattr(tool, "name", "") or "tool"
+        if name in allowed:
+            return None
+        if name in enabled:
+            blocked_by = "worker_assignment"
+            error_type = "ToolNotAssigned"
+            message = f"Blocked: {name} is not assigned to {agent}."
+        else:
+            blocked_by = "user_selection"
+            error_type = "ToolDisabled"
+            message = f"Blocked: {name} is not enabled for this run."
+        return {
+            "isError": True,
+            "error": message,
+            "error_type": error_type,
+            "blocked_by": blocked_by,
+            "tool": name,
+        }
+
+    return before_tool
+
+
+def _toolsets(selection: tuple[str, ...] | None) -> list[MCPToolset]:
+    return [
+        build_toolset(SERVERS[server], tools=names)
+        for server, names in registry.server_filters(selection).items()
+    ]
+
+
+def _selection_instruction(selection: tuple[str, ...] | None) -> str:
+    return (
+        f"{registry.capability_block(selection)}\n"
+        f"{registry.limit_note(selection)}"
+    )
+
+
+def _compose_guard(
+    allowed: set[str],
+    agent: str,
+    budget_guard,
+    run_enabled: set[str] | None = None,
+):
+    guard = selection_guard(allowed, agent, run_enabled)
+    fetch_and_budget = plain_fetch_urls(budget_guard)
+
+    def before_tool(tool, args, tool_context):
+        blocked = guard(tool, args, tool_context)
+        if blocked is not None:
+            return blocked
+        return fetch_and_budget(tool, args, tool_context)
+
+    return before_tool
+
+
 def build_researcher(
     run_id: str,
     store: BlackboardStore | None = None,
     task_text: str | None = None,
     sink: Any = None,
 ) -> LlmAgent:
-    """The sequential researcher: all three tools, one agent."""
+    """The sequential researcher: the enabled tools across all MCP servers."""
     text = task_text if task_text is not None else bb_io.task_text(
         Blackboard.open(run_id, store)
     )
+    selection = registry.task_selection(run_id, store)
+    run_enabled = set(registry.enabled_ids(selection))
+    allowed = set(run_enabled)
     budget = Budget.from_env("researcher")
-    before_model, before_tool = make_budget_callbacks(budget, get_recorder(), "researcher")
-    before_tool = plain_fetch_urls(before_tool)
+    before_model, budget_guard = make_budget_callbacks(
+        budget, get_recorder(), "researcher"
+    )
     return LlmAgent(
         name="researcher",
         model=get_adk_model("researcher"),
-        description="Gathers evidence with the RAG, web and calculator tools.",
+        description="Gathers evidence with the enabled research tools.",
         instruction=(
             f"{INSTRUCTION}\n{TOOL_DISCIPLINE}\n{source_guidance(text)}\n"
+            f"{_selection_instruction(selection)}\n"
             f"{finding_requirement(text)}\nThe task:\n{text}\n"
         ),
-        tools=[build_toolset(SERVERS[key]) for key in ("rag", "web", "calc")],
+        tools=_toolsets(selection),
         before_model_callback=before_model,
-        before_tool_callback=before_tool,
+        before_tool_callback=_compose_guard(
+            allowed, "researcher", budget_guard, run_enabled
+        ),
         after_tool_callback=make_evidence_recorder(run_id, store, sink=sink),
     )
 
@@ -149,25 +277,64 @@ def build_role_researcher(
     task_text: str | None = None,
     sink: Any = None,
 ) -> LlmAgent:
-    """A worker researcher with exactly one MCP server attached."""
+    """A worker researcher with only its selected MCP tools attached."""
     text = task_text if task_text is not None else bb_io.task_text(
         Blackboard.open(run_id, store)
     )
+    selection = registry.task_selection(run_id, store)
+    run_enabled = set(registry.enabled_ids(selection))
+    allowed_list = registry.role_tools(role, selection)
+    allowed = set(allowed_list)
     budget = Budget.from_env(role)
-    before_model, before_tool = make_budget_callbacks(budget, get_recorder(), role)
-    before_tool = plain_fetch_urls(before_tool)
+    before_model, budget_guard = make_budget_callbacks(budget, get_recorder(), role)
+    tools = (
+        [build_toolset(SERVERS[ROLE_SERVER[role]], tools=list(allowed_list))]
+        if allowed
+        else []
+    )
+    role_instruction = ROLE_INSTRUCTIONS[role]
+    if role == "web_researcher" and allowed_list == ("fetch_page",):
+        role_instruction = (
+            "Fetch the exact URL(s) named in the task with `fetch_page`. Do not "
+            "search the web; web search is disabled for this run."
+        )
+    elif role == "web_researcher" and allowed_list == ("web_search",):
+        role_instruction = (
+            "Search the web with `web_search` once (max_results=3). Page fetching "
+            "is disabled for this run, so treat snippets as discovery hints, not "
+            "as sufficient evidence."
+        )
+    elif role == "calc_researcher":
+        usable = " or ".join(f"`{name}`" for name in allowed_list)
+        role_instruction = (
+            f"Work only the numbers explicitly requested using {usable}. Each "
+            "calculation needs a stated purpose and expected output; use one call "
+            "per distinct quantity and stop when that result is obtained. Do not "
+            "invent inputs. If the task does not state numeric inputs and does "
+            "not ask for a numeric result, call no tool and reply DONE. Do not "
+            "perform web research."
+        ) if allowed_list else role_instruction
+    disabled_note = (
+        ""
+        if allowed
+        else f"\nNo tools are enabled for this role. State that the task cannot be "
+        f"researched with the selected tools and reply DONE."
+    )
     return LlmAgent(
         name=role,
         model=get_adk_model("researcher"),
         description=f"The {role} worker.",
         instruction=(
-            f"You are the {role}. {ROLE_INSTRUCTIONS[role]}\n{TOOL_DISCIPLINE}\n"
-            f"{source_guidance(text)}\n{finding_requirement(text)}\n"
-            f"The task:\n{text}\nReply DONE when finished."
+            f"You are the {role}. {role_instruction}\n{TOOL_DISCIPLINE}\n"
+            f"{source_guidance(text)}\n{_selection_instruction(selection)}\n"
+            f"{finding_requirement(text)}\n"
+            f"The task:\n{text}\nReply DONE when finished.{disabled_note}"
         ),
-        tools=[build_toolset(SERVERS[ROLE_SERVER[role]])],
+        tools=tools,
         before_model_callback=before_model,
-        before_tool_callback=before_tool,
+        before_tool_callback=_compose_guard(
+            allowed, role, budget_guard, run_enabled
+        ),
         after_tool_callback=make_evidence_recorder(run_id, store, sink=sink),
     )
 
@@ -185,9 +352,38 @@ class AssignedWorker(BaseAgent):
     store: Any = None
 
     async def _run_async_impl(self, ctx: InvocationContext):
-        plan = bb_io.section(Blackboard.open(self.run_id, self.store), "plan")
+        blackboard = Blackboard.open(self.run_id, self.store)
+        plan = bb_io.section(blackboard, "plan")
         assigned = {step.assigned_to for step in plan.steps} if plan else set()
+        selection = registry.task_selection(self.run_id, self.store)
+        available = set(registry.available_roles(selection))
+
+        # A planner that writes no executable step must not leave the research
+        # pool empty. Fall back to the source class the question needs, but only
+        # among workers the user actually enabled.
+        if not (assigned & available):
+            task = bb_io.section(blackboard, "task")
+            chosen = preferred_roles(task.question if task else "", available)
+            if not chosen and available:
+                chosen = sorted(
+                    available, key=lambda role: registry.ROLE_ORDER.index(role)
+                )[:1]
+            assigned = set(chosen)
+
+        if not registry.role_enabled(self.role, selection):
+            reason = "tools disabled by the user"
+            self._note_skip(reason)
+            yield Event(
+                author=self.name,
+                custom_metadata={
+                    "skipped": True,
+                    "reason": reason,
+                    "role": self.role,
+                },
+            )
+            return
         if self.role not in assigned:
+            self._note_skip("no plan step")
             yield Event(
                 author=self.name,
                 custom_metadata={"skipped": True, "reason": "no plan step"},
@@ -195,3 +391,14 @@ class AssignedWorker(BaseAgent):
             return
         async for event in self.worker.run_async(ctx):
             yield event
+
+    def _note_skip(self, reason: str) -> None:
+        recorder = get_recorder()
+        if recorder is not None:
+            recorder.emit(
+                "skip",
+                self.role,
+                "adk",
+                payload_summary=f"{self.role} skipped: {reason}",
+                extra={"reason": reason},
+            )

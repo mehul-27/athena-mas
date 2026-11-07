@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from functools import lru_cache
 
+from athena.tools import settings
 from athena.tools.rag.index import RagIndex
 from athena.tools.rag.text import token_set
 from athena.tools.schemas import RagHit, RagResult
@@ -38,29 +39,44 @@ def search_index(index: RagIndex, query: str, top_k: int = 5) -> list[RagHit]:
     candidates = index.query(query, max(top_k * 3, top_k + 5))
     query_tokens = token_set(query)
 
-    hits: list[RagHit] = []
-    for row in candidates:
+    def hit_from_row(row, *, adjacent: bool = False) -> RagHit:
         vector_similarity = max(0.0, min(1.0, 1.0 - row["distance"]))
         document_tokens = token_set(row["text"])
         overlap = len(query_tokens & document_tokens)
         keyword_score = overlap / len(query_tokens) if query_tokens else 0.0
-        score = VECTOR_WEIGHT * vector_similarity + KEYWORD_WEIGHT * keyword_score
-
+        score = (
+            KEYWORD_WEIGHT * keyword_score
+            if adjacent
+            else VECTOR_WEIGHT * vector_similarity + KEYWORD_WEIGHT * keyword_score
+        )
         meta = row["metadata"]
-        hits.append(
-            RagHit(
-                chunk_id=row["id"],
-                document_id=str(meta.get("document_id", "")),
-                document=str(meta.get("filename", "")),
-                chunk_index=int(meta.get("chunk_index", -1)),
-                page=int(meta["page"]) if meta.get("page") else None,
-                text=row["text"],
-                score=round(score, 4),
-            )
+        return RagHit(
+            chunk_id=row["id"],
+            document_id=str(meta.get("document_id", "")),
+            document=str(meta.get("filename", "")),
+            chunk_index=int(meta.get("chunk_index", -1)),
+            page=int(meta["page"]) if meta.get("page") else None,
+            text=row["text"],
+            score=round(score, 4),
         )
 
+    hits = [hit_from_row(row) for row in candidates]
     hits.sort(key=lambda hit: hit.score, reverse=True)
-    return hits[:top_k]
+    top = hits[:top_k]
+
+    # Expand the best contiguous passages only when the caller asked for a
+    # retrieval set large enough to preserve a list/table. This is not a change
+    # to ingestion or chunk size; it is a targeted context expansion.
+    radius = settings.rag_adjacent_chunks()
+    if radius and top_k >= 3:
+        seen = {hit.chunk_id for hit in top}
+        for hit in top[:3]:
+            for row in index.adjacent(hit.document_id, hit.chunk_index, radius):
+                if row["id"] in seen:
+                    continue
+                seen.add(row["id"])
+                top.append(hit_from_row(row, adjacent=True))
+    return top
 
 
 def rag_search(query: str, top_k: int = 5) -> RagResult:

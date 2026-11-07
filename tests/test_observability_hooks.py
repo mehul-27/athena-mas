@@ -91,6 +91,154 @@ def test_plugin_emits_tool_call_and_error(store: SQLiteEventStore) -> None:
     assert "gsk_" not in (events[1].error_message or "")
 
 
+def test_plugin_marks_a_typed_tool_failure_as_failed(store: SQLiteEventStore) -> None:
+    recorder = Recorder("run-1", store)
+    plugin = MonitoringPlugin(recorder)
+    tool = SimpleNamespace(name="fetch_page")
+    context = SimpleNamespace(agent_name="web_researcher")
+
+    async def run() -> None:
+        await plugin.before_tool_callback(
+            tool=tool, tool_args={"url": "https://example.com"}, tool_context=context
+        )
+        await plugin.after_tool_callback(
+            tool=tool, tool_args={"url": "https://example.com"}, tool_context=context,
+            result={"structuredContent": {
+                "ok": False, "status": "blocked", "error": "blocked by policy",
+            }},
+        )
+
+    asyncio.run(run())
+
+    event = store.events("run-1")[0]
+    assert event.kind == "tool_call"
+    assert event.ok is False
+    assert event.error_type == "ToolError"
+    assert "blocked by policy" in event.error_message
+
+
+def test_parallel_calls_to_one_tool_keep_their_own_arguments_and_results(
+    store: SQLiteEventStore,
+) -> None:
+    recorder = Recorder("run-parallel-tools", store)
+    plugin = MonitoringPlugin(recorder)
+    tool = SimpleNamespace(name="fetch_page")
+    first = SimpleNamespace(agent_name="web_researcher", function_call_id="call-1")
+    second = SimpleNamespace(agent_name="web_researcher", function_call_id="call-2")
+    markdown = "[Docs](https://docs.example/a)"
+
+    async def run() -> None:
+        await plugin.before_tool_callback(
+            tool=tool, tool_args={"url": markdown}, tool_context=first
+        )
+        await plugin.before_tool_callback(
+            tool=tool, tool_args={"url": "https://docs.example/b"}, tool_context=second
+        )
+        await plugin.after_tool_callback(
+            tool=tool,
+            tool_args={"url": "https://docs.example/b"},
+            tool_context=second,
+            result={"structuredContent": {
+                "ok": True, "status": "ok", "requested_url": "https://docs.example/b",
+                "final_url": "https://docs.example/b",
+            }},
+        )
+        await plugin.after_tool_callback(
+            tool=tool,
+            tool_args={"url": markdown},
+            tool_context=first,
+            result={"structuredContent": {
+                "ok": True, "status": "ok", "requested_url": "https://docs.example/a",
+                "final_url": "https://docs.example/a",
+            }},
+        )
+
+    asyncio.run(run())
+
+    events = store.events("run-parallel-tools")
+    by_call = {event.extra["function_call_id"]: event for event in events}
+    assert set(by_call) == {"call-1", "call-2"}
+    assert "https://docs.example/a" in by_call["call-1"].payload_summary
+    assert "]" not in by_call["call-1"].payload_summary
+    assert "https://docs.example/b" in by_call["call-2"].payload_summary
+    assert by_call["call-1"].duration_ms is not None
+    assert by_call["call-2"].duration_ms is not None
+
+
+def test_plugin_records_worker_block_reason_without_synthetic_duplicate(
+    store: SQLiteEventStore,
+) -> None:
+    recorder = Recorder("run-block", store)
+    plugin = MonitoringPlugin(recorder)
+    context = SimpleNamespace(agent_name="calc_researcher", function_call_id="call-block")
+    tool = SimpleNamespace(name="web_search")
+
+    async def run() -> None:
+        await plugin.before_tool_callback(
+            tool=tool, tool_args={"query": "q"}, tool_context=context
+        )
+        await plugin.after_tool_callback(
+            tool=tool,
+            tool_args={"query": "q"},
+            tool_context=context,
+            result={
+                "isError": True,
+                "error": "Blocked: web_search is not assigned to calc_researcher.",
+                "error_type": "ToolNotAssigned",
+                "blocked_by": "worker_assignment",
+            },
+        )
+
+    asyncio.run(run())
+
+    events = store.events("run-block")
+    assert len(events) == 1
+    event = events[0]
+    assert event.kind == "tool_call"
+    assert event.ok is False
+    assert event.error_type == "ToolNotAssigned"
+    assert event.extra["blocked_by"] == "worker_assignment"
+    assert "not assigned" in event.error_message
+
+
+def test_stage_events_mark_wrapper_and_remote_scope(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("EVENTS_DB", str(tmp_path / "events.db"))
+    store = SQLiteEventStore(tmp_path / "events.db")
+    recorder = Recorder("run-scope", store)
+    plugin = MonitoringPlugin(recorder)
+    context = SimpleNamespace(agent_name="analyst")
+
+    async def run() -> None:
+        await plugin.before_agent_callback(
+            agent=SimpleNamespace(name="analyst"), callback_context=context
+        )
+        await plugin.after_agent_callback(
+            agent=SimpleNamespace(name="analyst"), callback_context=context
+        )
+
+    asyncio.run(run())
+    events = store.events("run-scope")
+    assert [event.extra.get("stage_scope") for event in events] == [
+        "adk-wrapper", "adk-wrapper"
+    ]
+
+    blackboard = Blackboard.create(
+        Task(question="q"), store=SQLiteStore(tmp_path / "bb.db")
+    )
+
+    def stub(_run_id, _instruction, store=None):
+        return {"section": "analysis", "version": 1}
+
+    run_role_request(
+        json.dumps({"run_id": blackboard.run_id, "role": "analyst", "instruction": "go"}),
+        roles={"analyst": stub},
+        store=blackboard.store,
+    )
+    remote = SQLiteEventStore(tmp_path / "events.db").events(blackboard.run_id)
+    assert all(event.extra.get("stage_scope") == "crewai-remote" for event in remote)
+    assert all(event.extra.get("handoff") == "a2a" for event in remote)
+
+
 def test_crewai_ack_carries_tokens_and_stays_short(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("EVENTS_DB", str(tmp_path / "events.db"))
     bb_store = SQLiteStore(tmp_path / "bb.db")
@@ -166,6 +314,33 @@ def test_limiter_wait_is_recorded(store: SQLiteEventStore, tmp_path) -> None:
 
     assert recorded and recorded[0][1] == "writer"
     set_wait_listener(None)
+
+
+def test_parallel_workers_with_the_same_display_name_both_finish(store) -> None:
+    recorder = Recorder("run-1", store)
+    set_recorder(recorder)
+    plugin = MonitoringPlugin(recorder)
+    context = SimpleNamespace(agent_name="web_researcher")
+    first = SimpleNamespace(name="web_researcher")
+    second = SimpleNamespace(name="web_researcher")
+
+    async def run() -> None:
+        await plugin.before_agent_callback(agent=first, callback_context=context)
+        await plugin.before_agent_callback(agent=second, callback_context=context)
+        await plugin.after_agent_callback(agent=first, callback_context=context)
+        await plugin.after_agent_callback(agent=second, callback_context=context)
+
+    asyncio.run(run())
+
+    events = store.events("run-1")
+    assert [event.kind for event in events] == [
+        "stage_start", "stage_start", "stage_end", "stage_end"
+    ]
+    assert all(
+        event.duration_ms is not None
+        for event in events
+        if event.kind == "stage_end"
+    )
 
 
 def test_monitoring_off_means_no_events(store: SQLiteEventStore) -> None:

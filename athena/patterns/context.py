@@ -46,6 +46,12 @@ class P2PContext:
     analysis: str = ""
     report: str = ""
     critique: str = ""
+    tool_status: str = ""
+    limitations: list[str] = field(default_factory=list)
+    evidence_limitations: list[str] = field(default_factory=list)
+    blocking_issues: list[str] = field(default_factory=list)
+    partial_answer: bool = False
+    coverage: str = ""
 
     def evidence_block(self, limit: int | None = None) -> str:
         if not self.evidence:
@@ -78,12 +84,45 @@ class P2PContext:
             return "(evidence omitted: context full)"
         return body
 
+    def status_block(self) -> str:
+        """Actual tool status and unmet requirements, never inferred usage."""
+        parts: list[str] = []
+        if self.tool_status:
+            parts.append(f"TOOL AND EVIDENCE STATUS:\n{self.tool_status}")
+        if self.limitations:
+            parts.append(
+                "UNMET REQUIREMENTS:\n"
+                + "\n".join(f"- {item}" for item in self.limitations)
+            )
+        if self.evidence_limitations:
+            parts.append(
+                "NON-BLOCKING EVIDENCE LIMITATIONS:\n"
+                + "\n".join(f"- {item}" for item in self.evidence_limitations)
+            )
+        if self.blocking_issues:
+            parts.append(
+                "UNRESOLVED EVIDENCE REQUIREMENTS (do not claim them):\n"
+                + "\n".join(f"- {item}" for item in self.blocking_issues)
+            )
+        if self.coverage:
+            parts.append(f"EVIDENCE COVERAGE:\n{self.coverage}")
+        if self.partial_answer:
+            parts.append(
+                "PARTIAL ANSWER MODE: only search-result snippets support the "
+                "general principle. Do not claim any page was read. Answer the "
+                "supported general principle, state that SpaceX-specific details "
+                "remain unverified, and do not return a total refusal."
+            )
+        return "\n\n".join(parts)
+
     def for_role(self, role: str) -> str:
         """The context block a given role receives, highest priority first."""
         if role == "analyst":
             blocks = [f"QUESTION:\n{self.question}"]
             if self.plan:
                 blocks.append(f"PLAN:\n{self.plan}")
+            if self.status_block():
+                blocks.append(self.status_block())
             blocks.append("EVIDENCE:\n" + self.evidence_block())
             return "\n\n".join(blocks)
 
@@ -98,10 +137,13 @@ class P2PContext:
 
         head = f"QUESTION:\n{self.question}"
         plan_block = f"PLAN:\n{self.plan}" if self.plan else ""
-        fixed = "\n\n".join(part for part in (head, stage_block, plan_block) if part)
+        status_block = self.status_block()
+        fixed = "\n\n".join(
+            part for part in (head, stage_block, plan_block, status_block) if part
+        )
         room = max(0, context_budget() - len(fixed) - len("\n\nEVIDENCE:\n"))
         body = "\n\n".join(
-            part for part in (head, stage_block, plan_block,
+            part for part in (head, stage_block, plan_block, status_block,
                               "EVIDENCE:\n" + self.evidence_block(room))
             if part
         )

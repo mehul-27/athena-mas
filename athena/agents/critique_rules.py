@@ -19,6 +19,12 @@ import re
 
 from athena.blackboard import Critique, FinalReport
 
+_QUALIFICATION = re.compile(
+    r"\b(?:unverified|not verified|not established|no retrieved source|"
+    r"limitation|remain(?:s)? unverified|cannot be (?:determined|verified))\b",
+    re.I,
+)
+
 UNANSWERED_PHRASES = (
     "does not state",
     "does not define",
@@ -48,27 +54,102 @@ def says_unanswered(text: str) -> bool:
     return False
 
 
-def calibrate(critique: Critique, report: FinalReport | None) -> Critique:
-    """Raise an approving critique that the report itself contradicts."""
+def calibrate(
+    critique: Critique,
+    report: FinalReport | None,
+    assessment=None,
+    evidence_texts: list[str] | None = None,
+) -> Critique:
+    """Raise an approving critique that the report itself contradicts.
+
+    ``evidence_texts`` is optional. When it is supplied, claim-level over-claims
+    (a superlative, a date, a specification, or a planned capability stated as
+    existing) also block approval: approving prose that goes beyond the recorded
+    evidence is the same failure as approving prose that contradicts it.
+    """
     if report is None:
         return critique
 
+    text = " ".join([report.answer, *report.key_points])
+    qualified = bool(_QUALIFICATION.search(text))
+    ceiling = getattr(assessment, "confidence_ceiling", None)
+    qualified_possible = bool(getattr(assessment, "qualified_possible", False))
+
     reason = ""
-    if (report.confidence or 0.0) < LOW_CONFIDENCE:
+    if ceiling is not None and (report.confidence or 0.0) > ceiling + 0.001:
+        reason = (
+            f"confidence {report.confidence:.2f} exceeds the evidence ceiling "
+            f"{ceiling:.2f}"
+        )
+    elif (
+        (report.confidence or 0.0) < LOW_CONFIDENCE
+        and not (qualified and qualified_possible)
+    ):
         reason = f"confidence {report.confidence:.2f} is below {LOW_CONFIDENCE}"
     elif says_unanswered(report.answer) or any(
         says_unanswered(point) for point in report.key_points
     ):
         reason = "the report says the evidence does not answer the question"
 
-    if not reason:
+    overclaims = _overclaims(report, evidence_texts)
+    if not reason and not overclaims:
         return critique
 
     issues = list(critique.issues)
     note = ISSUE if not reason.startswith("confidence") else f"{ISSUE} ({reason})"
-    if note not in issues:
+    if reason and note not in issues:
         issues.append(note)
+    for claim in overclaims:
+        text_note = f"claim exceeds the recorded evidence: {claim}"
+        if text_note not in issues:
+            issues.append(text_note)
+    if not issues:
+        return critique
     severity = critique.severity if critique.severity in {"medium", "high"} else "medium"
+    if overclaims:
+        severity = "high"
     return critique.model_copy(
         update={"approved": False, "severity": severity, "issues": issues}
     )
+
+
+def _overclaims(report: FinalReport, evidence_texts: list[str] | None) -> list[str]:
+    """Report sentences that state more than every supporting source does."""
+    if not evidence_texts:
+        return []
+    from athena.agents.claim_support import (
+        capability_escalation,
+        is_qualification,
+        split_sentences,
+        superlatives,
+        support_score,
+    )
+
+    problems: list[str] = []
+    for sentence in split_sentences(" ".join([report.answer, *report.key_points])):
+        if is_qualification(sentence):
+            continue
+        supporting = [
+            text for text in evidence_texts[:40]
+            if support_score(sentence, text) >= 0.35
+        ]
+        if not supporting:
+            continue
+        claim_superlatives = [
+            term
+            for text in supporting
+            for term in superlatives(sentence, text)
+        ]
+        if claim_superlatives and all(
+            superlatives(sentence, text) for text in supporting
+        ):
+            problems.append(
+                f"{sentence.strip()[:120]} (claims "
+                f"{', '.join(dict.fromkeys(claim_superlatives))})"
+            )
+        elif all(capability_escalation(sentence, text) for text in supporting):
+            problems.append(
+                f"{sentence.strip()[:120]} (planned capability stated as existing)"
+            )
+    return list(dict.fromkeys(problems))[:5]
+

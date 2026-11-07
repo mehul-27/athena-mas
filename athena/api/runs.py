@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from athena.observability.redact import redact
+from athena.tools import registry
 
 RUN_DIR = Path(".run/runs")
 MAX_QUESTION = 500
@@ -33,6 +34,7 @@ class ActiveRun:
     process: subprocess.Popen
     log_path: Path
     summary_path: Path
+    tools: list[str] | None = None
     finished: bool = False
     exit_code: int | None = None
     lines: list[str] = field(default_factory=list)
@@ -50,21 +52,38 @@ class RunRegistry:
     def active(self) -> ActiveRun | None:
         return self._active
 
-    def _argv(self, question: str, pattern: str, run_id: str) -> list[str]:
+    def _argv(
+        self,
+        question: str,
+        pattern: str,
+        run_id: str,
+        tools: list[str] | None = None,
+    ) -> list[str]:
         summary = RUN_DIR / f"{run_id}.summary.json"
         if self._command is not None:
-            return [*self._command, run_id, question, pattern, str(summary)]
-        return [
-            sys.executable, "-m", "athena.run", question,
-            "--pattern", pattern, "--run-id", run_id, "--json-summary", str(summary),
-        ]
+            argv = [*self._command, run_id, question, pattern, str(summary)]
+        else:
+            argv = [
+                sys.executable, "-m", "athena.run", question,
+                "--pattern", pattern, "--run-id", run_id, "--json-summary", str(summary),
+            ]
+        if tools is not None:
+            # An empty value is a real selection ("no tools"), not All tools.
+            argv += ["--tools", ",".join(tools)]
+        return argv
 
-    def start(self, question: str, pattern: str) -> str:
+    def start(
+        self,
+        question: str,
+        pattern: str,
+        tools: list[str] | tuple[str, ...] | None = None,
+    ) -> str:
         question = question.strip()
         if not question:
             raise ValueError("question must not be empty")
         if len(question) > MAX_QUESTION:
             raise ValueError(f"question must be at most {MAX_QUESTION} characters")
+        selection = registry.normalise_selection(tools)
 
         with self._lock:
             if self._active is not None and not self._active.finished:
@@ -75,8 +94,9 @@ class RunRegistry:
             log_path = RUN_DIR / f"{run_id}.log"
             summary_path = RUN_DIR / f"{run_id}.summary.json"
             log = log_path.open("w", encoding="utf-8")
+            selected = list(selection) if selection is not None else None
             process = subprocess.Popen(
-                self._argv(question, pattern, run_id),
+                self._argv(question, pattern, run_id, selected),
                 cwd=os.getcwd(),
                 stdout=log,
                 stderr=subprocess.STDOUT,
@@ -84,8 +104,10 @@ class RunRegistry:
                 env={**os.environ, **self._env_overrides()},
                 creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
-            self._active = ActiveRun(run_id, pattern, question, process, log_path,
-                                     summary_path)
+            self._active = ActiveRun(
+                run_id, pattern, question, process, log_path, summary_path,
+                tools=selected,
+            )
             return run_id
 
     @staticmethod
@@ -111,6 +133,39 @@ class RunRegistry:
                 for line in run.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
             ]
         return run
+
+    def terminate_all(self, timeout: float = 5.0) -> bool:
+        """Stop the active run subprocess, gracefully first and then hard.
+
+        The API's shutdown hook calls this so a container stop (SIGTERM) does
+        not strand a run that is mid-token-spend. ``terminate`` is SIGTERM on
+        POSIX; on Windows it is TerminateProcess for the direct child only (the
+        run's own children are left to the OS). Returns True when nothing of the
+        run is left running.
+        """
+        run = self._active
+        if run is None:
+            return True
+        process = run.process
+        if process.poll() is None:
+            try:
+                process.terminate()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=max(0.0, timeout))
+            except subprocess.TimeoutExpired:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                try:
+                    process.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    return False
+        run.exit_code = process.poll()
+        run.finished = run.exit_code is not None
+        return run.finished
 
     def summary(self, run_id: str) -> dict | None:
         import json

@@ -19,15 +19,28 @@ from google.genai import types
 
 from athena.agents.a2a_client import build_payload, send_role_request
 from athena.agents.a2a_stage import DEFAULT_CARD_URL, INSTRUCTIONS
-from athena.agents.planner import build_planner, parse_plan_text, parse_steps
+from athena.agents.planner import (
+    build_planner,
+    parse_plan_text,
+    prepare_plan,
+    parse_steps,
+)
+from athena.agents.critique_rules import calibrate
 from athena.agents.report_sanitize import evidence_ids_for, sanitize_report
 from athena.agents.researcher import build_researcher
 from athena.agents.routing import ensure_step_texts
-from athena.agents.sufficiency import assess, gap_answer
+from athena.agents.sufficiency import (
+    assess,
+    coverage_text,
+    gap_answer,
+    partial_snippet_evidence,
+)
+from athena.agents.tool_report import build_tool_report, format_tool_status
 from athena.agents import a2a_client
 from athena.blackboard import Analysis, Blackboard, Critique, Draft, FinalReport, Plan
 from athena.observability.recorder import get_recorder
 from athena.patterns.context import P2PContext, render_plan
+from athena.tools import registry
 
 
 
@@ -60,6 +73,7 @@ class P2PAgent(BaseAgent):
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
         context = P2PContext(question=self.question)
+        selection = registry.task_selection(self.run_id, self.store)
 
         # --- planner: message mode, no blackboard tool -------------------
         started = time.perf_counter()
@@ -68,12 +82,16 @@ class P2PAgent(BaseAgent):
         async for event in planner.run_async(ctx):
             yield event
             raw = _text_of(event) or raw
-        plan = Plan(steps=parse_plan_text(raw))
-        plan = Plan(steps=parse_steps(ensure_step_texts(
-            [f"{step.assigned_to}: {step.description}" for step in plan.steps],
+        raw_steps = parse_plan_text(raw)
+        policy = prepare_plan(
+            [f"{step.assigned_to}: {step.description}" for step in raw_steps],
             self.question,
-        )))
+            selection,
+        )
+        plan = Plan(steps=policy.steps, blocked=policy.blocked)
         context.plan = render_plan(plan)
+        context.limitations = list(policy.limitations)
+        self._note_limitations(policy.limitations)
         yield _timing("planner", started)
         self._blackboard().write("plan", plan, author="planner")  # audit
 
@@ -97,6 +115,55 @@ class P2PAgent(BaseAgent):
             yield Event(author=role, content=types.Content(parts=[types.Part(text=content[:200])]))
             yield _timing(role, started)
 
+        recovery_rounds = 0
+        assessment = assess(
+            self.question,
+            context.evidence,
+            enabled_tools=selection,
+            tool_report=build_tool_report(self.run_id, self.store),
+        )
+        if (
+            not assessment.answer_as_asked
+            and (assessment.missing_subjects or assessment.missing_aspects or not assessment.ok)
+        ):
+            recovery_rounds = 1
+            recovery_task = (
+                f"{self.question}\n\n"
+                f"MISSING SUBJECTS: {', '.join(assessment.missing_subjects) or '(none)'}\n"
+                f"MISSING ANSWER PARTS: {', '.join(assessment.missing_aspects) or '(none)'}\n"
+                f"BLOCKING EVIDENCE ISSUES: {'; '.join(assessment.issues) or '(none)'}\n"
+                f"CRITIC GAPS:\n{context.critique}\n\n"
+                "Target only these gaps with new primary evidence. Preserve the "
+                "evidence already collected and do not repeat successful calls."
+            )
+            self._note_recovery("researcher", recovery_task[:300])
+            researcher = build_researcher(
+                self.run_id, None, task_text=recovery_task, sink=collected.extend
+            )
+            async for event in researcher.run_async(ctx):
+                yield event
+            context.evidence = collected
+            audit = self._blackboard()
+            existing = audit.read("evidence")
+            known = {item.id for item in existing[0]} if existing else set()
+            for item in collected:
+                if item.id not in known:
+                    audit.append("evidence", item, author="researcher")
+                    known.add(item.id)
+            for role in ("analyst", "writer", "critic"):
+                started = time.perf_counter()
+                content = await self._call_role(role, context)
+                yield Event(
+                    author=role,
+                    content=types.Content(parts=[types.Part(text=content[:200])]),
+                )
+                yield _timing(role, started)
+
+        yield Event(
+            author=self.name,
+            custom_metadata={"recovery_rounds": recovery_rounds},
+        )
+
         report = self._blackboard().read("final_report")
         text = report[0].to_markdown() if report else "(no final report was written)"
         yield Event(
@@ -107,6 +174,28 @@ class P2PAgent(BaseAgent):
 
     async def _call_role(self, role: str, context: P2PContext) -> str:
         """Send one stage's context, parse the reply, audit it."""
+        if role in {"writer", "critic"}:
+            tool_report = build_tool_report(self.run_id, self.store)
+            assessment = assess(
+                self.question,
+                context.evidence,
+                enabled_tools=registry.task_selection(self.run_id, self.store),
+                tool_report=tool_report,
+            )
+            partial = partial_snippet_evidence(
+                self.question, context.evidence, assessment
+            )
+            context.partial_answer = partial
+            context.blocking_issues = list(assessment.issues) if partial else []
+            context.coverage = coverage_text(assessment)
+            context.tool_status = format_tool_status(
+                tool_report,
+                assessment.issues if role == "critic" else None,
+                assessment.limitations,
+            )
+            context.evidence_limitations = list(assessment.limitations)
+            if role == "critic":
+                context.limitations = list(assessment.issues)
         payload = build_payload(self.run_id, role, INSTRUCTIONS[role], context.for_role(role))
         started = time.perf_counter()
         reply = await send_role_request(self.card_url, payload)
@@ -132,8 +221,7 @@ class P2PAgent(BaseAgent):
             context.report = audited
             return audited
         context.critique = content
-        context.critique = content
-        return self._audit_critique(content)
+        return self._audit_critique(content, assessment)
 
     def _audit_analysis(self, content: str) -> str:
         try:
@@ -144,8 +232,15 @@ class P2PAgent(BaseAgent):
         return content
 
     def _audit_report(self, content: str, items: list) -> str:
-        assessment = assess(self.question, items)
-        if not assessment.ok:
+        selection = registry.task_selection(self.run_id, self.store)
+        assessment = assess(
+            self.question,
+            items,
+            enabled_tools=selection,
+            tool_report=build_tool_report(self.run_id, self.store),
+        )
+        partial = partial_snippet_evidence(self.question, items, assessment)
+        if not assessment.ok and not partial:
             report = FinalReport(
                 answer=gap_answer(self.question, assessment),
                 key_points=list(assessment.issues),
@@ -163,7 +258,17 @@ class P2PAgent(BaseAgent):
                     answer=f"The report could not be generated ({type(exc).__name__}).",
                     confidence=0.0, run_id=self.run_id,
                 )
-            report = sanitize_report(report, self._blackboard(), self.run_id, items=items)
+            report = sanitize_report(
+                report, self._blackboard(), self.run_id, items=items,
+                question=self.question,
+            )
+            report = report.model_copy(
+                update={
+                    "confidence": min(
+                        report.confidence, assessment.confidence_ceiling
+                    )
+                }
+            )
         self._blackboard().write(
             "draft",
             Draft(text=report.answer, based_on_evidence_ids=evidence_ids_for(report, items)),
@@ -172,11 +277,15 @@ class P2PAgent(BaseAgent):
         self._blackboard().write("final_report", report, author="writer")
         return report.model_dump_json()
 
-    def _audit_critique(self, content: str) -> str:
+    def _audit_critique(self, content: str, assessment=None) -> str:
         try:
             critique = Critique.model_validate(json.loads(content))
         except Exception:  # noqa: BLE001
             critique = Critique(issues=["critic returned invalid JSON"], severity="medium", approved=False)
+        report = self._blackboard().read("final_report")
+        critique = calibrate(
+            critique, report[0] if report else None, assessment
+        )
         self._blackboard().write("critique", critique, author="critic")
         return content
 
@@ -198,6 +307,31 @@ class P2PAgent(BaseAgent):
             )
         return ""
 
+
+    def _note_recovery(self, role: str, reason: str) -> None:
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        recorder.emit(
+            "recovery",
+            "supervisor",
+            "adk",
+            payload_summary="research recovery: " + reason,
+            extra={"skipped": False, "role": role, "reason": reason},
+        )
+
+    def _note_limitations(self, limitations: list[str]) -> None:
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        for limitation in limitations:
+            recorder.emit(
+                "skip",
+                "planner",
+                "adk",
+                payload_summary=limitation,
+                extra={"reason": "tool selection"},
+            )
 
     def _record_call(self, role: str, reply: str, started: float) -> None:
         """Emit the p2p A2A exchange, including the context bytes it carried."""
@@ -227,6 +361,8 @@ class P2PAgent(BaseAgent):
                 "response_bytes": traffic["in"],
                 "reasoning_tokens": body.get("reasoning_tokens"),
                 "calls": body.get("calls"),
+                "handoff": "adk->crewai",
+                "role": role,
             },
         )
 

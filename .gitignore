@@ -52,3 +52,9 @@ data/chroma/
 /run_*.txt
 /report*.txt
 /usage_lines.txt
+
+# Test scratch databases and build caches (never versioned).
+/tmp*/
+/athena-eval-mpl/
+/untitled-project/
+/.commandcode/

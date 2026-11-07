@@ -48,6 +48,39 @@ def test_query_returns_expected_document(index: RagIndex) -> None:
     assert hits[0].text
 
 
+def test_search_expands_adjacent_chunks_for_a_complete_list(monkeypatch) -> None:
+    class FakeIndex:
+        def query(self, text, k):
+            return [
+                {"id": "c3", "text": "configuration identification", "metadata": {
+                    "document_id": "d", "filename": "handbook.pdf", "chunk_index": 3,
+                    "page": 10}, "distance": 0.1},
+                {"id": "c8", "text": "configuration audits", "metadata": {
+                    "document_id": "d", "filename": "handbook.pdf", "chunk_index": 8,
+                    "page": 11}, "distance": 0.2},
+                {"id": "c12", "text": "status accounting", "metadata": {
+                    "document_id": "d", "filename": "handbook.pdf", "chunk_index": 12,
+                    "page": 12}, "distance": 0.3},
+            ]
+
+        def adjacent(self, document_id, chunk_index, radius=1):
+            return [
+                {"id": f"c{chunk_index - 1}", "text": "adjacent before", "metadata": {
+                    "document_id": document_id, "filename": "handbook.pdf",
+                    "chunk_index": chunk_index - 1, "page": 10}, "distance": 1.0},
+                {"id": f"c{chunk_index + 1}", "text": "adjacent after", "metadata": {
+                    "document_id": document_id, "filename": "handbook.pdf",
+                    "chunk_index": chunk_index + 1, "page": 10}, "distance": 1.0},
+            ]
+
+    monkeypatch.setenv("RAG_ADJACENT_CHUNKS", "1")
+    hits = search_index(FakeIndex(), "configuration management list", top_k=3)
+
+    indexes = {hit.chunk_index for hit in hits}
+    assert {2, 4, 7, 9, 11, 13}.issubset(indexes)
+    assert len(hits) > 3
+
+
 def test_rag_search_tool_returns_typed_result(index: RagIndex) -> None:
     result = rag_search("How does ion propulsion work?", top_k=2)
     assert result.ok, result.error

@@ -21,9 +21,20 @@ EventKind = Literal[
     "model_call",
     "tool_call",
     "a2a_call",
+    "recovery",
     "blackboard_write",
     "limiter_wait",
+    "skip",
     "error",
+    # Additive kinds (telemetry). Events stored before these existed still
+    # validate: the literal only widens, nothing is renamed or removed.
+    #   retry     - one attempt was made again after a failure
+    #   guardrail - a guardrail/clamp decision fired (rule, action, detail)
+    #   handoff   - control moved between agents or frameworks (not an A2A call
+    #               on its own: a2a_call keeps carrying extra.handoff)
+    "retry",
+    "guardrail",
+    "handoff",
 ]
 
 AgentName = Literal[
@@ -42,6 +53,7 @@ Framework = Literal["adk", "crewai"]
 
 MAX_TEXT = 300
 MAX_EXTRA_CHARS = 2000
+MAX_EXTRA_KEYS = 40
 
 
 def utc_now() -> str:
@@ -89,7 +101,10 @@ class Event(BaseModel):
             if isinstance(node, str):
                 return (redact(node) or "")[:MAX_TEXT]
             if isinstance(node, dict):
-                return {str(key): clean(item) for key, item in list(node.items())[:20]}
+                return {
+                    str(key): clean(item)
+                    for key, item in list(node.items())[:MAX_EXTRA_KEYS]
+                }
             if isinstance(node, (list, tuple)):
                 return [clean(item) for item in list(node)[:20]]
             return node if isinstance(node, (int, float, bool)) or node is None else str(node)

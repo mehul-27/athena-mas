@@ -46,5 +46,9 @@ def _isolated_databases(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings_defaults, "DEFAULTS_FILE", tmp_path / "defaults.json")
     ratelimit.reset_limiters()
+    from athena.tools.web import search as web_search
+
+    web_search.reset_search_health()
     yield
+    web_search.reset_search_health()
     ratelimit.reset_limiters()

@@ -20,7 +20,7 @@ import os
 
 import pytest
 
-from athena.blackboard import Blackboard, SQLiteStore, Task
+from athena.blackboard import Blackboard, EvidenceItem, SQLiteStore, Task
 from athena.patterns import p2p as p2p_module
 from athena.patterns.context import P2PContext, context_budget
 
@@ -57,6 +57,18 @@ def _run(blackboard: Blackboard, roles=("writer", "critic")) -> P2PContext:
     agent = p2p_module.build(blackboard.run_id, blackboard.store, card_url="http://stub")
     context = P2PContext(question="What is systems engineering?")
     context.analysis = ANALYSIS
+    context.evidence = [
+        EvidenceItem(
+            id="doc_1",
+            source_type="rag",
+            source_ref="handbook.pdf#p11-chunk-28",
+            content=(
+                "Systems engineering is an interdisciplinary discipline that "
+                "covers the whole life cycle. "
+            ) * 3,
+            retrieved_by="rag_researcher",
+        )
+    ]
 
     async def drive() -> None:
         for role in roles:

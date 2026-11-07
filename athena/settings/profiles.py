@@ -22,9 +22,13 @@ ACTIVE_FILE = Path("data/settings/active_profile.json")
 # Only providers the web tool actually implements. Brave/Tavily used to be
 # accepted by validation but always returned "unsupported SEARCH_PROVIDER".
 SEARCH_PROVIDERS = ("duckduckgo", "searxng")
+FALLBACK_PROVIDERS = ("", "searxng")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
-ENV_KEYS = ("LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL", "LLM_REASONING_EFFORT",
-            "SEARCH_PROVIDER", "SEARXNG_INSTANCE")
+ENV_KEYS = (
+    "LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL", "LLM_REASONING_EFFORT",
+    "SEARCH_PROVIDER", "SEARXNG_INSTANCE", "SEARCH_FALLBACK_PROVIDER",
+    "SEARCH_FALLBACK_ENDPOINT",
+)
 
 # `data/presets.json` is the user-editable list, but a fresh clone must still
 # offer presets (the file is under `data/`, which is gitignored). This fallback
@@ -99,6 +103,8 @@ class Profile:
     reasoning_effort: str = ""
     search_provider: str = "duckduckgo"
     search_endpoint: str = ""
+    search_fallback_provider: str = ""
+    search_fallback_endpoint: str = ""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def validate(self) -> "Profile":
@@ -113,6 +119,16 @@ class Profile:
             raise ProfileError("searxng needs a search endpoint")
         if self.search_endpoint:
             self.search_endpoint = validate_api_base(self.search_endpoint)
+        if self.search_fallback_provider not in FALLBACK_PROVIDERS:
+            raise ProfileError(
+                f"unknown fallback search provider {self.search_fallback_provider!r}"
+            )
+        if self.search_fallback_provider == "searxng" and not self.search_fallback_endpoint:
+            raise ProfileError("searxng fallback needs a search endpoint")
+        if self.search_fallback_endpoint:
+            self.search_fallback_endpoint = validate_api_base(
+                self.search_fallback_endpoint
+            )
         if self.reasoning_effort and self.reasoning_effort not in {"low", "medium", "high"}:
             raise ProfileError("reasoning_effort must be low, medium or high")
         return self
@@ -121,6 +137,8 @@ class Profile:
         store = vault or default_vault()
         data = asdict(self)
         data.pop("search_endpoint", None) if self.search_provider != "searxng" else None
+        if self.search_fallback_provider != "searxng":
+            data.pop("search_fallback_endpoint", None)
         data["has_llm_key"] = store.has(key_name(self.id, "llm"))
         data["has_search_key"] = store.has(key_name(self.id, "search"))
         return data
@@ -211,4 +229,8 @@ def env_for_profile(profile_id: str, vault: SecretStore | None = None,
     env["SEARCH_PROVIDER"] = profile.search_provider
     if profile.search_endpoint:
         env["SEARXNG_INSTANCE"] = profile.search_endpoint
+    if profile.search_fallback_provider:
+        env["SEARCH_FALLBACK_PROVIDER"] = profile.search_fallback_provider
+    if profile.search_fallback_endpoint:
+        env["SEARCH_FALLBACK_ENDPOINT"] = profile.search_fallback_endpoint
     return env

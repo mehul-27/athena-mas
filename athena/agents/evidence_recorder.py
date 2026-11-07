@@ -28,7 +28,7 @@ from athena.agents.untrusted import (
     wrap_untrusted,
 )
 from athena.blackboard import Blackboard, BlackboardStore
-from athena.tools.adapters import rag_source_ref, to_evidence_items
+from athena.tools.adapters import rag_source_ref, screen_items, to_evidence_items
 from athena.tools.schemas import (
     CalcResult,
     FetchResult,
@@ -127,16 +127,25 @@ def record_tool_result(
     store: BlackboardStore | None = None,
     sink: Any = None,
     author: str = AUTHOR,
+    dropped: list | None = None,
 ) -> int:
     """Turn one tool result into evidence. Returns how many items landed.
 
     ``sink`` is the p2p path: the items are handed to the caller instead of
     being written to the blackboard, because p2p agents never touch it.
+
+    ``dropped`` is an optional out-parameter: guardrail flags for the items
+    rejected here (over the byte cap, or not valid text), so the caller can show
+    that a source existed and was refused rather than silently losing it.
     """
     result = parse_result(tool_name, tool_response)
     if result is None:
         return 0
-    items = to_evidence_items(result, retrieved_by=author)
+    items, flags, _rejected = screen_items(
+        to_evidence_items(result, retrieved_by=author), tool_name
+    )
+    if dropped is not None:
+        dropped.extend(flags)
     if not items:
         return 0
 
@@ -171,8 +180,10 @@ def make_evidence_recorder(
         if result is None:
             # Nothing trustworthy arrived: let the model see the original error.
             return None
+        dropped: list = []
         written = record_tool_result(
-            run_id, tool_name, tool_response, store, sink, author=author
+            run_id, tool_name, tool_response, store, sink, author=author,
+            dropped=dropped,
         )
         if not result.ok and not isinstance(result, FetchResult):
             # A failed search/calculation is not a source, but the model gets a
@@ -181,6 +192,11 @@ def make_evidence_recorder(
         payload = compact_result(tool_name, result)
         if isinstance(result, FetchResult):
             payload["recorded"] = written
+        if dropped:
+            # A source existed and the guardrails refused it: say so, so the
+            # model does not report "no results" for a payload that was dropped.
+            payload["dropped_by_guardrails"] = len(dropped)
+            payload["guardrail_flags"] = [flag.model_dump() for flag in dropped]
         return payload
 
     return evidence_recorder

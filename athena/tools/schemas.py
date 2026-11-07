@@ -61,6 +61,14 @@ class WebHit(BaseModel):
     title: str = Field(description="Page title as reported by the provider.")
     url: str = Field(description="Page URL.")
     snippet: str = Field(default="", description="Short excerpt from the page.")
+    provider: str = Field(
+        default="",
+        description=(
+            "Search provider that returned this hit (duckduckgo or searxng). "
+            "Recorded per hit so a fallback result can never be attributed to "
+            "the primary provider."
+        ),
+    )
 
 
 class WebResult(ToolResult):

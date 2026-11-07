@@ -257,6 +257,54 @@ def test_unsupported_content_type_is_rejected() -> None:
 
     assert result.status == "unsupported_content_type"
     assert result.ok is False
+    assert "PDF extraction is not supported" in result.error
+
+
+def test_pdf_magic_bytes_are_rejected_even_when_labelled_text() -> None:
+    result = fetch._fetch_page(
+        "https://example.com/file.pdf",
+        transport=_transport(
+            lambda _req: httpx.Response(
+                200, headers={"content-type": "text/html"}, content=b"%PDF-1.7\n..."
+            )
+        ),
+    )
+
+    assert result.status == "unsupported_content_type"
+    assert result.ok is False
+    assert "PDF content is not supported" in result.error
+
+
+def test_search_engine_result_pages_are_blocked_as_sources() -> None:
+    calls: list[str] = []
+    result = fetch._fetch_page(
+        "https://html.duckduckgo.com/html/?q=cold+gas+thruster",
+        transport=_transport(lambda req: calls.append(str(req.url))),
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert "search-engine result pages" in (result.error or "")
+    assert calls == []
+
+
+def test_extraction_prefers_substantive_article_text_over_navigation() -> None:
+    body = (
+        "<html><body>"
+        "<nav><a>Home</a><a>Missions</a><a>News</a></nav>"
+        "<main><h1>Propulsion</h1><p>Short menu label</p>"
+        "<p>This substantive paragraph explains the operating principle of a "
+        "cold gas thruster with enough technical detail to be useful evidence.</p>"
+        "</main></body></html>"
+    )
+    result = fetch._fetch_page(
+        "https://example.com/article", transport=_transport(_html_handler(body))
+    )
+
+    assert result.ok is True
+    assert "Home" not in result.text
+    assert "Short menu label" not in result.text
+    assert "operating principle" in result.text
 
 
 def test_extraction_is_bounded_and_marks_truncation() -> None:
@@ -272,15 +320,16 @@ def test_extraction_is_bounded_and_marks_truncation() -> None:
     assert len(result.text) <= 1000
 
 
-def test_empty_page_is_a_successful_empty_result() -> None:
+def test_empty_page_is_not_a_successful_read() -> None:
     result = fetch._fetch_page(
         "https://example.com/empty",
         transport=_transport(_html_handler("<html><body><script>x</script></body></html>")),
     )
 
-    assert result.ok is True
+    assert result.ok is False
     assert result.status == "empty"
     assert result.text == ""
+    assert "no readable text" in result.error
 
 
 def test_fetch_does_not_forward_auth_cookies_or_provider_headers() -> None:
@@ -358,7 +407,8 @@ def test_success_failure_empty_and_retry_are_all_recorded(tmp_path) -> None:
         status="empty",
         status_code=200,
         text="",
-        ok=True,
+        ok=False,
+        error="page contained no readable text",
         elapsed_ms=1,
     )
     retry = success.model_copy(update={"fetch_id": "fetch-retry"})

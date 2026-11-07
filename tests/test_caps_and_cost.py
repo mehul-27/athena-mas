@@ -15,8 +15,8 @@ from athena.summary import RunSummary, finish, note_ack, summary_line
 def test_per_pattern_defaults(monkeypatch) -> None:
     monkeypatch.delenv("ATHENA_MAX_LLM_CALLS", raising=False)
 
-    assert llm_call_cap("sequential") == 12
-    assert llm_call_cap("p2p") == 12
+    assert llm_call_cap("sequential") == 24
+    assert llm_call_cap("p2p") == 24
     assert llm_call_cap("parallel") == 30
     assert llm_call_cap("hierarchical") == 40
     assert set(PATTERN_CAPS) == {"sequential", "p2p", "parallel", "hierarchical"}

@@ -108,6 +108,8 @@ class Grounded:
     sources: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     refusal: str = ""
+    events: list[dict[str, Any]] = field(default_factory=list)
+    injection_hits: list[Any] = field(default_factory=list)
 
 
 def _host(url: str) -> str:

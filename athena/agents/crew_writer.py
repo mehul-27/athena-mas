@@ -13,7 +13,14 @@ from athena.agents import bb_io
 from athena.agents.crew_roles import crew_call, unpack_result
 from athena.agents.report_sanitize import sanitize_report
 from athena.agents.requirements import finding_requirement
-from athena.agents.sufficiency import assess, gap_answer
+from athena.agents.routing import request_profile
+from athena.agents.sufficiency import (
+    assess,
+    coverage_text,
+    gap_answer,
+    partial_snippet_evidence,
+)
+from athena.agents.tool_report import build_tool_report, format_tool_status
 from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import Blackboard, BlackboardStore, Draft, FinalReport
 
@@ -67,16 +74,75 @@ def _fallback_report(run_id: str, exc: Exception) -> FinalReport:
     )
 
 
-def writer_prompt(blackboard: Blackboard, instruction: str) -> str:
+def writer_prompt(
+    blackboard: Blackboard,
+    instruction: str,
+    limitations: list[str] | tuple[str, ...] | None = None,
+    blocking_issues: list[str] | tuple[str, ...] | None = None,
+    partial: bool = False,
+    coverage: str = "",
+) -> str:
     critique = bb_io.critique_text(blackboard)
     revision = (
         f"\n\nPREVIOUS CRITIQUE (fix every listed issue):\n{critique}\n"
         if critique
         else ""
     )
+    tool_status = ""
+    run_id = getattr(blackboard, "run_id", "")
+    if run_id:
+        tool_status = format_tool_status(
+            build_tool_report(run_id, getattr(blackboard, "store", None)),
+            limitations=limitations,
+        )
+    limitation_block = ""
+    if limitations:
+        limitation_block = (
+            "NON-BLOCKING EVIDENCE LIMITATIONS (state them; do not claim they were "
+            "resolved):\n"
+            + "\n".join(f"- {item}" for item in limitations)
+            + "\n\n"
+        )
+    blocking_block = ""
+    if blocking_issues:
+        blocking_block = (
+            "UNRESOLVED EVIDENCE REQUIREMENTS (do not make claims that depend on them):\n"
+            + "\n".join(f"- {item}" for item in blocking_issues)
+            + "\n\n"
+        )
+    partial_block = ""
+    if partial:
+        partial_block = (
+            "PARTIAL ANSWER MODE: Only search-result snippets are available. Do not "
+            "claim that any page was read or fetched. Answer the general principle "
+            "only where the snippets directly state it, do not invent SpaceX-specific "
+            "hardware details, and explicitly say which details remain unverified. "
+            "Do not return a total-refusal answer when the snippets support the "
+            "general principle. Use confidence 0.5 for this qualified partial answer. "
+            "You may list snippet source_refs as citations, but describe them as "
+            "search snippets, not fetched pages.\n\n"
+        )
+    coverage_block = f"EVIDENCE COVERAGE:\n{coverage}\n\n" if coverage else ""
+    profile = request_profile(bb_io.task_text(blackboard))
+    qualification_block = ""
+    if profile.notes:
+        qualification_block = (
+            "REQUEST-SPECIFIC QUALIFICATION:\n"
+            + "\n".join(f"- {note}" for note in profile.notes)
+            + "\n\n"
+        )
+    status_block = (
+        f"TOOL AND EVIDENCE STATUS:\n{tool_status}\n\n" if tool_status else ""
+    )
     return (
         f"{instruction}\n\nTASK:\n{bb_io.task_text(blackboard)}\n\n"
         f"PLAN:\n{bb_io.plan_text(blackboard)}\n\n"
+        f"{status_block}"
+        f"{limitation_block}"
+        f"{blocking_block}"
+        f"{partial_block}"
+        f"{coverage_block}"
+        f"{qualification_block}"
         f"EVIDENCE (cite only these source_ref values, exactly as written):\n"
         f"{bb_io.evidence_text(blackboard, limit=8)}\n\n"
         f"ANALYSIS:\n{bb_io.analysis_text(blackboard)}\n"
@@ -86,7 +152,21 @@ def writer_prompt(blackboard: Blackboard, instruction: str) -> str:
         f"{_preferences_block()}"
         f"Write an answer of at most {MAX_ANSWER_WORDS} words that ends with a "
         "full stop, 3-5 key points, and 1-3 citations whose source_ref is "
-        "copied verbatim from the evidence lines above. confidence is 0 to 1."
+        "copied verbatim from the evidence lines above. confidence is 0 to 1. "
+        "Do not claim a tool was used unless the tool status shows a real "
+        "invocation; describe an unmet requirement instead of filling it in. "
+        "If usable evidence exists, answer from it and clearly qualify any "
+        "non-blocking limitation. Never say that no external evidence was "
+        "collected when the evidence section contains successfully fetched pages. "
+        "In partial-answer mode, never claim a page was read; snippets remain snippets. "
+        "Do not make numeric, performance, or hardware-specific claims from a search "
+        "snippet; use fetched page text, or omit the claim. Keep every qualifier the "
+        "source uses (for example 'about', 'up to', 'planned') and never add a "
+        "superlative ('the first', 'the most efficient'), a patch number, a date or a "
+        "specification the evidence does not state. When the general mechanism "
+        "is supported but organization-specific hardware details remain unverified, "
+        "state that limitation explicitly and do not exceed the evidence-coverage "
+        "confidence ceiling."
     )
 
 
@@ -100,8 +180,16 @@ def write_report(
     blackboard = Blackboard.open(run_id, store)
     task = bb_io.section(blackboard, "task")
     question = task.question if task else ""
-    assessment = assess(question, bb_io.load_evidence(blackboard, limit=None))
-    if not assessment.ok:
+    report_tools = build_tool_report(run_id, store)
+    evidence_items = bb_io.load_evidence(blackboard, limit=None)
+    assessment = assess(
+        question,
+        evidence_items,
+        enabled_tools=task.tools if task else None,
+        tool_report=report_tools,
+    )
+    partial = partial_snippet_evidence(question, evidence_items, assessment)
+    if not assessment.ok and not partial:
         report = FinalReport(
             answer=gap_answer(question, assessment),
             key_points=list(assessment.issues),
@@ -124,12 +212,20 @@ def write_report(
             "evidence_issues": list(assessment.issues),
         }
 
-    prompt = writer_prompt(blackboard, instruction)
+    prompt = writer_prompt(
+        blackboard,
+        instruction,
+        assessment.limitations,
+        assessment.issues if partial else None,
+        partial=partial,
+        coverage=coverage_text(assessment),
+    )
     generate = generate or _generate_report
 
     fallback = False
     stats: dict = {}
     failure: Exception | None = None
+    problems: list[str] = []
     try:
         report, stats = unpack_result(generate(prompt))
     except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
@@ -162,7 +258,12 @@ def write_report(
             report = _truncate(report)
             truncated = True
 
-    report = sanitize_report(report, blackboard, run_id)
+    report = sanitize_report(
+        report, blackboard, run_id, question=question, report_problems=problems
+    )
+    report = report.model_copy(
+        update={"confidence": min(report.confidence, assessment.confidence_ceiling)}
+    )
 
     cited = {citation.source_ref for citation in report.citations}
     evidence_ids = [
@@ -178,6 +279,15 @@ def write_report(
     version = blackboard.write("final_report", report, author="writer")
 
     ack = {"section": "final_report", "version": version, **stats}
+    if assessment.limitations:
+        ack["evidence_limitations"] = list(assessment.limitations)
+    if partial:
+        ack["partial"] = True
+    ack["subject_specific"] = assessment.subject_specific
+    ack["answer_as_asked"] = assessment.answer_as_asked
+    ack["confidence_ceiling"] = assessment.confidence_ceiling
+    if problems:
+        ack["claim_flags"] = problems
     if fallback:
         ack["fallback"] = True
         ack["note"] = (
