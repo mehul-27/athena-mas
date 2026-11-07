@@ -294,28 +294,40 @@ never from the data being screened. `validate_message` in particular writes to
 `audit_run_id` only: a forged message carrying `run_id: victim-run` cannot inject
 rows into another run's log.
 
-| Stage (`extra.pipeline_stage`) | Emitted by | Tested by |
+| Stage (`extra.pipeline_stage`) | Emitted by (real call site) | Tested by |
 |---|---|---|
 | `input` | `guardrails/input.py::screen_input` (one row per flag) | `test_observability_guardrail_events.py::test_input_stage_*` |
-| `tool_output` | `guardrails/tool_output.py::validate_tool_output` (default label) | `...::test_tool_output_stage_*` |
-| `evidence` | label accepted by `validate_tool_output(pipeline_stage="evidence")`; the production caller `tools/adapters.py::screen_items` still uses the default — see Partial below | `...::test_tool_output_labels_the_evidence_path_separately`, `...::test_evidence_stage_reports_what_was_dropped` |
-| `interagent` | `guardrails/interagent.py::validate_message` (note: `agents/crew_server.py` calls `peer_auth_error`, not `validate_message` — see Partial below) | `...::test_interagent_*` |
-| `report_sanitize` | label accepted by `screen_output(pipeline_stage="report_sanitize")`; the production caller `agents/report_sanitize.py:361` still uses the default — see Partial below | `...::test_report_sanitize_stage_is_labelled_apart_from_the_chat_answer` |
-| `output` | `guardrails/output.py::screen_output` (default), called from `chat/service.py::_finalize` | `...::test_output_stage_*` |
-| `POST /api/runs` | `api/app.py::_record_guardrails` (screening happens before the run exists) | `test_security_integration.py::test_post_runs_records_a_guardrail_event` |
+| `tool_output` | `guardrails/tool_output.py::validate_tool_output` (default label), called from `chat/service.py` | `...::test_tool_output_stage_*` |
+| `evidence` | `tools/adapters.py:53-59` — `screen_items` passes `pipeline_stage="evidence"`; the flag's own stage stays `tool_output` | `...::test_evidence_stage_reports_what_was_dropped` (asserts the label, the rule, and that `extra.stage` is still `tool_output`), `...::test_tool_output_labels_the_evidence_path_separately` |
+| `interagent` | `guardrails/interagent.py::validate_message`, called on the real A2A request path at `agents/crew_server.py:195` (after the HMAC at `:187`); rows are written by `interagent.py::emit_rejection:168` | `...::test_interagent_*`, `test_observability_writer_a2a.py::test_a_shape_rejected_a2a_message_is_acked_and_recorded`, `...::test_the_hmac_ran_before_validate_message` |
+| `report_sanitize` | `agents/report_sanitize.py:359-366` — `guardrail_flags_for` passes `pipeline_stage="report_sanitize"` to `screen_output` | `...::test_report_sanitize_stage_is_labelled_apart_from_the_chat_answer` |
+| `output` | `guardrails/output.py::screen_output` (default), called from `chat/service.py` | `...::test_output_stage_*` |
+| `POST /api/runs` | `api/app.py::_record_guardrails` → `guardrail_events.record_flags` (`screen="POST /api/runs"`, `pipeline_stage="input"`); `screen_input` is called with `emit=False` there because the run id does not exist yet | `test_security_integration.py::test_post_runs_records_a_guardrail_event` |
 | (all) | `test_telemetry_routes.py::test_guardrail_rows_are_visible_through_the_telemetry_endpoint` — rows reach `/api/runs/{id}/telemetry` as `guardrails`, `guardrail_breakdown` and `/cells` | that test |
 
-**Partial.** The `evidence`, `interagent` and `report_sanitize` labels are
-implemented in the emitters and covered by tests that pass the label explicitly,
-but the production call sites do not reach them yet: `tools/adapters.py:53` calls
-`validate_tool_output` without `pipeline_stage`; `agents/report_sanitize.py:361`
-calls `screen_output` without it; and `agents/crew_server.py:109` uses its own
-`peer_auth_error` instead of `validate_message`, so the A2A server's rejections
-are returned to the caller but leave no `guardrail` row. Those three files are
-outside this change's ownership; the exact patches are in `docs/SECURITY.md`
-("Still needed in code this change does not own"). Until they land, production
-tool-output rows say `tool_output` and production report rows say `output` — both
-truthful, neither as fine-grained as the model, and no A2A-rejection row exists.
+All six `pipeline_stage` values are now reachable from production code: `input`
+and `tool_output` from the chat/API process, `evidence` from
+`tools/adapters.py::screen_items`, `interagent` from the A2A server,
+`report_sanitize` from the report sanitiser, and `output` from the chat answer.
+
+### Who is recording: the two processes
+
+A guardrail row is only written when a `Recorder` is active
+(`guardrail_events.py::_resolve`). That was true in the research run
+(`athena/run.py` installs one) and **false in the chat/API process**, so every
+chat decision was silently dropped. `athena/observability/ambient.py` fixes that:
+
+| Piece | Where | What it does |
+|---|---|---|
+| `install_process_recorder()` | called from `api/app.py:265` (`create_app`) | installs one `ContextRecorder` for the process, and **never** displaces a run's own recorder (`ambient.py:155-157`) |
+| `ContextRecorder.emit` | `ambient.py:127-140` | resolves the run id at emit time and stamps `extra.run_id_source`, so two concurrent chat turns cannot overwrite each other's attribution |
+| `RunIdScopeMiddleware` | `api/app.py:473`, `ambient.py:189` | puts `conversation_id` from `POST /api/chat/messages` in scope for the request (`RUN_ID_FIELDS`, `ambient.py:169-171`); every other request passes through untouched |
+| `UNATTRIBUTED_RUN_ID` | `ambient.py:41` | a row that names no run is written under `unattributed` with `run_id_source="unattributed"`, so it is visible rather than invented |
+
+Tested by `test_observability_ambient.py` (process recorder installed once, a
+run's recorder never displaced, `run_scope` attribution, `unattributed` fallback,
+middleware replaying the body) and `test_chat_api.py` (a chat turn's guardrail
+rows land under its conversation id).
 
 ## Retry events: what is implemented, tested and still missing
 
@@ -341,20 +353,20 @@ that suspects it might. Both directions are asserted.
 
 | Retry | Status | Where |
 |---|---|---|
-| empty reply, budget doubled | **Implemented + tested** in the helper (`retry_empty_reply`) and in the *real wrapper* (`RateLimitedLiteLlm`: `seen == [100, 200]`, at most one row) | `test_observability_retries.py::test_empty_reply_retry_emits_exactly_one_event_with_every_field`, `...::test_the_real_empty_reply_retry_never_claims_more_than_one_retry` |
+| empty reply, budget doubled (ADK) | **Implemented + tested on the real wrapper** — `RateLimitedLiteLlm.generate_content_async` calls `retry_empty_reply("adk", reserve, retried_budget)` at `config/limited_models.py:110`, in the `empty_and_truncated` branch, once per retry | `test_observability_retries.py::test_the_real_empty_reply_retry_never_claims_more_than_one_retry`, `test_reasoning_replies.py::test_empty_reply_is_retried_with_a_doubled_budget` (asserts `seen == [100, 200]` **and** `len(retries) == 1`) |
+| empty reply, budget doubled (CrewAI) | **Implemented + tested** — `LLM.call` at `config/limited_models.py:256` and `LLM.acall` at `:285`, same one-row contract | `test_reasoning_replies.py::test_crewai_empty_reply_is_retried` |
 | no retry → no event | **Implemented + tested** — the real wrapper driven with a response that *has* text leaves zero `retry` rows | `...::test_an_empty_reply_that_is_not_retried_emits_no_retry_event`, `...::test_a_reply_with_visible_text_is_not_a_retry` |
 | `note_empty_reply` is not a retry | **Implemented + tested** — it stays a plain `error` row even though it runs twice | `...::test_noting_an_empty_reply_is_not_itself_a_retry` |
-| writer truncated report, writer rejected output | helper only (`retry_truncated_report`, `retry_invalid_output`), tested at the helper boundary | `...::test_the_writer_and_parse_retries_report_their_own_type` |
-| CrewAI empty reply (`LLM.call`/`acall`) | **Not emitted** — the branch exists at `athena/config/limited_models.py:159` / `:185` but has no `retry` call | counted as `retries_inferred` from its `empty_reply` error |
-| writer truncated-report retry | **Not emitted** — branch at `athena/agents/crew_writer.py:251` | counted as `retries_inferred` from `truncated_report`/error rows |
-| writer "previous output rejected" retry | **Not emitted** — branch at `athena/agents/crew_writer.py:235` | ditto |
+| writer truncated report | **Implemented + tested on the real branch** — `agents/crew_writer.py:259` `retry_truncated_report(agent="writer")`, inside the `looks_truncated` branch, before the re-generation | `test_observability_writer_a2a.py::test_a_truncated_answer_emits_one_retry_event`, `...::test_both_writer_branches_together_emit_exactly_two_retries` |
+| writer rejected output | **Implemented + tested on the real branch** — `agents/crew_writer.py:239` `retry_invalid_output(exc, agent="writer")`, in the `except` that re-runs `generate` | `test_observability_writer_a2a.py::test_a_rejected_output_emits_one_retry_event`, `...::test_a_complete_answer_emits_no_retry_event` |
+| ADK tool-call rejected by the provider | **Implemented + tested** — `config/limited_models.py:169-179` emits one `retry` (`retry_type="tool_call"`); the `error` row from `tool_call_guard.record_rejection` is the rejection itself, not a second retry | `test_pipeline_tool_call_rejection.py::test_exactly_one_retry_event_is_written_for_that_retry`, `...::test_a_successful_call_writes_no_retry_event` |
 | ADK model/tool retry detected from event order | **Implemented** but **inferred by design**, `extra.inferred = true` and `extra.inferred_from` | `test_observability_retries.py::test_inferred_retries_are_marked_as_inferred` |
 
-The three "not emitted" rows are all in files this change does not own
-(`athena/config/**`, `athena/agents/**`). They are not silently ignored: the
-telemetry view reports them under `retries_inferred`, documented below, so a zero
-in `retries` never claims "nothing was retried". The exact patches are in
-`docs/SECURITY.md`.
+Every explicit retry above is emitted from the branch that has just decided to
+re-run the work, so one retry is one row. The `retry` row duplicates the
+`error_type` of the `error` it describes (`note_retry` sets
+`error_type=retry_type`); a reader counting failures must filter `kind ==
+"error"`, which is what `test_reasoning_replies.py` does.
 
 ### Explicit vs inferred, kept as two metrics
 
@@ -368,6 +380,20 @@ and `retry_breakdown` names the `retry_type` behind each.
 
 Tested by `test_telemetry_routes.py::test_explicit_and_inferred_retries_are_counted_separately`
 and `...::test_an_error_with_no_retry_event_is_reported_as_inferred`.
+
+## Known gaps
+
+Things that are still not wired, stated plainly rather than implied by silence.
+
+| Gap | Status | Why it matters |
+|---|---|---|
+| `observability/hooks.py::emit_guardrail` | **No production caller.** Only `tests/test_observability_hooks.py` calls it. | Not a hole in the audit trail: every real guardrail module calls `guardrail_events.record_decision`/`record_flags` directly. It is a convenience wrapper kept for future call sites, and it is *not* how the rows in the table above are written. |
+| `POST /api/runs` guardrail rows | **Attributed but labelled `input`**, not by the endpoint path. | Screening happens before the run id exists, so `screen_input(emit=False)` is used and `_record_guardrails` writes the rows afterwards. `extra.screen == "POST /api/runs"` is the field that names the endpoint. |
+| A2A rejection attribution | **Mostly `unattributed`.** A rejected message's own `run_id` is used only when the blackboard confirms that run exists (`crew_server.py::_rejection_run:98-118`); p2p requests have no blackboard, so they never attribute from the message. | By design — the alternative is letting a forged `run_id` choose whose audit log it writes into. The cost is that most A2A rejection rows are visible under `unattributed` rather than beside the run they concern. `extra.run_id_source` says which case applied. |
+| Distributed tracing (OpenTelemetry across the A2A hop) | **Not implemented.** | The A2A hop is visible as `a2a_call` + `handoff` events, not as a trace span with a shared trace id. |
+| Event retention / live tail / alerting | **Not implemented.** | The event log grows without bound; there is no TUI tail and no threshold alert. |
+| CrewAI token numbers | **Per crew call, not per provider request.** | A crew that retries internally still reports one number, so cost for CrewAI roles is coarser than for ADK. |
+| Telemetry for a run that only exists in the chat/API process | **Works, but only for rows written while a `run_scope` was active.** | `GET /api/runs/unattributed/telemetry` shows the unattributable rows; there is no per-conversation telemetry endpoint yet. |
 
 ### Endpoints
 

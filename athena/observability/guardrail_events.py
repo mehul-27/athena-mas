@@ -116,17 +116,22 @@ def record_decision(
     agent: str = GUARDRAIL_AGENT,
     framework: str | None = None,
     recorder: Recorder | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> bool:
     """Record one guardrail decision. Returns whether an event was written.
 
     ``stage`` is the flag's stage; ``pipeline_stage`` names the finer stage of
-    the pipeline when it differs (``evidence``, ``interagent``, ``report_sanitize``).
+    the pipeline when it differs (``evidence``, ``interagent``,
+    ``report_sanitize``). ``extra`` adds caller fields (how the run was
+    attributed, which mode was validated); it is merged last and still passes
+    through the same redaction, because the whole ``extra`` dict is cleaned by
+    :class:`athena.observability.events.Event`.
     """
     try:
         target = _resolve(recorder, run_id)
         if target is None:
             return False
-        extra: dict[str, Any] = {
+        payload: dict[str, Any] = {
             "stage": str(stage or ""),
             "rule": str(rule or ""),
             "action": str(action or ""),
@@ -134,14 +139,16 @@ def record_decision(
             "screen": str(screen or ""),
         }
         if pipeline_stage:
-            extra["pipeline_stage"] = str(pipeline_stage)[:40]
+            payload["pipeline_stage"] = str(pipeline_stage)[:40]
+        for key, value in (extra or {}).items():
+            payload.setdefault(str(key)[:40], value)
         target.emit(
             "guardrail",
             agent,
             _framework_of(agent, framework),
             ok=str(action or "") != "blocked",
             payload_summary=f"{stage}:{rule} {action}"[:300],
-            extra=extra,
+            extra=payload,
         )
         return True
     except Exception:  # noqa: BLE001 - monitoring must never break a screening
@@ -158,12 +165,14 @@ def record_flags(
     framework: str | None = None,
     recorder: Recorder | None = None,
     limit: int = MAX_FLAGS_PER_CALL,
+    extra: dict[str, Any] | None = None,
 ) -> int:
     """Record one event per flag. Returns the number of events attempted.
 
     ``flags`` may hold ``GuardrailFlag`` models or any object with
     ``stage``/``rule``/``action``/``detail`` attributes. An empty list writes
-    nothing: a clean screening must not look like a decision.
+    nothing: a clean screening must not look like a decision. ``extra`` is
+    forwarded to :func:`record_decision` for every row.
     """
     rows = list(flags or ())[:limit]
     written = 0
@@ -179,6 +188,7 @@ def record_flags(
             agent=agent,
             framework=framework,
             recorder=recorder,
+            extra=extra,
         ):
             written += 1
     return written

@@ -23,6 +23,10 @@ from athena.agents.sufficiency import (
 from athena.agents.tool_report import build_tool_report, format_tool_status
 from athena.agents.untrusted import UNTRUSTED_DATA_RULE
 from athena.blackboard import Blackboard, BlackboardStore, Draft, FinalReport
+from athena.observability.retry_events import (
+    retry_invalid_output,
+    retry_truncated_report,
+)
 
 Generate = Callable[[str], object]
 
@@ -230,6 +234,9 @@ def write_report(
         report, stats = unpack_result(generate(prompt))
     except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
         try:
+            # The second call below is a real retry of the same work, so it is
+            # reported as one (and only one) ``retry`` event before it runs.
+            retry_invalid_output(exc, agent="writer")
             report, stats = unpack_result(
                 generate(
                     f"{prompt}\n\nYour previous output was rejected: {exc}\n"
@@ -247,6 +254,9 @@ def write_report(
     # A cut-off answer is a real defect: retry once, then mark it.
     truncated = False
     if looks_truncated(report.answer):
+        # One re-generation is about to happen, so it is one ``retry`` event —
+        # emitted here, in the branch that decided to retry, and only here.
+        retry_truncated_report(agent="writer")
         try:
             retry = generate(prompt + SHORTER)
             if not isinstance(retry, FinalReport):

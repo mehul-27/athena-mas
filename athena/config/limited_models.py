@@ -33,7 +33,7 @@ from athena.config.reply_guard import (
     note_empty_reply,
 )
 from athena.observability.context import current_agent
-from athena.observability.retry_events import note_retry
+from athena.observability.retry_events import note_retry, retry_empty_reply
 
 def _request_text(llm_request) -> str:
     try:
@@ -103,9 +103,13 @@ class RateLimitedLiteLlm(LiteLlm):
             # The retry asks for a bigger output budget, so reserve the delta:
             # otherwise the limiter under-counts exactly when the model is
             # burning tokens fastest.
-            output.acquire(doubled(reserve) - reserve, agent=current_agent())
+            retried_budget = doubled(reserve)
+            output.acquire(retried_budget - reserve, agent=current_agent())
+            # One retry happens below, so exactly one ``retry`` event is written
+            # here — before the second call, because the retry is a fact by now.
+            retry_empty_reply("adk", reserve, retried_budget)
             original = self._additional_args.get("max_tokens")
-            self._additional_args["max_tokens"] = doubled(reserve)
+            self._additional_args["max_tokens"] = retried_budget
             try:
                 retried = await self._run(llm_request, stream)
             finally:
@@ -246,9 +250,12 @@ def make_crewai_llm_class():
                 result = parent.call(**kwargs)
                 if isinstance(result, str) and not result.strip():
                     note_empty_reply("crewai", self.max_tokens)
-                    output.acquire(doubled(reserve) - reserve, agent=current_agent())
+                    retried_budget = doubled(reserve)
+                    output.acquire(retried_budget - reserve, agent=current_agent())
+                    # The retry below is real, so report it (once) here.
+                    retry_empty_reply("crewai", self.max_tokens, retried_budget)
                     original = self.max_tokens
-                    self.max_tokens = doubled(original)
+                    self.max_tokens = retried_budget
                     try:
                         result = parent.call(**kwargs)
                     finally:
@@ -272,9 +279,12 @@ def make_crewai_llm_class():
                 result = await super().acall(**kwargs)
                 if isinstance(result, str) and not result.strip():
                     note_empty_reply("crewai", self.max_tokens)
-                    output.acquire(doubled(reserve) - reserve, agent=current_agent())
+                    retried_budget = doubled(reserve)
+                    output.acquire(retried_budget - reserve, agent=current_agent())
+                    # The retry below is real, so report it (once) here.
+                    retry_empty_reply("crewai", self.max_tokens, retried_budget)
                     original = self.max_tokens
-                    self.max_tokens = doubled(original)
+                    self.max_tokens = retried_budget
                     try:
                         result = await super().acall(**kwargs)
                     finally:

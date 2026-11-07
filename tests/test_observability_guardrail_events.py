@@ -165,7 +165,15 @@ def test_tool_output_labels_the_evidence_path_separately(store) -> None:
 
 # -------------------------------------------------------------- evidence stage
 def test_evidence_stage_reports_what_was_dropped(store) -> None:
-    """``screen_items`` drops an unusable item; the decision is still recorded."""
+    """``screen_items`` drops an unusable item; the decision is still recorded.
+
+    The row is labelled ``evidence``, not ``tool_output``: the rule that fired is
+    the tool-output rule (so ``extra.stage`` stays ``tool_output``, the
+    ``GuardrailFlag``'s own stage), but the *pipeline* decision being recorded is
+    the evidence one — ``tools/adapters.py::screen_items`` passes
+    ``pipeline_stage="evidence"``. Both facts are asserted, because collapsing
+    them is how the two stages would become indistinguishable in the log.
+    """
     from athena.blackboard import EvidenceItem
     from athena.tools.adapters import screen_items
 
@@ -182,7 +190,10 @@ def test_evidence_stage_reports_what_was_dropped(store) -> None:
     events = _guardrails(store)
     assert len(events) == len(flags) >= 1
     for event in events:
-        _assert_shape(event, stage="tool_output")
+        _assert_shape(event, stage="evidence")
+        # The flag's own stage is unchanged: this is a tool-output rule applied
+        # on the evidence path, and the audit row says both.
+        assert event.extra["stage"] == "tool_output"
     assert "tool_output.size_cap" in {event.extra["rule"] for event in events}
 
 

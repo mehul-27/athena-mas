@@ -71,6 +71,25 @@ def _collect(model) -> list:
     return asyncio.run(run())
 
 
+def _empty_reply_errors(events) -> list:
+    """The ``error`` rows for an empty reply.
+
+    ``kind`` is filtered explicitly: the retry that follows an empty reply is a
+    ``retry`` row that also carries ``error_type="empty_reply"`` (that is how a
+    retry row mirrors the error it describes, see
+    ``observability/retry_events.note_retry``). Counting by ``error_type`` alone
+    would therefore count one retry twice.
+    """
+    return [
+        e for e in events.events("run-r")
+        if e.kind == "error" and e.error_type == "empty_reply"
+    ]
+
+
+def _retries(events) -> list:
+    return [e for e in events.events("run-r") if e.kind == "retry"]
+
+
 def test_empty_reply_is_retried_with_a_doubled_budget(monkeypatch, events) -> None:
     from google.adk.models.lite_llm import LiteLlm
 
@@ -86,7 +105,12 @@ def test_empty_reply_is_retried_with_a_doubled_budget(monkeypatch, events) -> No
     assert [r.content.parts[0].text for r in responses if r.content.parts] == ["hello"]
     assert seen == [100, 200]
     assert model._additional_args["max_tokens"] == 100  # restored
-    assert len([e for e in events.events("run-r") if e.error_type == "empty_reply"]) == 1
+    # One failure is reported, and the retry that followed it is reported once.
+    assert len(_empty_reply_errors(events)) == 1
+    retries = _retries(events)
+    assert len(retries) == 1, "the one retry is one retry event"
+    assert retries[0].extra["retry_type"] == "empty_reply"
+    assert retries[0].extra["token_budget"] == {"requested": 100, "retried": 200}
 
 
 def test_empty_reply_twice_does_not_loop(monkeypatch, events) -> None:
@@ -102,7 +126,10 @@ def test_empty_reply_twice_does_not_loop(monkeypatch, events) -> None:
 
     assert seen == [100, 200]  # one retry, then stop
     assert all(not r.content.parts for r in responses)
-    assert len([e for e in events.events("run-r") if e.error_type == "empty_reply"]) == 2
+    # Both attempts failed, so both are reported as errors — and the single retry
+    # between them is still exactly one retry event.
+    assert len(_empty_reply_errors(events)) == 2
+    assert len(_retries(events)) == 1
 
 
 def test_doubled_respects_the_cap() -> None:
@@ -125,7 +152,11 @@ def test_crewai_empty_reply_is_retried(monkeypatch, events) -> None:
 
     assert llm.call("prompt") == "an answer"
     assert budgets == [3000, MAX_RETRY_TOKENS]
-    assert len([e for e in events.events("run-r") if e.error_type == "empty_reply"]) == 1
+    assert len(_empty_reply_errors(events)) == 1
+    retries = _retries(events)
+    assert len(retries) == 1, "the one retry is one retry event"
+    assert retries[0].extra["retry_type"] == "empty_reply"
+    assert retries[0].framework == "crewai"
 
 
 def test_reasoning_tokens_reach_the_event(events) -> None:

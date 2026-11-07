@@ -49,7 +49,10 @@ from athena.guardrails.interagent import (
     SIG_FIELD,
     TOKEN_ENV,
     PeerAuth,
+    emit_rejection,
+    validate_message,
 )
+from athena.observability.guardrail_events import record_decision
 from athena.observability.usage_hook import callback_count, install_usage_logger
 from athena.observability.recorder import Recorder, set_recorder
 from athena.observability.redact import redact
@@ -92,12 +95,79 @@ def peer_auth_error(body: dict) -> str | None:
     return None
 
 
+def _rejection_run(claimed: str, store) -> tuple[str | None, str]:
+    """``(run_id, source)`` an A2A rejection may be attributed to.
+
+    The message's own ``run_id`` is attacker-controlled, so it is used **only
+    when the blackboard confirms that run exists** (p2p requests have no
+    blackboard, so they are never attributed from the message). Otherwise the
+    row goes to whoever is recording this process — which, in the server, is the
+    turn's own recorder if there is one — and ``source`` says which of the two
+    happened so a reader can tell.
+    """
+    if claimed:
+        try:
+            if Blackboard.open(claimed, store).read("task") is not None:
+                return claimed, "message_run_id_verified_on_blackboard"
+        except Exception:  # noqa: BLE001 - an unreadable board means "not verified"
+            pass
+    return None, "refused_no_verified_run"
+
+
+def _record_rejection(
+    *,
+    rule: str,
+    action: str,
+    detail: str,
+    audit_run_id: str | None,
+    run_id_source: str,
+) -> None:
+    """One ``interagent`` guardrail row for an A2A refusal. Never raises."""
+    record_decision(
+        stage="interagent",
+        rule=rule,
+        action=action,
+        detail=detail,
+        screen="crew_server.peer_auth_error",
+        pipeline_stage="interagent",
+        run_id=audit_run_id,
+        agent="guardrails",
+        framework="crewai",
+        extra={"run_id_source": run_id_source},
+    )
+
+
+def _emit_verdict(verdict, audit_run_id: str | None, run_id_source: str) -> None:
+    """Write the guardrail rows for a rejected shape verdict. Never raises."""
+    emit_rejection(
+        verdict,
+        audit_run_id=audit_run_id,
+        agent="guardrails",
+        framework="crewai",
+        run_id_source=run_id_source,
+    )
+
+
 def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
     """Parse one request, run the role, return a short acknowledgement.
 
     A body with ``context`` is a p2p request: the role works from the message
     alone and returns its output inline. Without ``context`` the role reads and
     writes the blackboard and returns only section + version.
+
+    Two independent controls run before any role is dispatched:
+
+    * :func:`peer_auth_error` — the HMAC, with this server's own wording;
+    * :func:`guardrails.interagent.validate_message` — the mode enum, the role
+      allowlist, the field allowlist and the instruction/context size bounds.
+      Its signature check is skipped (``check_signature=False``) because the HMAC
+      was already decided above; everything else applies.
+
+    A refusal from either one is returned as an acknowledgement and written as
+    ``interagent`` ``guardrail`` rows. Attribution never uses the ``run_id`` the
+    message claims: rows go to the run this process is recording, or to the
+    message's run id only after the blackboard confirms that run exists. A
+    message naming a run that does not exist is attributed to nobody.
     """
     try:
         body = json.loads(text)
@@ -106,23 +176,42 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
     if not isinstance(body, dict):
         return _ack(ok=False, error="body must be a JSON object")
 
+    claimed = str(body.get("run_id") or "").strip()
+    p2p = "context" in body
+    mode = "p2p" if p2p else "blackboard"
+    roles = roles if roles is not None else (P2P_ROLES if p2p else ROLES)
+    audit_run, audit_source = _rejection_run(claimed, store)
+
     forged = peer_auth_error(body)
     if forged is not None:
+        _record_rejection(
+            rule="interagent.signature", action="blocked", detail=forged,
+            audit_run_id=audit_run, run_id_source=audit_source,
+        )
         return _ack(ok=False, error=forged)
 
-
-    run_id = str(body.get("run_id") or "").strip()
+    # The HMAC was decided above, so only the shape half runs here: mode, role
+    # allowlist, field allowlist and the instruction/context size bounds.
+    verdict = validate_message(
+        body, roles, mode=mode, check_signature=False, emit=False,
+        audit_run_id=audit_run, run_id_source=audit_source,
+    )
     role = str(body.get("role") or "").strip().lower()
-    instruction = str(body.get("instruction") or "").strip()
-    p2p = "context" in body
-    context = str(body.get("context") or "")
-    roles = roles if roles is not None else (P2P_ROLES if p2p else ROLES)
-
-    if not run_id:
+    if not claimed:
+        _emit_verdict(verdict, audit_run, audit_source)
         return _ack(ok=False, error="run_id is required")
     handler = roles.get(role)
     if handler is None:
+        _emit_verdict(verdict, audit_run, audit_source)
         return _ack(ok=False, error=f"unknown role {role!r}; expected {sorted(roles)}")
+    if not verdict.ok:
+        _emit_verdict(verdict, audit_run, audit_source)
+        return _ack(ok=False, error="; ".join(verdict.errors[:3]))
+
+    run_id = claimed
+    instruction = str(body.get("instruction") or "").strip()
+    context = str(body.get("context") or "")
+
     if not p2p and Blackboard.open(run_id, store).read("task") is None:
         return _ack(ok=False, error=f"unknown run_id {run_id!r}")
 

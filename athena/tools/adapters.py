@@ -51,7 +51,11 @@ def screen_items(
     dropped = 0
     for item in items:
         ok, item_flags = validate_tool_output(
-            tool_name or item.source_type, item.content
+            tool_name or item.source_type,
+            item.content,
+            # This is the evidence path, not the raw tool result: label the row
+            # ``evidence`` so the audit trail names the decision that was made.
+            pipeline_stage="evidence",
         )
         if not ok and any(flag.rule in DROP_RULES for flag in item_flags):
             dropped += 1

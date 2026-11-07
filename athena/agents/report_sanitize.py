@@ -359,7 +359,11 @@ def guardrail_flags_for(
             _flag("report.truncated", "warned", "the generated answer was truncated")
         )
     screened = screen_output(
-        {"answer": answer, "key_points": list(key_points or [])}, answer=answer
+        {"answer": answer, "key_points": list(key_points or [])},
+        answer=answer,
+        # This is the report sanitiser, not the chat answer: label the row
+        # ``report_sanitize`` so the audit trail names the stage that screened it.
+        pipeline_stage="report_sanitize",
     )
     flags.extend(screened)
     seen: set[tuple[str, str]] = set()

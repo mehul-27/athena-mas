@@ -30,9 +30,13 @@ from athena.api.runs import BusyError, RunRegistry
 from athena.blackboard import Blackboard
 from athena.guardrails.input import refusal_message, screen_input
 from athena.guardrails.secrets import redact_tree
+from athena.observability.ambient import (
+    RunIdScopeMiddleware,
+    install_process_recorder,
+)
+from athena.observability.guardrail_events import record_flags
 from athena.observability.heatmap import render_heatmap
 from athena.observability.metrics import agent_metrics
-from athena.observability.recorder import Recorder
 from athena.observability.redact import redact
 from athena.observability.store import SQLiteEventStore
 from athena.patterns import VALID_PATTERNS
@@ -72,32 +76,18 @@ def _store() -> SQLiteEventStore:
 def _record_guardrails(run_id: str, verdict) -> None:
     """Write one ``guardrail`` event per flag, so the run's trace shows them.
 
-    Recording must never fail a request: the recorder already swallows store
-    errors, and the loop is wrapped for anything it re-raises.
+    This goes through :func:`athena.observability.guardrail_events.record_flags`
+    — the same helper every guardrail module uses — so the row shape and the
+    redaction of ``detail`` are guaranteed by one implementation instead of a
+    second copy here. ``screen`` names this endpoint because screening happens
+    before the run exists, so the endpoint is what attributes the flags.
     """
-    flags = list(getattr(verdict, "flags", ()) or ())
-    if not flags:
-        return
-    recorder = Recorder.for_run(run_id)
-    for flag in flags[:20]:
-        try:
-            recorder.emit(
-                "guardrail",
-                "guardrails",
-                "api",
-                ok=flag.action != "blocked",
-                payload_summary=f"{flag.stage}:{flag.rule} {flag.action}",
-                extra={
-                    "stage": flag.stage,
-                    "rule": flag.rule,
-                    "action": flag.action,
-                    "detail": flag.detail,
-                    "screen": "POST /api/runs",
-                },
-            )
-        except Exception:  # noqa: BLE001 - a guardrail log must not fail the request
-            _LOG.debug("guardrail event not recorded for %s", run_id, exc_info=True)
-            return
+    record_flags(
+        getattr(verdict, "flags", ()) or (),
+        screen="POST /api/runs",
+        pipeline_stage="input",
+        run_id=run_id,
+    )
 
 
 def _evidence_attribution(run_id: str) -> dict[str, list[str]]:
@@ -267,6 +257,12 @@ def _with_process_status(
 
 def create_app(registry: RunRegistry | None = None) -> FastAPI:
     configure_logging()
+    # The API process is not a research run, so nothing installed a recorder in
+    # it and every guardrail decision made here (the chat turn's input, tool
+    # output and answer screening) was written to no store at all. This installs
+    # one process-level recorder; it never displaces a run's own recorder and it
+    # cannot change a decision (see athena/observability/ambient.py).
+    install_process_recorder()
     runs = registry or REGISTRY
     # The lifespan creates the writable data directories at startup and stops
     # the active run plus the child crew server on SIGTERM (see health_routes).
@@ -301,7 +297,10 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
         guard(request)
         if payload.pattern not in VALID_PATTERNS:
             raise HTTPException(status_code=422, detail=f"unknown pattern {payload.pattern!r}")
-        verdict = screen_input(payload.question)
+        # ``emit=False``: this endpoint creates the run id *after* screening, so
+        # it cannot attribute the rows yet. ``_record_guardrails`` below writes
+        # them once the run exists — exactly once, never twice.
+        verdict = screen_input(payload.question, emit=False)
         if verdict.blocking:
             _LOG.warning(
                 "run request blocked by guardrails: %s",
@@ -468,6 +467,10 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     # No-op unless ATHENA_ACCESS_TOKEN is set; exempt paths and static assets
     # are handled inside the middleware.
     app.add_middleware(AccessTokenMiddleware)
+    # Outermost of the two: it puts the request's own run id (a chat turn's
+    # conversation id) in scope so the guardrail rows written while handling
+    # this request are attributed to it, and every other request is untouched.
+    app.add_middleware(RunIdScopeMiddleware)
     return app
 
 

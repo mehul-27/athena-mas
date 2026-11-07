@@ -20,7 +20,7 @@ environment variables, and cheap enough to run on every message.
 | 2 | Injection inside a fetched web page or search snippet | `web_search`, `fetch_page` results | Result wrapped in the untrusted-content boundary; boundary markers inside it removed; instruction-like spans flagged; injected phrasing recorded so an echoing answer is caught | `agents/untrusted.py`, `guardrails/tool_output.py`, `chat/grounding.py` | `test_security_adversarial.py::test_web_snippet_*` |
 | 3 | Injection inside an uploaded document (RAG passage, PDF text) | `rag_search` hits, corpus ingest | Same boundary + same flagging, per source block; budget cuts drop whole blocks so a boundary is never left unterminated | `chat/grounding.py`, `chat/prompts.py` | `test_security_adversarial.py::test_document_injection_*`, `test_document_injection_does_not_truncate_a_boundary` |
 | 4 | Malicious or malformed MCP/tool output | Tool callbacks, evidence recorder, chat tool loop | `validate_tool_output`: byte cap (64 KiB), UTF-8/control-character sanity, URL scheme and host sanity, embedded-instruction flagging; never raises | `guardrails/tool_output.py` | `test_security_adversarial.py::test_tool_abuse_*` |
-| 5 | Malformed or forged inter-agent message | A2A/JSON-RPC port, p2p payloads | Explicit mode enum (`p2p`/`blackboard`), role allowlist, field allowlist, size bounds, HMAC-SHA256 over `run_id` + body with constant-time compare; unsigned messages warn (or fail, with `ATHENA_A2A_REQUIRE_SIG=1`) | `guardrails/interagent.py` | `test_security_guardrails.py::test_validate_message_*`, `test_peer_auth_*` |
+| 5 | Malformed or forged inter-agent message | A2A/JSON-RPC port, p2p payloads | Explicit mode enum (`p2p`/`blackboard`), role allowlist, field allowlist, size bounds, HMAC-SHA256 over `run_id` + body with constant-time compare; unsigned messages warn (or fail, with `ATHENA_A2A_REQUIRE_SIG=1`). Both halves run on the real request path: the HMAC at `agents/crew_server.py:185`, then `validate_message` at `:195` | `guardrails/interagent.py` | `test_security_guardrails.py::test_validate_message_*`, `test_peer_auth_*`, `test_observability_writer_a2a.py::test_a_shape_rejected_a2a_message_is_acked_and_recorded`, `...::test_the_hmac_ran_before_validate_message` |
 | 6 | Unsupported claims presented as fact | Writer output | Evidence-bound citation sanitising, deterministic claim support check, confidence ceilings | `agents/report_sanitize.py`, `agents/claim_support.py`, `agents/critique_rules.py` | `tests/test_report_sanitize.py` |
 | 7 | Toxic or abusive content from the user, or reproduced by the model | Chat message, final answer | Lexicon with severity: flagged as `warned`, never blocking by default (a rude question with a real request is still answered); high-severity blocking is opt-in | `guardrails/input.py`, `guardrails/output.py` | `test_security_adversarial.py::test_hostile_*`, `test_security_guardrails.py::test_screen_output_flags_toxicity_in_the_answer` |
 | 8 | Secret leakage (keys pasted into chat, tokens echoed by a tool or the model, keys in an event or API response) | Chat store, transcript, tool payloads, report text, event log | `redact_tree` over stored/returned structures plus `observability.redact`; PEM blocks, JWTs, `sk-`/`ghp_`/`xox`/`gsk_` prefixes, `Authorization`/`Bearer` headers, URL credentials | `guardrails/secrets.py`, `chat/store.py` | `test_security_adversarial.py::test_secret_*`, `test_transcript_never_renders_a_secret`, `test_pem_private_key_is_redacted` |
@@ -106,11 +106,11 @@ per-stage table: `docs/OBSERVABILITY.md`.
 
 | Control | Emits a row | Tested |
 |---|---|---|
-| `screen_input` (chat, `POST /api/runs`) | yes, one per flag, stage `input` | `test_observability_guardrail_events.py::test_input_stage_*`, `test_security_integration.py::test_post_runs_records_a_guardrail_event` |
-| `validate_tool_output` / `screen_items` | yes, one per flag, stage `tool_output` | `...::test_tool_output_stage_*`, `...::test_evidence_stage_reports_what_was_dropped` |
-| `validate_message` (A2A/p2p) | yes, one per rejection and one per flag, stage `interagent`, attributed to `audit_run_id` only | `...::test_interagent_*` (including `test_interagent_attribution_ignores_the_run_id_in_the_message`) |
-| `screen_output` (chat answer, report sanitiser) | yes, one per flag, stage `output` / `report_sanitize` | `...::test_output_stage_*`, `...::test_report_sanitize_stage_is_labelled_apart_from_the_chat_answer` |
-| `agents/crew_server.py::peer_auth_error` | **no** — the rejection is returned to the caller but not recorded as a `guardrail` row | — |
+| `screen_input` (chat, `POST /api/runs`) | yes, one per flag, stage `input`. On `POST /api/runs` the endpoint writes them (`api/app.py::_record_guardrails`, `screen="POST /api/runs"`) because screening runs before the run id exists; the chat path emits from `screen_input` itself now that `api/app.py:265` installs a process recorder | `test_observability_guardrail_events.py::test_input_stage_*`, `test_security_integration.py::test_post_runs_records_a_guardrail_event` |
+| `validate_tool_output` / `screen_items` | yes, one per flag. Default stage `tool_output`; `tools/adapters.py:53-59` passes `pipeline_stage="evidence"`, so production evidence rows say `evidence` while the flag's own `stage` stays `tool_output` | `...::test_tool_output_stage_*`, `...::test_evidence_stage_reports_what_was_dropped` |
+| `validate_message` (A2A/p2p) | yes, one per rejection and one per flag, stage `interagent`, attributed to `audit_run_id` only. **Called on the real path** at `agents/crew_server.py:195`, after the HMAC at `:185` | `...::test_interagent_*` (incl. `test_interagent_attribution_ignores_the_run_id_in_the_message`), `test_observability_writer_a2a.py::test_a_shape_rejected_a2a_message_is_acked_and_recorded`, `...::test_the_hmac_ran_before_validate_message` |
+| `screen_output` (chat answer, report sanitiser) | yes, one per flag, stage `output`; `agents/report_sanitize.py:359-366` passes `pipeline_stage="report_sanitize"` | `...::test_output_stage_*`, `...::test_report_sanitize_stage_is_labelled_apart_from_the_chat_answer` |
+| `agents/crew_server.py::peer_auth_error` + `_record_rejection` | **yes** — an HMAC refusal writes one `interagent.signature` row (`crew_server.py:127-137`), so the A2A server's rejections are no longer silent | `test_observability_writer_a2a.py::test_the_hmac_ran_before_validate_message` |
 | Rows visible through `GET /api/runs/{id}/telemetry` and `/cells` | yes | `test_telemetry_routes.py::test_guardrail_rows_are_visible_through_the_telemetry_endpoint` |
 
 `detail` deliberately does not quote the matched text. A short message is its own
@@ -120,52 +120,36 @@ are measured and dropped (`describe_match`: category + character count); URLs ar
 described by scheme and length. Month-old rows may still contain an excerpt;
 new rows cannot.
 
-## Still needed in code this change does not own
+## Implemented, tested, and what is still partial
 
-Three production call sites are one line short of the audit trail above. They
-live in `athena/agents/` and `athena/tools/`, outside this change's ownership,
-so they are listed here rather than edited. Each is passive: none changes a
-decision, a flag, or a payload.
+### Implemented and tested
 
-1. `athena/agents/crew_server.py:109` — the A2A server's own rejection path
-   never reaches `validate_message`, so a refused peer request leaves no row.
+| Control | Real call site | Test |
+|---|---|---|
+| Input screening | `guardrails/input.py::screen_input` ← `api/app.py:303` (`POST /api/runs`, with `emit=False` since the run id does not exist yet), `chat/service.py:112` | `test_security_adversarial.py::test_manipulative_*`, `test_security_guardrails.py` |
+| Tool-output validation on the evidence path | `guardrails/tool_output.py::validate_tool_output` ← `tools/adapters.py:53` (`screen_items`) | `test_security_adversarial.py::test_tool_abuse_*`, `test_observability_guardrail_events.py::test_evidence_stage_reports_what_was_dropped` |
+| Inter-agent HMAC (outbound + inbound) | `guardrails/interagent.py::PeerAuth`, `sign_message` ← `agents/a2a_client.py`; verified at `agents/crew_server.py:185` (`peer_auth_error:87`) | `test_security_guardrails.py::test_peer_auth_*`, `test_security_integration.py:225-290` |
+| Inter-agent message validation (mode enum, role/field allowlist, instruction/context size bounds) | `guardrails/interagent.py::validate_message` ← `agents/crew_server.py:195`, with `check_signature=False` because the HMAC was already decided at `:185` | `test_security_guardrails.py` (validation unit tests), `test_observability_writer_a2a.py::test_a_shape_rejected_a2a_message_is_acked_and_recorded` |
+| Guardrail rows survive in the chat/API process | `observability/ambient.py::install_process_recorder` ← `api/app.py:265`; `RunIdScopeMiddleware` ← `api/app.py:473` | `test_observability_ambient.py` (17 tests), `test_chat_api.py` |
+| Report sanitisation flags | `agents/report_sanitize.py::guardrail_flags_for:359-366` | `test_observability_guardrail_events.py::test_report_sanitize_stage_is_labelled_apart_from_the_chat_answer` |
 
-```python
-     forged = peer_auth_error(body)
-     if forged is not None:
-+        emit_guardrail("guardrails", "interagent.signature", "blocked",
-+                       forged, framework="crewai", stage="interagent")
-         return _ack(ok=False, error=forged)
-```
+### Partial / known gaps
 
-2. `athena/tools/adapters.py:53` — the evidence path uses the default stage, so
-   its rows say `tool_output` rather than `evidence`.
-
-```python
-         ok, item_flags = validate_tool_output(
--            tool_name or item.source_type, item.content
-+            tool_name or item.source_type, item.content,
-+            pipeline_stage="evidence",
-         )
-```
-
-3. `athena/agents/report_sanitize.py:361` — the report sanitiser's rows say
-   `output` rather than `report_sanitize`.
-
-```python
-     screened = screen_output(
--        {"answer": answer, "key_points": list(key_points or [])}, answer=answer
-+        {"answer": answer, "key_points": list(key_points or [])}, answer=answer,
-+        pipeline_stage="report_sanitize",
-     )
-```
-
-Three real retries are also unemitted (`athena/config/limited_models.py:159`,
-`:185` for the CrewAI empty reply; `athena/agents/crew_writer.py:235` and `:251`
-for the writer's rejected-output and truncated-answer retries). Until they call
-`retry_empty_reply` / `retry_invalid_output` / `retry_truncated_report`, those
-retries are reported as `retries_inferred`, never claimed as explicit. Patches
-and the exact helper signatures are in `docs/OBSERVABILITY.md`.
+1. **A2A rejection attribution is usually `unattributed`.** The HMAC and the shape
+   checks both run, but the row's run id may only come from the message when the
+   blackboard confirms that run exists (`crew_server.py::_rejection_run:98-118`).
+   A p2p message has no blackboard, so it never attributes from its own content —
+   which is the point, since a forged `run_id` must not choose its audit log.
+   `extra.run_id_source` records which case applied, so the gap is visible rather
+   than silently absorbed.
+2. **`POST /api/runs` rows are labelled `input`, not by endpoint.** Screening
+   happens before the run id exists, so `screen_input(emit=False)` is used and
+   `_record_guardrails` writes the rows afterwards, once. `extra.screen` names the
+   endpoint.
+3. **No distributed tracing across the A2A hop**, no event retention, no
+   alerting. See `docs/OBSERVABILITY.md` ("Known gaps").
+4. **Toxicity and harm lexicons are small by design** (see the limits section at
+   the end of this document).
 
 ## Tests
 

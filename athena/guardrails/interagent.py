@@ -165,14 +165,52 @@ class MessageVerdict:
         }
 
 
+def emit_rejection(
+    verdict: MessageVerdict,
+    *,
+    audit_run_id: str | None = None,
+    agent: str = "guardrails",
+    framework: str | None = "crewai",
+    run_id_source: str | None = None,
+) -> int:
+    """Write the ``guardrail`` rows for one rejected verdict. Returns rows attempted.
+
+    One row per shape error (a decision) and one per flag, all at pipeline stage
+    ``interagent``. It lives here so a caller that validates with ``emit=False``
+    — the A2A server, which must decide *whether* to attribute the rows first —
+    records exactly what :func:`validate_message` would have recorded, through
+    the same redacting helper.
+
+    ``audit_run_id`` is the operator-trusted run id, never the one the message
+    claims (see ``docs/SECURITY.md``). ``run_id_source`` is recorded in the row's
+    ``extra`` so a reader can see how the attribution was decided.
+    """
+    extra = {"run_id_source": run_id_source} if run_id_source else {}
+    rows = 0
+    for reason in verdict.errors[:5]:
+        if record_decision(
+            stage=PIPELINE_STAGE, rule="interagent.message_shape", action="blocked",
+            detail=reason, screen=SCREEN, pipeline_stage=PIPELINE_STAGE,
+            run_id=audit_run_id, agent=agent, framework=framework, extra=extra,
+        ):
+            rows += 1
+    rows += record_flags(
+        verdict.flags, screen=SCREEN, pipeline_stage=PIPELINE_STAGE,
+        run_id=audit_run_id, agent=agent, framework=framework, extra=extra,
+    )
+    return rows
+
+
 def validate_message(
     message: Any,
     allowed_roles: Any,
     *,
     mode: Mode = "blackboard",
     auth: PeerAuth | None = None,
+    check_signature: bool = True,
     emit: bool = True,
     audit_run_id: str | None = None,
+    run_id_source: str | None = None,
 ) -> MessageVerdict:
     """Validate one inter-agent message. Never raises except for a bad ``mode``.
 
@@ -180,12 +218,20 @@ def validate_message(
     ``context``, ``blackboard`` messages must not (the blackboard is the data
     path). Unknown keys are rejected rather than ignored.
 
+    ``check_signature=False`` skips the HMAC half for a caller that has already
+    verified it (``agents/crew_server.py`` checks it first so it can keep its own
+    wording) and wants only the mode/role/field/size checks.
+
     Every rejection and every flag is written as one ``guardrail`` event with
     stage ``interagent``, because this function makes the decision. Attribution
     uses the *active* recorder or the operator-supplied ``audit_run_id`` — never
     the ``run_id`` inside the message, so a forged message cannot write audit
     rows into another run's log. Only the rule, the action and a bounded reason
     are stored: no message body, no instruction text, no token.
+
+    The rows are written by :func:`emit_rejection`; a caller that passes
+    ``emit=False`` can write them itself with the same helper once it knows
+    which run may be attributed.
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
@@ -236,7 +282,11 @@ def validate_message(
     signer = auth or PeerAuth()
     signature = message.get(SIG_FIELD)
     body = _unsigned(message)
-    if signature:
+    if not check_signature:
+        # The caller already verified the HMAC itself (the A2A server does, so
+        # it can answer with its own wording) and only wants the shape checks.
+        pass
+    elif signature:
         if not signer.verify(str(run_id or ""), body, signature if isinstance(signature, str) else ""):
             verdict.errors.append("signature mismatch")
             verdict.flags.append(
@@ -281,21 +331,13 @@ def validate_message(
         # One row per rejection (the shape errors are decisions, not flags) and
         # one per flag. The reasons are the validator's own short strings.
         #
-        # Attribution: ``audit_run_id`` only. ``run_id`` below is the value the
-        # *message* claims, used for shape validation and signature verification
-        # and never for attribution — passing it here is what let a forged
-        # ``run_id: victim`` write audit rows into another run's log. With no
-        # ``audit_run_id`` the row goes to the active recorder (this process's
-        # run) or nowhere.
-        for reason in verdict.errors[:5]:
-            record_decision(
-                stage=PIPELINE_STAGE, rule="interagent.message_shape",
-                action="blocked", detail=reason, screen=SCREEN,
-                pipeline_stage=PIPELINE_STAGE, run_id=audit_run_id,
-            )
-        record_flags(
-            verdict.flags, screen=SCREEN, pipeline_stage=PIPELINE_STAGE,
-            run_id=audit_run_id,
+        # Attribution: ``audit_run_id`` only. The value the *message* claims is
+        # used for shape validation and signature verification and never for
+        # attribution — passing it here is what let a forged ``run_id: victim``
+        # write audit rows into another run's log. With no ``audit_run_id`` the
+        # row goes to the active recorder (this process's run) or nowhere.
+        emit_rejection(
+            verdict, audit_run_id=audit_run_id, run_id_source=run_id_source
         )
     return verdict
 
