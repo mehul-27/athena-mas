@@ -1,0 +1,16 @@
+{
+  "plan_id": "hierarchical-30",
+  "entries": [
+    {
+      "run_key": "gf-01__hierarchical__r0",
+      "prompt_id": "gf-01",
+      "pattern": "hierarchical",
+      "context_sharing": "blackboard",
+      "seed": null,
+      "repeat": 0,
+      "tier": "core",
+      "note": ""
+    }
+  ],
+  "not_run": []
+}

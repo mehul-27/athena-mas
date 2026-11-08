@@ -1,0 +1,99 @@
+{
+  "harness_version": "1.0.0",
+  "started_at": "2026-11-08T08:04:13+00:00",
+  "git_commit": "c1763a2",
+  "python": "3.13.3",
+  "backend": "subprocess",
+  "model": "groq/qwen/qwen3.8-27b",
+  "adk_model": "groq/qwen/qwen3.8-27b",
+  "crew_model": "groq/qwen/qwen3.8-27b",
+  "provider": "groq",
+  "crew_provider": "groq",
+  "api_host": "",
+  "crew_api_host": "",
+  "profile_applied": false,
+  "profile_id": "",
+  "profile_name": "",
+  "env_source": "env",
+  "models_differ": false,
+  "provenance": {
+    "adk_model": "groq/qwen/qwen3.8-27b",
+    "crew_model": "groq/qwen/qwen3.8-27b",
+    "provider": "groq",
+    "crew_provider": "groq",
+    "api_host": "",
+    "crew_api_host": "",
+    "profile_applied": false,
+    "profile_id": "",
+    "profile_name": "",
+    "env_source": "env",
+    "models_differ": false,
+    "note": "No settings profile is active; both halves read this process's environment, so the models should agree."
+  },
+  "seed_propagated_to_provider": false,
+  "seed_note": "Seeds are trial labels only. The pipeline never passes a seed to a provider, so a variance tier is a stochastic replicate, not a seeded reproduction, and its spread is sampling noise.",
+  "timeout_s": 1200.0,
+  "dataset_path": "evaluation/dataset.json",
+  "dataset_sha256": "bcff0a98e2813d7211912954d624cfe34241f90350bcc19c39c310dbf5faac28",
+  "config_sha256": "69a45cbb712e9d320299c1249ce435d1fed7bbc364e2043a0e24d91d70f3088a",
+  "dataset_items": 48,
+  "plan_id": "hierarchical-30",
+  "plan_scope": "focused",
+  "plan_target_runs": 30,
+  "plan_entries": 1,
+  "already_recorded": [],
+  "pricing": {
+    "source": "athena.observability.cost",
+    "table": "M:\\Athena\\athena-mas\\data\\pricing.json",
+    "as_of": "2026-11-06",
+    "entries": 30,
+    "unit": "usd_per_million_tokens",
+    "unknown_model_basis": "unpriced"
+  },
+  "pricing_status": {
+    "models": [
+      "groq/qwen/qwen3.8-27b",
+      "groq/qwen/qwen3.8-27b"
+    ],
+    "unpriced_models": [
+      "groq/qwen/qwen3.8-27b"
+    ],
+    "priced": false,
+    "usd_cap_enforceable": false,
+    "note": "Every run records est_cost_usd=null and pricing.priced=false for ['groq/qwen/qwen3.8-27b']. The USD caps (max_total_usd=8.0, max_run_usd=0.6) therefore cannot bound real spend for this batch - they are inert, and max_runs=36 is the only hard cap. Do not read a zero total as 'nothing was spent'."
+  },
+  "unpriced_acknowledged": {
+    "acknowledged": true,
+    "unpriced_models": [
+      "groq/qwen/qwen3.8-27b"
+    ],
+    "note": "The operator was told that costs are null and the USD caps are inert for this batch, and chose to proceed."
+  },
+  "budget": {
+    "runs_started": 1,
+    "spent_usd_estimate": 0.0,
+    "max_runs": 36,
+    "max_total_usd": 8.0,
+    "max_run_usd": 0.6,
+    "max_total_wall_s": 86400.0,
+    "usd_cap_enforceable": false,
+    "usd_cap_note": "the configured model(s) are unpriced: every cost is null, so the USD caps collect nothing and cannot bound real spend - max_runs is the only effective cap. A recorded cost, if any, still counts."
+  },
+  "attempts": {
+    "planned": 1,
+    "attempted": 1,
+    "completed": 1,
+    "failed": 0,
+    "timeout": 0,
+    "infra_errors": 0,
+    "skipped": 0,
+    "retries": 0,
+    "hard_max_attempts": 36
+  },
+  "riders": {
+    "backend_note": "subprocess: the same entry point the demo HTTP API uses"
+  },
+  "stopped_reason": null,
+  "records_written": 1,
+  "ended_at": "2026-11-08T08:14:34+00:00"
+}

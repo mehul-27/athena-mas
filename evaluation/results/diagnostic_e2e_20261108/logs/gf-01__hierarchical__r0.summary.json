@@ -1,0 +1,85 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "822feeb7-fe0e-4856-a06d-0e25143b1d74",
+  "wall_s": 601.3149678999907,
+  "stage_ms": {
+    "planner": 60450.1,
+    "web_researcher": 240433.1,
+    "analyst": 120644.7,
+    "writer": 121169.6,
+    "critic": 58474.8
+  },
+  "adk_tokens": 11286,
+  "a2a_bytes_out": 479,
+  "a2a_bytes_in": 432,
+  "evidence_count": 5,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 3,
+  "revision_rounds": 0,
+  "recovery_rounds": 0,
+  "confidence": 0.8,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "approved with no issues",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": true,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.8,
+  "confidence_notes": [],
+  "claim_checks": 6,
+  "claim_issues": [],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

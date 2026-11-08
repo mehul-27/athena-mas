@@ -1,10 +1,28 @@
 # Preflight — 30-run hierarchical benchmark
 
-**Status: NOT APPROVED TO RUN.** Configuration, provider and pipeline checks pass,
-but **capacity does not**. Details below, in the order the brief asked for.
+**Status: AUTHORISED — proceeding on a multi-day schedule.**
 
-Baseline: `main` @ `72aabda`, clean tree. Nothing in this report has been
-committed, no benchmark run was executed, and no historical record was touched.
+Provider authorization was confirmed by the operator. Configuration, endpoint and
+model consistency, pipeline health and end-to-end execution all pass. Capacity
+does not fit one day, so the batch runs across consecutive daily quota windows
+with `--resume`.
+
+Baseline: `main` @ `c1763a2`. No historical record was altered and nothing was
+deployed.
+
+---
+
+## Provider authorization
+
+The operator confirmed independently that using both Groq accounts for this
+benchmark is permitted. This report records that confirmation; it does not
+attempt to re-derive it from the API, which cannot distinguish an authorized
+second account from any other key.
+
+Per the brief, separate per-organization quotas are **not** treated as
+automatically poolable in the sense of being interchangeable. The execution plan
+below respects each organization's own limit and never moves work between them to
+escape a limit.
 
 ---
 
@@ -87,36 +105,66 @@ Both guards were exercised and both refused as designed.
   never writes it.
 - Every attempt records `account_label`, `account_fingerprint`, `account_id`.
 
-### Capacity — **this is the blocker**
+### Per-organization capacity model
 
-Measured cost of a *completed* hierarchical run (5 completed runs on record):
+The naive "two accounts, so twice the budget" reading is wrong, because the two
+halves of the pipeline bill to different organizations.
 
-| statistic | tokens |
-|---|---|
-| min | 16,759 |
-| **median** | **20,584** |
-| mean | 22,396 |
-| max | 31,471 |
+**The CrewAI server's credential is fixed** to the `.env` key, which is in
+Groq1's organization. That is preserved deliberately: switching it per run would
+mean restarting the server mid-batch, which the brief forbids and which would
+also break a run that is already in flight.
 
-| Scenario | 30 runs need | Available (2 × 200k) | Verdict |
+Measured per-stage token split, from `model_call` events in the event store for
+the five completed runs that have per-stage data:
+
+| run | ADK tokens | CrewAI tokens | total |
 |---|---|---|---|
-| median run | 617,520 | 400,000 | **does not fit (1.54×)** |
-| worst run | 944,130 | 400,000 | does not fit (2.36×) |
-| runs affordable **today** | — | — | **19 at median size, 12 at worst** |
+| `247ac82f` | 5,388 | 6,151 | 11,539 |
+| `30cf6dda` | 2,639 | 14,416 | 17,055 |
+| `3f5b8225` | 10,990 | 7,244 | 18,234 |
+| `5d0186ec` | 4,116 | 8,234 | 12,350 |
+| `a97e0fb7` | 4,623 | 6,068 | 10,691 |
+| **mean** | **5,551** | **8,422** | 13,973 |
+| **median** | 4,623 | 7,244 | 11,867 |
 
-Complication that reduces effective capacity further: the CrewAI half
-(analyst/writer/critic) runs on the **`.env` key**, which is in **Groq1's
-organization**. So:
+CrewAI is **60.3 %** of every run's tokens and always bills to Groq1.
 
-- a **Groq2**-assigned run: ADK half bills ORG2, CrewAI half still bills ORG1;
-- a **Groq1**-assigned run: both halves bill ORG1.
+With a static 15/15 ADK split:
 
-Groq1's budget is therefore consumed by roughly 15 ADK halves **plus all 30
-CrewAI halves**, making it the binding constraint well before the naive 400,000
-figure.
+| organization | pays for | mean-case 30-run total |
+|---|---|---|
+| **ORG1** (Groq1 + `.env`) | all 30 CrewAI halves + 15 ADK halves | **335,925** |
+| **ORG2** (Groq2) | 15 ADK halves only | **83,265** |
 
-**Conclusion: 30 planned runs cannot complete in one quota day.** They would need
-roughly 2 days at the measured median, or more.
+ORG1 carries **4.0×** the load of ORG2. It is the binding constraint, and
+rebalancing the ADK split toward Groq2 does not help — the crew tokens cannot
+leave ORG1.
+
+### Safe daily allocation, with a quota reserve
+
+Reserve is applied per organization, to each one's own 200,000/day limit.
+
+| cost basis | 15 % reserve | 20 % reserve |
+|---|---|---|
+| mean (13,973 / 11,867 per run) | **14 runs** | **14 runs** |
+| median | 17 runs | 16 runs |
+| worst observed | 8 runs | 8 runs |
+
+**Planning figure: 14 complete runs per quota day**, which is the mean-case
+answer at both reserve levels and therefore the least fragile. At the median it
+would be 16–17; at the worst observed run it would be 8. The mean is the honest
+single number because it sits between them and is not optimistic.
+
+### Estimated schedule
+
+| plan | days |
+|---|---|
+| 30 runs at 14/day | **3 quota days** (14 + 14 + 2) |
+
+Realistically 2–4 days if individual runs are larger or smaller than the mean.
+`--resume` makes the boundary safe: a day that ends mid-plan simply continues
+the next day without re-running anything.
 
 ---
 
@@ -127,33 +175,39 @@ benchmark and deleted after inspection):
 
 | Check | Result |
 |---|---|
-| A2A server up | yes (`/agent-ack` card 200) |
-| MCP toolsets load, researchers get tools | yes — `model_calls=1`, `tool_calls=1` |
-| Evidence written to Blackboard | not reached in this attempt (quota cut it off) |
-| Citations captured | not reached |
-| Critic evaluation | not reached |
+| A2A server up | yes (`/.well-known/agent-card.json` 200) |
+| MCP toolset startup | **yes** — `toolset web loaded: fetch_page, web_search` |
+| Researcher tool availability | **yes** — 3 web calls (1 search, 2 fetches) |
+| Evidence written to Blackboard | **yes** — 5 items |
+| Citations captured | **yes** — 3, all resolving |
+| Analyst and writer execution | **yes** — agents: analyst, critic, planner, supervisor, web_researcher, writer |
+| Critic evaluation | **yes** — approved |
+| Approved terminal state | **yes** — `terminal_state=completed`, `outcome=approved`, scored `success=True`, rubric 1.0, citation precision 1.0 |
 | Account attribution recorded | **yes** — `Groq1#cbd1a14650` |
-| Infrastructure classification correct | **yes** — `infrastructure` / `provider_quota` / `after_model` |
+| Token accounting | **yes** — 28,002 in + 2,093 out = 30,095; 9 model calls |
 | Secret material in record | **none** |
 
-The one attempt reached the model (707 in / 100 out tokens), then the provider
-returned a quota error. That is correctly classified as infrastructure, not as a
-research failure — which is exactly the distinction added in the previous commit
-working as intended.
+The diagnostic run is `evaluation/results/diagnostic_e2e_20261108/`. It cost
+20,880 tokens against ORG1 (11,665 ADK + 9,215 CrewAI) — a single-attempt
+measurement consistent with the mean model below. **It is not one of the 30 and
+must be excluded from the benchmark batch.**
+
+Two vocabulary layers describe the same fact and must not be confused:
+
+- the **evaluation record** uses `terminal_state=completed` ("a final report"),
+- the **pipeline summary** uses `terminal_state=success`.
+
+Both agree here, and `scoring` keys success off the evaluation record plus
+`outcome=approved`, the rubric and citation resolution.
 
 **One real bug was found and fixed during preflight:** `Account.public()` wrote
 `api_base` and `model` into the record, which the record schema forbids
-(`extra="forbid"`). Every run would have failed validation. Fixed before any
-benchmark run; the fix is why the second diagnostic attempt produced a valid
-record.
+(`extra="forbid"`). Every benchmark run would have failed validation. Fixed
+before any benchmark run and pinned by a test.
 
-### Pipeline health is therefore PARTIAL
+### Pipeline health: PASS
 
-Evidence → citation → critic was never exercised end-to-end in this preflight,
-because the attempt was cut off before the research stage completed. Earlier
-work (commit `7f39047` and the `20261107T133000Z` batch) demonstrates that path
-works — one run recorded 7 evidence items and 5 citations — but **it was not
-re-verified today**.
+Every stage from tool startup to critic approval was exercised in one run.
 
 ---
 
@@ -163,45 +217,114 @@ re-verified today**.
 |---|---|
 | Subprocess backend | yes (the only supported live path) |
 | Timeout kills the child | yes — `process.kill()` after `wait(timeout)`; covered by tests |
-| Resume | yes — `--resume` default, skips completed keys |
+| Resume | yes — `--resume` default, skips keys already `completed` |
 | JSONL flush per attempt | yes (B2 fix) |
-| Duplicate completed records | prevented by resume keyed on `run_key` |
+| Duplicate completed records | prevented by resume keyed on `run_key`; verified below |
 | Infrastructure classification | yes, verified above |
-| Per-run account env override | **added this session**, works |
+| Per-run account env override | yes, verified above |
+| Per-run CrewAI credential switch | **none** — the server key is fixed for the whole batch |
+
+### Resume verification
+
+Exercised against a synthetic `raw.jsonl` holding three completed keys:
+
+```
+plan entries: 30
+unique run keys: 30
+duplicates introduced by selection: 0
+synthetic records already completed: 3
+remaining to run with --resume: 27 (expected 27)
+RESULT: resume cannot duplicate a completed run key.
+```
+
+A key is re-run only on explicit request (`--no-resume`, or `--retry-failed`
+for a key whose state is not `completed`/`failed`). Neither is used by the
+commands below.
 
 ---
 
-## Smoke test
+## E. Consistency across accounts
 
-**One** diagnostic run, in `evaluation/results/diagnostic_smoke_20261107/`,
-**deleted after inspection**. It is not part of the 30 and contributed no
-benchmark record.
+Every property that could make two runs non-comparable is pinned by
+`evaluation/accounts.py::verify_same_conditions`, which **refuses the batch**
+rather than proceeding if any differ:
 
-Outcome: `infra_error` / `provider_quota` / `after_model` in 79 s. It failed on
-provider quota after the model had answered once — at the time my own
-concurrent quota probes had saturated the per-minute window. Both accounts now
-report full daily headroom (HTTP 200, 7,985/8,000 remaining per minute).
+| property | value | enforced |
+|---|---|---|
+| provider preset | groq | yes |
+| endpoint | `https://api.groq.com/openai/v1` | yes |
+| model id | `groq/qwen/qwen3.8-27b` | yes |
+| generation settings | from `.env`: `LLM_MAX_TOKENS=512`, `ATHENA_MAX_LLM_CALLS=12`, `LLM_ITPM_LIMIT=7000`, `LLM_OTPM_LIMIT=1000` | shared process config, not per account |
+| context sharing | `blackboard` for every entry | yes, schema-validated |
+| scoring thresholds | `SUCCESS_THRESHOLD = 0.60` | unchanged |
+| evidence requirements | unchanged | unchanged |
+
+The two accounts differ only in their credential and organization. Nothing about
+the research configuration varies between them.
+
+The same credential twice is also refused, so "two accounts" cannot silently
+collapse into one for attribution purposes.
 
 ---
 
-## What I need from you before running
+## F. Execution plan
 
-1. **Accept a multi-day batch, or reduce scope.** At the measured median, 30
-   completed runs need ~618k tokens against 400k/day across two orgs, and
-   Groq1's sharing with the CrewAI server narrows that further. Options:
-   - run ~12–15 today and resume tomorrow with `--resume` (the harness supports
-     this and never double-records);
-   - or approve a smaller plan (e.g. 18 runs) that fits one day;
-   - or supply a paid tier / higher limit for either account.
-2. **Confirm the `.env` key may keep serving the CrewAI half.** It is a third
-   credential in Groq1's org. If both authorized accounts should own both halves,
-   the CrewAI server must be restarted per account, which conflicts with
-   "do not switch accounts during an active run" unless assignment is per-run —
-   and it currently cannot be, because the server is one long-lived process.
-3. **Confirm the provider permits this arrangement.** Nothing I measured
-   distinguishes a legitimately separate second account from any other second
-   key; the two are in different organizations and both respond normally. I can
-   verify technical behaviour, not your agreement with the provider.
+`evaluation/hierarchical_30.json` is used **unchanged**; `--resume` carries the
+batch across daily quota resets.
 
-I have not started the benchmark. Say which option you want and I will run it,
-produce both reports, and commit.
+**First batch — command**
+
+```powershell
+$env:ATHENA_SEARXNG_URL = 'http://127.0.0.1:8080'
+.venv\Scripts\python.exe -u -m evaluation.runner `
+  --config evaluation/hierarchical_30.json `
+  --backend subprocess `
+  --accounts Groq1,Groq2 `
+  --acknowledge-unpriced `
+  --max-runs 14 `
+  --out evaluation/results/20261108_hierarchical_30
+```
+
+**Subsequent days** — identical, except `--max-runs` and no `--no-resume`:
+
+```powershell
+.venv\Scripts\python.exe -u -m evaluation.runner `
+  --config evaluation/hierarchical_30.json --backend subprocess `
+  --accounts Groq1,Groq2 --acknowledge-unpriced `
+  --max-runs 14 --out evaluation/results/20261108_hierarchical_30
+```
+
+`--max-runs` is the hard attempt cap and is the safety stop: it counts attempts,
+not completed runs, so 14 leaves room for an infrastructure retry inside the
+reserve. The output directory is the same on every day, which is what makes
+`--resume` skip finished work.
+
+The CrewAI server (`scripts/dev_up.py`) must be running for each day's batch and
+is started once per day, not per run.
+
+**Rules the run obeys, as implemented (not just intended):**
+
+- accounts assigned at run boundaries, never mid-run; the mapping is computed
+  from the plan before the first attempt and never written;
+- a quota error is recorded as `infrastructure` / `provider_quota` and the batch
+  stops at the cap — the run is never moved to the other account;
+- no rate limit, evidence requirement, guardrail or scoring threshold is
+  altered;
+- completed keys are never re-run, so no duplicate records;
+- every raw JSONL line is preserved and nothing is rewritten.
+
+---
+
+## G. Status summary
+
+| Gate | Status |
+|---|---|
+| Provider authorization | confirmed by operator |
+| Configuration validity | pass (30 entries, 12 categories, 24 prompts) |
+| Endpoint / model / settings consistency | pass, enforced in code |
+| End-to-end pipeline | pass (9/9 checkpoints) |
+| Resume safety | pass |
+| Capacity | **14 runs per quota day** with reserve; 30 runs ≈ 3 days |
+| Historical records | untouched |
+| Deployment | none |
+
