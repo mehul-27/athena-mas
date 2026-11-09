@@ -138,7 +138,7 @@ def _record_rejection(
 
 
 def _emit_verdict(verdict, audit_run_id: str | None, run_id_source: str) -> None:
-    """Write the guardrail rows for a rejected shape verdict. Never raises."""
+    """Write rejected decisions and accepted warnings with trusted attribution."""
     emit_rejection(
         verdict,
         audit_run_id=audit_run_id,
@@ -196,16 +196,14 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         body, roles, mode=mode, check_signature=False, emit=False,
         audit_run_id=audit_run, run_id_source=audit_source,
     )
+    _emit_verdict(verdict, audit_run, audit_source)
     role = str(body.get("role") or "").strip().lower()
     if not claimed:
-        _emit_verdict(verdict, audit_run, audit_source)
         return _ack(ok=False, error="run_id is required")
     handler = roles.get(role)
     if handler is None:
-        _emit_verdict(verdict, audit_run, audit_source)
         return _ack(ok=False, error=f"unknown role {role!r}; expected {sorted(roles)}")
     if not verdict.ok:
-        _emit_verdict(verdict, audit_run, audit_source)
         return _ack(ok=False, error="; ".join(verdict.errors[:3]))
 
     run_id = claimed

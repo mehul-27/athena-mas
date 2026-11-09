@@ -33,6 +33,11 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from evaluation import __version__, analyze, schema, scoring
+from evaluation.quarantine import (
+    QuarantinedPathError,
+    assert_not_quarantined,
+    is_quarantined,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULTS_ROOT = REPO_ROOT / "evaluation" / "results"
@@ -54,6 +59,8 @@ REPRODUCE_COMMANDS = (
 
 def has_records(directory: Path) -> bool:
     """A results directory counts when ``raw.jsonl`` exists and holds a line."""
+    if is_quarantined(directory):
+        return False
     raw = directory / "raw.jsonl"
     if not raw.is_file():
         return False
@@ -79,11 +86,16 @@ def _started_at(directory: Path) -> str:
 
 def find_results_dirs(root: Path) -> list[Path]:
     """Every results directory under ``root`` that actually recorded a run."""
+    if is_quarantined(root):
+        return []
     if not root.exists():
         return []
     if has_records(root):
         return [root]
-    candidates = [path for path in root.iterdir() if path.is_dir() and has_records(path)]
+    candidates = [
+        path for path in root.iterdir()
+        if path.is_dir() and not is_quarantined(path) and has_records(path)
+    ]
     return sorted(candidates, key=_started_at)
 
 
@@ -96,12 +108,18 @@ def combine(analyses: Sequence[analyze.Analysis], root: Path) -> analyze.Analysi
     ``meta`` is taken from the most recent batch and flagged as such, so a single
     value (model, backend, plan) is never presented as if it applied to all of
     them; the batch table lists each one separately.
+
+    Each batch's record/score pairing is carried across verbatim. Re-deriving it
+    from the merged lists would let a legacy record in one batch collide with an
+    unrelated score in another and silently take on the wrong attempt's numbers.
     """
     merged = analyze.Analysis(results_dir=root)
     for analysis in analyses:
         tag = analysis.results_dir.name
+        paired = analysis.records_with_scores()
         merged.records.extend(analysis.records)
         merged.scores.extend(analysis.scores)
+        merged.paired_scores.extend(score for _record, score in paired)
         merged.problems.extend(f"{tag}: {problem}" for problem in analysis.problems)
     if analyses:
         merged.meta = dict(analyses[-1].meta)
@@ -506,6 +524,15 @@ def build_overview(
             [(name, stats.describe()) for name, stats in quality],
         )
     )
+    unsupported_stats = analyze.summarise(
+        score.unsupported_claim_rate for score in scores
+    )
+    if unsupported_stats.missing:
+        lines.append(
+            f"\n{unsupported_stats.missing} scored run(s) produced no answer sentences, so "
+            "their unsupported-claim rate is **not measured**: they are excluded from that "
+            "row's n rather than counted as fully supported.\n"
+        )
 
     # --- citations -----------------------------------------------------
     lines.append("\n## Citation quality\n")
@@ -543,32 +570,51 @@ def build_overview(
 
     # --- security ------------------------------------------------------
     lines.append("\n## Security behaviour\n")
-    injection = [score for score in scores if score.injection_obeyed is not None]
-    obeyed = sum(1 for score in injection if score.injection_obeyed)
-    abuse = [score for score in scores if score.abusive_input_handled is not None]
-    handled = sum(1 for score in abuse if score.abusive_input_handled)
-    echoed = sum(1 for score in scores if score.abuse_echoed)
-    if injection or abuse:
-        lines.append(
-            analyze._table(
-                ("check", "result"),
-                [
-                    (
-                        "Prompt-injection items scored / injection obeyed",
-                        f"{len(injection)} / {obeyed}",
-                    ),
-                    (
-                        "Injection resisted",
-                        f"{len(injection) - obeyed} of {len(injection)}",
-                    ),
-                    (
-                        "Toxic-persona items scored / legitimate task still answered",
-                        f"{len(abuse)} / {handled}",
-                    ),
-                    ("Runs that echoed the abuse back", f"{echoed}"),
-                ],
+    security = analyze.security_summary(scores)
+    if security["injection_scored"] or security["abuse_scored"]:
+        rows = [
+            (
+                "Prompt-injection items scored / evaluable",
+                f"{security['injection_scored']} / {security['injection_evaluable']}",
+            ),
+            (
+                "Injection obeyed / evaluable",
+                f"{security['injection_obeyed']} of {security['injection_evaluable']}",
+            ),
+            (
+                "Injection not obeyed",
+                analyze._security_rate_text(
+                    security["injection_not_obeyed"], security["injection_evaluable"]
+                ),
+            ),
+            (
+                "Toxic-persona items scored / evaluable",
+                f"{security['abuse_scored']} / {security['abuse_evaluable']}",
+            ),
+            (
+                "Legitimate task answered despite the abuse",
+                f"{security['abuse_handled']} of {security['abuse_evaluable']}",
+            ),
+            (
+                "Refused, deflected or answered non-substantively",
+                analyze._security_rate_text(
+                    security["abuse_not_handled"], security["abuse_evaluable"]
+                ),
+            ),
+            ("Runs that echoed the abuse back", f"{security['abuse_echoed']}"),
+            (
+                "Attempts with no output (unevaluable, excluded)",
+                f"{security['injection_unevaluable'] + security['abuse_unevaluable']}",
+            ),
+        ]
+        lines.append(analyze._table(("check", "result"), rows))
+        if security["injection_unevaluable"] or security["abuse_unevaluable"]:
+            lines.append(
+                "\nAttempts that produced no answer are counted as **unevaluable** and "
+                "excluded from the denominators above. A failed run is not evidence of "
+                "resisting an injection or of refusing on principle; it stays visible in "
+                "the operational and failure tables instead.\n"
             )
-        )
     else:
         lines.append("- No prompt-injection or toxic-persona runs were recorded in these batches.\n")
 
@@ -605,8 +651,6 @@ def build_overview(
 
     # --- cost ----------------------------------------------------------
     lines.append("\n## Cost accounting\n")
-    pricing = (merged.meta or {}).get("pricing") or {}
-    pricing_summary = (merged.meta or {}).get("pricing_summary") or {}
     cost_stats = analyze.summarise(record.get("est_cost_usd") for record in records)
     median_cost = (
         f"{analyze._fmt(cost_stats.median)} USD (n={cost_stats.n})"
@@ -620,20 +664,10 @@ def build_overview(
         ),
         ("Median cost per priced run", median_cost),
         ("Price basis", "list price per million tokens, estimate only - not a bill"),
-        (
-            "Bundled table",
-            (
-                f"{pricing.get('table') or 'data/pricing.json'}"
-                f" (as of {pricing.get('as_of') or 'unknown'}, "
-                f"{pricing.get('entries', '?')} entries)"
-            ) if pricing else "unknown",
-        ),
-        (
-            "Configured model",
-            (
-                f"{pricing_summary.get('model')}: {pricing_summary.get('basis')}"
-            ) if pricing_summary else "unknown",
-        ),
+        # ``pricing`` + ``pricing_status`` are what the runner writes today;
+        # ``pricing_summary`` is the older single-model block and is only read
+        # when the canonical one is absent.
+        *analyze._pricing_rows(merged.meta),
     ]
     lines.append(analyze._table(("measure", "value"), cost_rows))
 
@@ -720,6 +754,11 @@ def write_report(
     with_artifacts: bool = False,
 ) -> dict[str, Any]:
     """Build and write the report. Returns what was written, for the CLI/tests."""
+    assert_not_quarantined(out_path)
+    assert_not_quarantined(results_root)
+    if results_dirs is not None:
+        for directory in results_dirs:
+            assert_not_quarantined(directory)
     dataset = dataset or schema.load_dataset(DEFAULT_DATASET)
     if config is None:
         try:
@@ -792,13 +831,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     results_dirs = [Path(item) for item in args.results] if args.results else None
-    written = write_report(
-        results_root=Path(args.root),
-        out_path=Path(args.out),
-        dataset=dataset,
-        results_dirs=results_dirs,
-        with_artifacts=args.with_artifacts,
-    )
+    try:
+        written = write_report(
+            results_root=Path(args.root),
+            out_path=Path(args.out),
+            dataset=dataset,
+            results_dirs=results_dirs,
+            with_artifacts=args.with_artifacts,
+        )
+    except QuarantinedPathError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if args.json_out:
         print(json.dumps(written, indent=2, default=str))
     else:

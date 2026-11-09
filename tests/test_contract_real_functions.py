@@ -14,7 +14,7 @@ import pytest
 
 from athena.agents import crew_p2p, crew_roles, crew_writer
 from athena.agents.crew_server import run_role_request
-from athena.blackboard import Blackboard, SQLiteStore, Task
+from athena.blackboard import Analysis, Blackboard, SQLiteStore, Task
 
 # (callable, kwargs exactly as production passes them)
 CALLS = [
@@ -42,18 +42,30 @@ def test_p2p_roles_are_a_separate_map() -> None:
     assert crew_p2p.P2P_ROLES["analyst"] is not crew_roles.analyse
 
 
-def test_p2p_request_routes_to_the_p2p_role(tmp_path) -> None:
+def test_p2p_request_routes_to_the_p2p_role(tmp_path, monkeypatch) -> None:
     """The executor must not force the blackboard ROLES map on a p2p body."""
     store = SQLiteStore(tmp_path / "bb.db")
     blackboard = Blackboard.create(Task(question="q"), store=store)
+    called = {}
+
+    def fake_crew_call(role, description, prompt, schema):
+        called.update(role=role, prompt=prompt, schema=schema)
+        return Analysis(key_findings=["offline result"], gaps=[]), {
+            "tokens_in": 1, "tokens_out": 1
+        }
+
+    monkeypatch.setattr(crew_p2p, "crew_call", fake_crew_call)
 
     body = json.dumps({"run_id": blackboard.run_id, "role": "analyst",
-                       "instruction": "go", "context": "evidence: none"})
+                       "instruction": "go", "context": "ROUTING_CONTEXT_SENTINEL"})
     ack = json.loads(run_role_request(body, roles=None, store=store))
 
-    # p2p_analyse ran (it accepts context); a signature error would be ok:false.
-    assert ack.get("error_type") != "TypeError"
-    assert "unexpected keyword" not in str(ack.get("error", ""))
+    assert ack["ok"] is True
+    assert ack["role"] == "analyst"
+    assert ack["section"] == "analysis"
+    assert called["role"] == "analyst"
+    assert called["schema"] is Analysis
+    assert "ROUTING_CONTEXT_SENTINEL" in called["prompt"]
 
 
 def test_executor_does_not_default_to_the_blackboard_roles() -> None:

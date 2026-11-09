@@ -1343,9 +1343,9 @@ html[data-theme="light"] .icon-theme-dark { display: none; }
 /* ---------------- contextual workspace ---------------- */
 
 /* One breakpoint, shared with context.js (`CONTEXT_BREAKPOINT = 1280`):
- * at or above it the panel is a column in `.shell`; below it context.js sets
- * `body.context-overlay` and the panel becomes an overlay with a backdrop.
- * tests/test_ui_static.py fails if the two copies of the number drift apart. */
+ * chat/research reserve this rail above it so toggling the panel never resizes
+ * the conversation; below it context.js opens a modal overlay with a backdrop.
+ * The script applies `context-rail` or `context-overlay` to the body. */
 .context-panel {
   flex: 0 0 clamp(300px, 30vw, 380px);
   width: clamp(300px, 30vw, 380px);
@@ -1353,6 +1353,11 @@ html[data-theme="light"] .icon-theme-dark { display: none; }
   display: flex; flex-direction: column;
   background: var(--panel); border-left: 1px solid var(--border-soft);
   position: relative; z-index: 20;
+}
+body.context-rail .context-panel.hidden {
+  display: flex !important;
+  visibility: hidden;
+  pointer-events: none;
 }
 .context-head {
   display: flex; align-items: flex-start; justify-content: space-between;
@@ -1455,9 +1460,8 @@ a.context-source-title:hover { color: var(--accent-2); text-decoration: underlin
 .context-activity-list .activity-row { padding: 6px 0; }
 .context-open-details { margin-top: 2px; align-self: flex-start; }
 
-/* Open state. `context-open` is set whenever the panel is visible; `main` may
- * then shrink instead of pushing the panel out of the viewport, and the source
- * row a `[n]` marker asked for is marked. */
+/* The desktop rail is reserved while chat/research is active, so opening the
+ * panel never changes the conversation width; the source row is marked. */
 body.context-open .main { min-width: 0; }
 .context-source.is-target {
   background: var(--inset); outline: 1px solid var(--accent-2);

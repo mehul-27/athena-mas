@@ -2,10 +2,9 @@
  * The data is supplied by the active surface; this module only renders it.
  */
 
-/* The one breakpoint this panel has: at or above it the panel sits in the flow
- * next to the conversation, below it the panel is an overlay with a backdrop.
- * style.css repeats the number in its `--context-breakpoint` media queries;
- * tests/test_ui_static.py fails if the two drift apart. */
+/* The one breakpoint this panel has: at or above it the shell reserves a
+ * context rail for chat/research; below it the panel is a modal overlay.
+ * CSS consumes the body classes set here; context.test.js covers both modes. */
 const CONTEXT_BREAKPOINT = 1280;
 
 (function (root) {
@@ -27,6 +26,8 @@ const CONTEXT_BREAKPOINT = 1280;
   };
   let lastTrigger = null;
   let lastAction = null;
+  let modalBackground = new Map();
+  let modalWasOpen = false;
 
   const $ = (id) => document.getElementById(id);
   const text = (node, value) => {
@@ -64,23 +65,94 @@ const CONTEXT_BREAKPOINT = 1280;
     return Number(window.innerWidth || 0) < CONTEXT_BREAKPOINT;
   }
 
+  function setModalBackground(inert) {
+    if (!inert) {
+      modalBackground.forEach((wasInert, node) => { node.inert = wasInert; });
+      modalBackground.clear();
+      return;
+    }
+    if (modalBackground.size) return;
+    const shell = document.querySelector(".shell");
+    const panel = $("context-panel");
+    const backdrop = $("context-backdrop");
+    const nodes = [
+      ...Array.from(document.body.children || []).filter((node) => node !== shell),
+      ...Array.from(shell ? shell.children : []).filter(
+        (node) => node !== panel && node !== backdrop
+      ),
+    ];
+    nodes.forEach((node) => {
+      modalBackground.set(node, Boolean(node.inert));
+      node.inert = true;
+    });
+  }
+
+  function handleDocumentKeydown(event) {
+    if (!visible()) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+      return;
+    }
+    if (!isOverlay() || event.key !== "Tab") return;
+    const panel = $("context-panel");
+    if (!panel) return;
+    const focusable = Array.from(panel.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+      + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter((node) => node.tabIndex >= 0
+      && !node.closest(".hidden") && node.getAttribute("aria-hidden") !== "true");
+    if (!focusable.length) {
+      event.preventDefault();
+      panel.focus({ preventScroll: true });
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus({ preventScroll: true });
+    } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+      event.preventDefault();
+      first.focus({ preventScroll: true });
+    }
+  }
+
   function syncShell() {
     const panel = $("context-panel");
     const backdrop = $("context-backdrop");
     const shown = visible();
     const overlay = shown && isOverlay();
+    const rail = (state.view === "chat" || state.view === "run") && !isOverlay();
+    const enteringModal = overlay && !modalWasOpen;
+    modalWasOpen = overlay;
     if (panel) {
       panel.classList.toggle("hidden", !shown);
       panel.classList.toggle("is-overlay", overlay);
       panel.setAttribute("aria-hidden", shown ? "false" : "true");
+      panel.inert = !shown;
+      panel.setAttribute("role", overlay ? "dialog" : "complementary");
+      if (overlay) panel.setAttribute("aria-modal", "true");
+      else panel.removeAttribute("aria-modal");
     }
     if (backdrop) backdrop.classList.toggle("hidden", !overlay);
     document.body.classList.toggle("context-open", shown);
     document.body.classList.toggle("context-overlay", overlay);
+    document.body.classList.toggle("context-rail", rail);
+    setModalBackground(overlay);
     ["context-toggle", "research-context-toggle"].forEach((id) => {
       const toggle = $(id);
       if (toggle) toggle.setAttribute("aria-expanded", shown ? "true" : "false");
     });
+    if (enteringModal) {
+      requestAnimationFrame(() => {
+        const currentPanel = $("context-panel");
+        if (visible() && isOverlay() && currentPanel
+            && !(currentPanel.contains && currentPanel.contains(document.activeElement))) {
+          $("context-close")?.focus({ preventScroll: true });
+        }
+      });
+    }
   }
 
   function setView(view) {
@@ -456,12 +528,7 @@ const CONTEXT_BREAKPOINT = 1280;
     loadPrefs();
     const panel = $("context-panel");
     if (!panel) return;
-    panel.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close(true);
-      }
-    });
+    document.addEventListener("keydown", handleDocumentKeydown);
     $("context-close")?.addEventListener("click", () => close(true));
     $("context-backdrop")?.addEventListener("click", () => close(true));
     $("context-tabs")?.addEventListener("click", (event) => {

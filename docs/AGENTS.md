@@ -174,14 +174,26 @@ Rules:
 
 ## Critic calibration limits (Step 8b)
 
-`athena/agents/critique_rules.py` post-processes the critic's verdict: a report
-with confidence below 0.5, or one that says in so many words that the evidence
-does not answer the core question, is rejected with at least medium severity.
+`athena/agents/critique_rules.py` checks low confidence and statements that the
+report cannot answer the core question. Confidence below 0.5 can remain
+acceptable for a qualified partial answer when the evidence assessment says the
+supported part is answerable. Generic evidence-gap wording (for example, that a
+source does not state a detail) blocks only when the assessment says the request
+is unanswered and a qualified partial answer is not possible; a direct admission
+that the core question is unanswered remains a rejection. This uses the run's
+assessment rather than treating incidental phrase overlap as sufficient.
 
-The phrase rule is deliberately narrow - it needs a hedge phrase ("does not
-state", "not found in the evidence", ...) *and* a core word ("question",
-"answer", "definition", "evidence", "handbook") in the same sentence, so a
-caveat about a detail does not trip it. It still cannot read context: a sentence
-that happens to combine both is a false positive. That is acceptable because the
-revision loop only reacts to severity "high", so a false positive costs a
-medium-severity note, not another expensive revision.
+The critic receives the full structured `FinalReport`. Its evidence excerpt
+prioritizes one best item for each cited source within the existing eight-item
+and per-item text limits, then fills remaining space by normal source priority.
+A numbered audit reports whether each citation reference is recorded,
+citable, excerpted, or missing. Reference presence does not establish that the
+source supports the claim; substantive claim objections remain part of critic
+review, and live acceptance performance is not measured by these tests.
+
+For explicit counts from one to ten, writer prompts in both the standard and
+p2p patterns align the requested finding count with at least that many distinct
+primary-source citations. They must not invent a source or unsupported finding
+to fill a count. Regression coverage includes
+`tests/test_critique_calibration.py`, `tests/test_critic_rejection_regression.py`,
+`tests/test_critic_report_context.py`, and `tests/test_requirements.py`.

@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from evaluation import __version__, outcomes, schema, scoring
+from evaluation.quarantine import QuarantinedPathError, assert_not_quarantined
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = REPO_ROOT / "evaluation" / "dataset.json"
@@ -154,17 +155,76 @@ class Analysis:
     scores: list[scoring.ItemScore] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def by_key(self) -> dict[str, scoring.ItemScore]:
-        return {score.run_key: score for score in self.scores}
+    #: One entry per record, in record order: the score computed from *that*
+    #: attempt, or None when it could not be scored. Pairing is decided inside
+    #: the batch that produced both, so merging batches cannot make a legacy
+    #: record ambiguous with an unrelated one from another batch.
+    paired_scores: list[scoring.ItemScore | None] = field(default_factory=list)
 
     def records_with_scores(self) -> list[tuple[dict[str, Any], scoring.ItemScore | None]]:
-        scores = self.by_key
-        return [(record, scores.get(str(record.get("run_key") or ""))) for record in self.records]
+        if len(self.paired_scores) == len(self.records):
+            return list(zip(self.records, self.paired_scores))
+        return pair_records_with_scores(self.records, self.scores)
+
+
+def pair_records_with_scores(
+    records: Sequence[Mapping[str, Any]],
+    scores: Sequence[scoring.ItemScore],
+) -> list[tuple[dict[str, Any], scoring.ItemScore | None]]:
+    """Pair each record with the score computed from *that* execution.
+
+    ``attempt_id`` identifies an execution, so it is the only key used when it
+    is present. A run key that appears on several attempts therefore never
+    collapses: a failed attempt keeps ``None`` even when a later attempt of the
+    same key succeeded.
+
+    The run-key fallback exists for records written before ``attempt_id``
+    existed, and is deliberately narrow: it applies only when that run key
+    identifies exactly one record and exactly one score. Anything ambiguous is
+    left unpaired instead of being guessed.
+    """
+    by_attempt: dict[str, scoring.ItemScore | None] = {}
+    for score in scores:
+        if not score.attempt_id:
+            continue
+        # A duplicated attempt id is not an identity; refuse to attribute it.
+        by_attempt[score.attempt_id] = (
+            None if score.attempt_id in by_attempt else score
+        )
+
+    run_key_counts: dict[str, int] = {}
+    attempt_counts: dict[str, int] = {}
+    for record in records:
+        key = str(record.get("run_key") or "")
+        run_key_counts[key] = run_key_counts.get(key, 0) + 1
+        attempt_id = str(record.get("attempt_id") or "")
+        if attempt_id:
+            attempt_counts[attempt_id] = attempt_counts.get(attempt_id, 0) + 1
+
+    legacy_by_key: dict[str, list[scoring.ItemScore]] = {}
+    for score in scores:
+        if score.attempt_id:
+            continue
+        legacy_by_key.setdefault(score.run_key, []).append(score)
+
+    pairs: list[tuple[dict[str, Any], scoring.ItemScore | None]] = []
+    for record in records:
+        attempt_id = str(record.get("attempt_id") or "")
+        if attempt_id:
+            score = by_attempt.get(attempt_id) if attempt_counts[attempt_id] == 1 else None
+            pairs.append((record, score))
+            continue
+        key = str(record.get("run_key") or "")
+        candidates = legacy_by_key.get(key, [])
+        if run_key_counts.get(key, 0) == 1 and len(candidates) == 1:
+            pairs.append((record, candidates[0]))
+        else:
+            pairs.append((record, None))
+    return pairs
 
 
 def load_analysis(results_dir: Path, dataset: schema.EvalDataset) -> Analysis:
+    assert_not_quarantined(results_dir)
     analysis = Analysis(results_dir=results_dir)
     raw_path = results_dir / "raw.jsonl"
     if not raw_path.exists():
@@ -196,6 +256,11 @@ def load_analysis(results_dir: Path, dataset: schema.EvalDataset) -> Analysis:
 
     analysis.scores, score_problems = scoring.score_records(analysis.records, dataset)
     analysis.problems.extend(score_problems)
+    analysis.paired_scores = [
+        score for _record, score in pair_records_with_scores(
+            analysis.records, analysis.scores
+        )
+    ]
     return analysis
 
 
@@ -309,6 +374,50 @@ def failure_counts(analysis: Analysis) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])))
 
 
+def security_summary(scores: Sequence[scoring.ItemScore]) -> dict[str, Any]:
+    """Security behaviour over the attempts whose answer could be judged.
+
+    A run that produced no answer is **not** evidence that the agent resisted an
+    injection or refused the abusive prompt: nothing was read. So each check
+    keeps two counts - evaluable and unevaluable - and only the evaluable
+    denominator is used for the rate. A failure is therefore never reported as a
+    successful defence.
+    """
+    injection = [score for score in scores if score.category == "prompt_injection"]
+    abuse = [score for score in scores if score.category == "toxic_persona"]
+
+    injection_evaluable = [s for s in injection if s.injection_obeyed is not None]
+    injection_obeyed = sum(1 for s in injection_evaluable if s.injection_obeyed)
+    abuse_evaluable = [s for s in abuse if s.abusive_input_handled is not None]
+    abuse_handled = sum(1 for s in abuse_evaluable if s.abusive_input_handled)
+    abuse_echoed = sum(
+        1 for s in abuse_evaluable if s.abuse_echoed
+    )
+    return {
+        "injection_scored": len(injection),
+        "injection_evaluable": len(injection_evaluable),
+        "injection_unevaluable": len(injection) - len(injection_evaluable),
+        "injection_obeyed": injection_obeyed,
+        # Only ever a share of evaluable attempts; see the docstring.
+        "injection_not_obeyed": len(injection_evaluable) - injection_obeyed,
+        "abuse_scored": len(abuse),
+        "abuse_evaluable": len(abuse_evaluable),
+        "abuse_unevaluable": len(abuse) - len(abuse_evaluable),
+        "abuse_handled": abuse_handled,
+        # Not handled covers a refusal *and* a non-substantive answer; the rubric
+        # cannot tell them apart, so the report does not call all of it refusal.
+        "abuse_not_handled": len(abuse_evaluable) - abuse_handled,
+        "abuse_echoed": abuse_echoed,
+    }
+
+
+def _security_rate_text(hits: int, total: int) -> str:
+    """A security rate over its evaluable denominator, or an explicit undefined."""
+    if not total:
+        return RATE_UNDEFINED
+    return f"{hits}/{total} ({hits / total * 100:.0f}%)"
+
+
 def terminal_state_counts(analysis: Analysis) -> dict[str, int]:
     counts: dict[str, int] = {}
     for record in analysis.records:
@@ -321,6 +430,7 @@ def terminal_state_counts(analysis: Analysis) -> dict[str, int]:
 
 
 def write_csv(path: Path, rows: Sequence[Mapping[str, Any]], columns: Sequence[str]) -> None:
+    assert_not_quarantined(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(columns), extrasaction="ignore")
@@ -330,15 +440,15 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, Any]], columns: Sequence[s
 
 
 RUN_COLUMNS = (
-    "run_key", "prompt_id", "category", "difficulty", "persona", "pattern",
-    "context_sharing", "tier", "seed", "repeat", "terminal_state", "outcome",
+    "run_key", "attempt_id", "attempt", "prompt_id", "category", "difficulty", "persona",
+    "pattern", "context_sharing", "tier", "seed", "repeat", "terminal_state", "outcome",
     "latency_s", "tokens_in", "tokens_out", "tokens_total", "est_cost_usd", "cost_basis",
     "tool_calls", "recovery_rounds", "revision_rounds", "evidence_count",
     "citation_count", "resolved_citations", "confidence", "critic_status", "critic_approved",
     "rubric_score", "answer_key_coverage", "completeness", "citation_precision",
     "citation_coverage", "unsupported_claim_rate", "evidence_relevance", "success",
-    "injection_obeyed", "abuse_echoed", "abusive_input_handled", "failure_categories",
-    "errors",
+    "injection_obeyed", "abuse_echoed", "abusive_input_handled", "security_evaluable",
+    "failure_categories", "errors",
 )
 
 PATTERN_COLUMNS = (
@@ -369,6 +479,8 @@ def run_rows(analysis: Analysis) -> list[dict[str, Any]]:
         rows.append(
             {
                 "run_key": record.get("run_key"),
+                "attempt_id": record.get("attempt_id"),
+                "attempt": record.get("attempt"),
                 "prompt_id": record.get("prompt_id"),
                 "category": record.get("category"),
                 "difficulty": record.get("difficulty"),
@@ -401,7 +513,8 @@ def run_rows(analysis: Analysis) -> list[dict[str, Any]]:
                 "citation_precision": (round(score.citation_precision, 4) if score else None),
                 "citation_coverage": (round(score.citation_coverage, 4) if score else None),
                 "unsupported_claim_rate": (
-                    round(score.unsupported_claim_rate, 4) if score else None
+                    "" if score is None or score.unsupported_claim_rate is None
+                    else round(score.unsupported_claim_rate, 4)
                 ),
                 "evidence_relevance": (
                     "" if score is None or score.evidence_relevance is None
@@ -411,6 +524,7 @@ def run_rows(analysis: Analysis) -> list[dict[str, Any]]:
                 "injection_obeyed": (score.injection_obeyed if score else None),
                 "abuse_echoed": (score.abuse_echoed if score else None),
                 "abusive_input_handled": (score.abusive_input_handled if score else None),
+                "security_evaluable": (score.security_evaluable if score else None),
                 "failure_categories": ("|".join(score.failure_categories) if score else ""),
                 "errors": " | ".join(record.get("errors") or []),
             }
@@ -562,6 +676,7 @@ def _pyplot():
 
 def _boxplot(plt, groups: Mapping[str, Sequence[float]], title: str, ylabel: str,
              path: Path, note: str = NO_SIGNIFICANCE_NOTE) -> bool:
+    assert_not_quarantined(path)
     data = [(name, list(values)) for name, values in groups.items() if values]
     if not data:
         return False
@@ -589,6 +704,7 @@ def _boxplot(plt, groups: Mapping[str, Sequence[float]], title: str, ylabel: str
 
 def _bar(plt, labels: Sequence[str], values: Sequence[float], title: str, ylabel: str,
          path: Path, note: str = NO_SIGNIFICANCE_NOTE) -> bool:
+    assert_not_quarantined(path)
     if not list(values):
         return False
     fig, axes = plt.subplots(figsize=(8, 4.5))
@@ -705,6 +821,79 @@ def _table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
     for row in rows:
         lines.append("| " + " | ".join("" if cell is None else str(cell) for cell in row) + " |")
     return "\n".join(lines) + "\n"
+
+
+def pricing_metadata(meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The pricing facts of a batch, read from wherever the runner wrote them.
+
+    ``run_meta.json`` carries two blocks with different jobs:
+
+    ``pricing``
+        Where the price table came from (``runner.pricing_status``).
+    ``pricing_status``
+        Whether *this batch's* models are priced, and whether the USD caps can
+        bind (``runner.pricing_status_for_meta``). This is the canonical block.
+
+    Older batches wrote ``pricing_summary`` (one model's price basis) instead of
+    ``pricing_status``, so that key is accepted as a fallback rather than making
+    an older batch's cost section say "unknown". Keys are returned as they are;
+    a missing block stays empty instead of being invented.
+    """
+    meta = meta or {}
+    table = meta.get("pricing") if isinstance(meta.get("pricing"), Mapping) else {}
+    canonical = meta.get("pricing_status")
+    if isinstance(canonical, Mapping) and canonical:
+        status = dict(canonical)
+        legacy = False
+    else:
+        fallback = meta.get("pricing_summary")
+        status = dict(fallback) if isinstance(fallback, Mapping) else {}
+        legacy = bool(status)
+    budget = meta.get("budget")
+    if status and isinstance(budget, Mapping) and budget.get("usd_cap_enforceable") is False:
+        # Known rates cannot make a resumed ledger's unknown costs enforceable.
+        status["usd_cap_enforceable"] = False
+    return {"table": dict(table or {}), "status": status, "legacy": legacy}
+
+
+def _pricing_rows(meta: Mapping[str, Any] | None) -> tuple[tuple[str, Any], ...]:
+    """The "Bundled table" and "Configured model" cells of the cost table."""
+    pricing = pricing_metadata(meta)
+    table = pricing["table"]
+    status = pricing["status"]
+    if table:
+        table_cell = (
+            f"{table.get('table') or 'data/pricing.json'}"
+            f" (as of {table.get('as_of') or 'unknown'}, "
+            f"{table.get('entries', '?')} entries)"
+        )
+    else:
+        table_cell = "unknown"
+
+    if not status:
+        model_cell = "unknown"
+    else:
+        label = status.get("model") or ", ".join(status.get("models") or []) or "unknown"
+        basis = status.get("basis")
+        if basis:
+            model_cell = f"{label}: {basis}"
+            if status.get("usd_cap_enforceable") is False:
+                model_cell += "; USD caps cannot bound spend"
+        elif status.get("priced") is True:
+            model_cell = (
+                f"{label}: priced, USD caps enforceable"
+                if status.get("usd_cap_enforceable")
+                else f"{label}: priced"
+                + ("; USD caps cannot bound spend"
+                   if status.get("usd_cap_enforceable") is False else "")
+            )
+        else:
+            unpriced = ", ".join(status.get("unpriced_models") or []) or "unknown"
+            model_cell = f"{label}: unpriced ({unpriced}); USD caps cannot bound spend"
+    return (
+        ("Bundled table", table_cell),
+        ("Configured model", model_cell),
+    )
 
 
 def _iqr_overlaps(left: Stats, right: Stats) -> bool:
@@ -860,14 +1049,24 @@ def interpretation_lines(
             }
             - {""}
         )
+        bases = sorted(
+            {
+                str(record.get("cost_basis") or "")
+                for record in analysis.records
+                if record.get("est_cost_usd") is None
+            }
+            - {""}
+        )
         lines.append(
             f"- **Cost is unpriced, not zero.** {unpriced} of {len(analysis.records)} runs record "
-            "`est_cost_usd = null` because the configured model"
-            + (f" ({', '.join(models)})" if models else "")
-            + " has no rate in `evaluation/config.json` or `data/pricing.json`. No total, "
-            "median or per-pattern cost comparison is made: the cost columns are absent rather "
-            "than filled with an invented rate. Token counts are the only comparable proxy for "
-            "spend in this batch, and the provider's actual bill is not observable from here."
+            "`est_cost_usd = null`"
+            + (f" because the configured model ({', '.join(models)}) has no applicable rate"
+               if models else "")
+            + (f"; recorded basis: {', '.join(f'`{basis}`' for basis in bases)}" if bases else "")
+            + ". No total, median or per-pattern cost comparison is made: the cost columns are "
+            "absent rather than filled with an invented rate. Token counts are the only "
+            "comparable proxy for spend in this batch, and the provider's actual bill is not "
+            "observable from here."
         )
 
     # --- censoring and failure effects -----------------------------------
@@ -974,10 +1173,13 @@ def build_report(analysis: Analysis, dataset: schema.EvalDataset,
     missing_cost = sum(1 for record in analysis.records
                        if record.get("est_cost_usd") is None)
     if missing_cost:
+        pricing = pricing_metadata(meta)
+        basis = pricing["status"].get("basis")
         lines.append(
-            f"- {missing_cost} of {len(analysis.records)} runs carry **no cost estimate**: "
-            "the model in `LLM_MODEL` has no entry in `config.json -> pricing.models`. "
-            "Unpriced runs are excluded from cost statistics, never counted as zero.\n"
+            f"- {missing_cost} of {len(analysis.records)} runs carry **no cost estimate**. "
+            + (f"Recorded basis: {basis}. " if basis else
+               "See `run_meta.json -> pricing_status` for which models could not be priced. ")
+            + "Unpriced runs are excluded from cost statistics, never counted as zero.\n"
         )
     volatile = [item.id for item in dataset.items if item.answer_key.volatility == "volatile"]
     volatile_run = [s for s in analysis.scores if s.prompt_id in volatile]
@@ -1126,6 +1328,12 @@ def build_report(analysis: Analysis, dataset: schema.EvalDataset,
     lines.append(f"- Citation precision (resolved / produced): {precision.describe()}\n")
     lines.append(f"- Required-evidence coverage: {coverage.describe()}\n")
     lines.append(f"- Unsupported-claim rate (lower is better): {unsupported.describe()}\n")
+    if unsupported.missing:
+        lines.append(
+            f"- {unsupported.missing} scored run(s) produced no answer sentences, so the "
+            "unsupported-claim rate is **not measured** for them. They are excluded from "
+            "its n rather than counted as fully supported.\n"
+        )
     lines.append(f"- Evidence relevance to key terms: {relevance.describe()}\n")
     lines.append(
         f"- Runs with no citations at all: {no_citations} of {len(analysis.scores)}; "
@@ -1134,22 +1342,33 @@ def build_report(analysis: Analysis, dataset: schema.EvalDataset,
 
     # --- security ---
     lines.append("\n## Security behaviour\n")
-    injection = [score for score in analysis.scores if score.injection_obeyed is not None]
-    obeyed = sum(1 for score in injection if score.injection_obeyed)
-    abuse = [score for score in analysis.scores if score.abusive_input_handled is not None]
-    handled = sum(1 for score in abuse if score.abusive_input_handled)
-    echoed = sum(1 for score in analysis.scores if score.abuse_echoed)
-    lines.append(
-        f"- Prompt-injection items scored: {len(injection)}; injection obeyed: **{obeyed}**; "
-        "resisted: "
-        f"{len(injection) - obeyed}.\n"
-    )
-    lines.append(
-        f"- Toxic-persona items scored: {len(abuse)}; legitimate task answered despite the "
-        f"abuse: **{handled}**; refused or deflected: {len(abuse) - handled}; "
-        f"runs that echoed the abuse back: {echoed}.\n"
-    )
-    if not injection and not abuse:
+    security = security_summary(analysis.scores)
+    if security["injection_scored"] or security["abuse_scored"]:
+        lines.append(
+            f"- Prompt-injection items scored: {security['injection_scored']}; "
+            f"evaluable: **{security['injection_evaluable']}** "
+            f"(unevaluable, no answer: {security['injection_unevaluable']}); "
+            f"injection obeyed: **{security['injection_obeyed']}**; not obeyed: "
+            f"{_security_rate_text(security['injection_not_obeyed'], security['injection_evaluable'])} "
+            "of the evaluable attempts.\n"
+        )
+        lines.append(
+            f"- Toxic-persona items scored: {security['abuse_scored']}; "
+            f"evaluable: **{security['abuse_evaluable']}** "
+            f"(unevaluable, no answer: {security['abuse_unevaluable']}); legitimate task "
+            f"answered despite the abuse: **{security['abuse_handled']}**; refused, "
+            f"deflected or answered non-substantively: "
+            f"{_security_rate_text(security['abuse_not_handled'], security['abuse_evaluable'])} "
+            f"of the evaluable attempts; runs that echoed the abuse back: "
+            f"{security['abuse_echoed']}.\n"
+        )
+        if security["injection_unevaluable"] or security["abuse_unevaluable"]:
+            lines.append(
+                "- Attempts with no output are **unevaluable**, not resistant: a run "
+                "that produced nothing is excluded from these denominators, and its "
+                "failure stays in the operational tables above.\n"
+            )
+    else:
         lines.append("- No security-category runs were recorded in this batch.\n")
 
     # --- critic agreement ---
@@ -1226,6 +1445,8 @@ def analyse(
 ) -> dict[str, Any]:
     """Score and aggregate one results directory. Returns the written paths."""
     out_dir = out_dir or results_dir
+    assert_not_quarantined(results_dir)
+    assert_not_quarantined(out_dir)
     analysis = load_analysis(results_dir, dataset)
     written: dict[str, Any] = {"results_dir": str(results_dir), "out_dir": str(out_dir),
                               "charts": {}, "problems": list(analysis.problems)}
@@ -1242,6 +1463,7 @@ def analyse(
     )
 
     scored_path = out_dir / "scored.jsonl"
+    assert_not_quarantined(scored_path)
     scored_path.parent.mkdir(parents=True, exist_ok=True)
     with scored_path.open("w", encoding="utf-8") as handle:
         for score in analysis.scores:
@@ -1255,7 +1477,9 @@ def analyse(
             chart_status = {"all": f"skipped: matplotlib unavailable ({exc})"}
 
     report = build_report(analysis, dataset, chart_status)
-    (out_dir / "REPORT.md").write_text(report, encoding="utf-8")
+    report_path = out_dir / "REPORT.md"
+    assert_not_quarantined(report_path)
+    report_path.write_text(report, encoding="utf-8")
 
     written.update(
         {
@@ -1289,6 +1513,13 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     results_dir = Path(args.results)
+    try:
+        assert_not_quarantined(results_dir)
+        if args.out:
+            assert_not_quarantined(Path(args.out))
+    except QuarantinedPathError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if not results_dir.exists():
         print(f"error: {results_dir} does not exist", file=sys.stderr)
         return 2
@@ -1298,12 +1529,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: dataset is not valid: {exc}", file=sys.stderr)
         return 2
 
-    written = analyse(
-        results_dir,
-        dataset=dataset,
-        out_dir=Path(args.out) if args.out else None,
-        charts=args.charts,
-    )
+    try:
+        written = analyse(
+            results_dir,
+            dataset=dataset,
+            out_dir=Path(args.out) if args.out else None,
+            charts=args.charts,
+        )
+    except QuarantinedPathError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if args.json_out:
         print(json.dumps(written, indent=2, default=str))
     else:

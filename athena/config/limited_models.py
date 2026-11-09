@@ -51,6 +51,25 @@ def _messages_text(messages) -> str:
         return str(messages)
 
 
+def _reserve_tokens(
+    limiter, output, input_tokens: int, output_tokens: int, agent: str
+) -> None:
+    """Reserve both budgets; release input only if output reservation fails pre-call."""
+    limiter.acquire(input_tokens, agent=agent)
+    try:
+        output.acquire(output_tokens, agent=agent)
+    except BaseException:
+        # No provider request was sent. Keep any earlier output reservation intact.
+        limiter.record(0)
+        raise
+
+
+def _settle_estimates(limiter, output, input_tokens: int, output_tokens: int) -> None:
+    """Settle conservative usage when a provider attempt fails without usage data."""
+    limiter.record(input_tokens)
+    output.record(output_tokens)
+
+
 class UsageCapturingClient(LiteLLMClient):
     """LiteLLM client that remembers the raw usage of the last call."""
 
@@ -80,17 +99,22 @@ class RateLimitedLiteLlm(LiteLlm):
         output = get_output_limiter()
         reserve = int(self._additional_args.get("max_tokens") or 0)
         estimate = estimate_tokens(_request_text(llm_request))
-        limiter.acquire(estimate, agent=current_agent())
-        output.acquire(reserve, agent=current_agent())
+        _reserve_tokens(limiter, output, estimate, reserve, current_agent())
+        reserved_output = reserve
+        reservation_active = True
 
         try:
             responses = await self._run(llm_request, stream)
-        except Exception as exc:
+        except BaseException as exc:
+            _settle_estimates(limiter, output, estimate, reserve)
+            reservation_active = False
             # A provider-side rejection of the *tool call* is one bounded
             # degradation, not the end of the run: the evidence already on the
             # blackboard must still reach the writer. Everything else keeps
             # propagating untouched.
-            if not tool_call_guard.is_tool_call_validation_error(exc):
+            if not isinstance(exc, Exception) or not tool_call_guard.is_tool_call_validation_error(
+                exc
+            ):
                 raise
             responses = await self._retry_rejected_tool_call(
                 llm_request, stream, exc, limiter, output, estimate, reserve
@@ -100,18 +124,29 @@ class RateLimitedLiteLlm(LiteLlm):
 
         if empty_and_truncated(responses):
             note_empty_reply("adk", reserve)
-            # The retry asks for a bigger output budget, so reserve the delta:
-            # otherwise the limiter under-counts exactly when the model is
-            # burning tokens fastest.
+            # Keep this attempt's estimate once. A corrective-tool retry has
+            # already settled its own reservation before reaching this branch.
+            if reservation_active:
+                _settle_estimates(limiter, output, estimate, reserve)
+                reservation_active = False
+            # This is a second provider request, so reserve its full output cap.
             retried_budget = doubled(reserve)
-            output.acquire(retried_budget - reserve, agent=current_agent())
+            retry_reserve = retried_budget
+            _reserve_tokens(limiter, output, estimate, retry_reserve, current_agent())
+            reserved_output = retry_reserve
+            reservation_active = True
             # One retry happens below, so exactly one ``retry`` event is written
             # here — before the second call, because the retry is a fact by now.
             retry_empty_reply("adk", reserve, retried_budget)
             original = self._additional_args.get("max_tokens")
             self._additional_args["max_tokens"] = retried_budget
             try:
-                retried = await self._run(llm_request, stream)
+                try:
+                    retried = await self._run(llm_request, stream)
+                except BaseException:
+                    _settle_estimates(limiter, output, estimate, retry_reserve)
+                    reservation_active = False
+                    raise
             finally:
                 if original is None:
                     self._additional_args.pop("max_tokens", None)
@@ -138,8 +173,9 @@ class RateLimitedLiteLlm(LiteLlm):
                     except Exception:  # noqa: BLE001 - never break a call for metrics
                         pass
 
-        limiter.record(tokens_in or estimate)
-        output.record(tokens_out or reserve)
+        if reservation_active:
+            limiter.record(tokens_in or estimate)
+            output.record(tokens_out or reserved_output)
 
         for response in responses:
             yield response
@@ -165,6 +201,16 @@ class RateLimitedLiteLlm(LiteLlm):
         a rejection that is not retried never claims one.
         """
         agent = current_agent()
+        correction = tool_call_guard.corrective_message(error, llm_request)
+        retry_request = tool_call_guard.with_corrective_message(llm_request, correction)
+        retry_estimate = estimate_tokens(_request_text(retry_request))
+        # The retry is a real model call: reserve its budget like any other, so
+        # the shared limiter and the per-run caps still see it.
+        try:
+            _reserve_tokens(limiter, output, retry_estimate, reserve, agent)
+        except BaseException:
+            tool_call_guard.record_rejection(error, agent, will_retry=False, attempt=2)
+            raise
         tool_call_guard.record_rejection(error, agent, will_retry=True, attempt=2)
         note_retry(
             agent,
@@ -178,24 +224,17 @@ class RateLimitedLiteLlm(LiteLlm):
             rejected_tool=tool_call_guard.offending_tool(error),
         )
 
-        correction = tool_call_guard.corrective_message(error, llm_request)
-        retry_request = tool_call_guard.with_corrective_message(llm_request, correction)
-        retry_estimate = estimate_tokens(correction)
-        # The retry is a real model call: reserve its budget like any other, so
-        # the shared limiter and the per-run caps still see it.
-        limiter.acquire(retry_estimate, agent=agent)
-        output.acquire(reserve, agent=agent)
-
         try:
             responses = await self._run(retry_request, stream)
-        except Exception as exc:
-            if not tool_call_guard.is_tool_call_validation_error(exc):
+        except BaseException as exc:
+            _settle_estimates(limiter, output, retry_estimate, reserve)
+            if not isinstance(exc, Exception) or not tool_call_guard.is_tool_call_validation_error(
+                exc
+            ):
                 raise
             # Second rejection: stop calling tools, keep the run alive.
             tool_call_guard.record_rejection(exc, agent, will_retry=False, attempt=2)
             tool_call_guard.record_degraded(exc, agent)
-            limiter.record(estimate + retry_estimate)
-            output.record(reserve)
             return [tool_call_guard.degraded_response(exc)]
 
         # The retry itself happened, so its cost is measured, not estimated.
@@ -206,7 +245,7 @@ class RateLimitedLiteLlm(LiteLlm):
                 continue
             usage_in = getattr(usage, "prompt_token_count", None) or usage_in
             usage_out = getattr(usage, "candidates_token_count", None) or usage_out
-        limiter.record(usage_in or (estimate + retry_estimate))
+        limiter.record(usage_in or retry_estimate)
         output.record(usage_out or reserve)
         return responses
 
@@ -241,17 +280,23 @@ def make_crewai_llm_class():
             output = get_output_limiter()
             reserve = int(self.max_tokens or 0)
             estimate = estimate_tokens(_messages_text(messages))
-            limiter.acquire(estimate, agent=current_agent())
-            output.acquire(reserve, agent=current_agent())
+            _reserve_tokens(limiter, output, estimate, reserve, current_agent())
             kwargs = self._kwargs(messages, tools, callbacks, available_functions,
                                   from_task, from_agent, response_model)
             parent = super()
+            reserved_output = reserve
+            reservation_active = True
             try:
                 result = parent.call(**kwargs)
                 if isinstance(result, str) and not result.strip():
                     note_empty_reply("crewai", self.max_tokens)
+                    _settle_estimates(limiter, output, estimate, reserve)
+                    reservation_active = False
                     retried_budget = doubled(reserve)
-                    output.acquire(retried_budget - reserve, agent=current_agent())
+                    retry_reserve = retried_budget
+                    _reserve_tokens(limiter, output, estimate, retry_reserve, current_agent())
+                    reserved_output = retry_reserve
+                    reservation_active = True
                     # The retry below is real, so report it (once) here.
                     retry_empty_reply("crewai", self.max_tokens, retried_budget)
                     original = self.max_tokens
@@ -262,8 +307,9 @@ def make_crewai_llm_class():
                         self.max_tokens = original
                 return result
             finally:
-                limiter.record(estimate)
-                output.record(reserve)
+                if reservation_active:
+                    limiter.record(estimate)
+                    output.record(reserved_output)
 
         async def acall(self, messages, tools=None, callbacks=None, available_functions=None,
                         from_task=None, from_agent=None, response_model=None):
@@ -271,16 +317,22 @@ def make_crewai_llm_class():
             output = get_output_limiter()
             reserve = int(self.max_tokens or 0)
             estimate = estimate_tokens(_messages_text(messages))
-            limiter.acquire(estimate, agent=current_agent())
-            output.acquire(reserve, agent=current_agent())
+            _reserve_tokens(limiter, output, estimate, reserve, current_agent())
             kwargs = self._kwargs(messages, tools, callbacks, available_functions,
                                   from_task, from_agent, response_model)
+            reserved_output = reserve
+            reservation_active = True
             try:
                 result = await super().acall(**kwargs)
                 if isinstance(result, str) and not result.strip():
                     note_empty_reply("crewai", self.max_tokens)
+                    _settle_estimates(limiter, output, estimate, reserve)
+                    reservation_active = False
                     retried_budget = doubled(reserve)
-                    output.acquire(retried_budget - reserve, agent=current_agent())
+                    retry_reserve = retried_budget
+                    _reserve_tokens(limiter, output, estimate, retry_reserve, current_agent())
+                    reserved_output = retry_reserve
+                    reservation_active = True
                     # The retry below is real, so report it (once) here.
                     retry_empty_reply("crewai", self.max_tokens, retried_budget)
                     original = self.max_tokens
@@ -291,7 +343,8 @@ def make_crewai_llm_class():
                         self.max_tokens = original
                 return result
             finally:
-                limiter.record(estimate)
-                output.record(reserve)
+                if reservation_active:
+                    limiter.record(estimate)
+                    output.record(reserved_output)
 
     return RateLimitedCrewLLM

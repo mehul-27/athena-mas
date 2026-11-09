@@ -28,6 +28,11 @@ from fastapi.responses import FileResponse
 
 from athena.api.guards import guard
 from evaluation import analyze, outcomes, report, schema
+from evaluation.quarantine import (
+    QuarantinedPathError,
+    assert_not_quarantined,
+    is_quarantined,
+)
 
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
@@ -52,7 +57,8 @@ def dataset_path() -> Path:
 
 
 def _raw_records(directory: Path, problems: list[str]) -> list[dict[str, Any]]:
-    """Read ``raw.jsonl`` without interpreting it. Never raises."""
+    """Read ``raw.jsonl`` without interpreting it; reject quarantined paths."""
+    _guard_batch(directory)
     raw = directory / "raw.jsonl"
     records: list[dict[str, Any]] = []
     if not raw.is_file():
@@ -80,6 +86,7 @@ def _raw_records(directory: Path, problems: list[str]) -> list[dict[str, Any]]:
 
 
 def _read_meta(directory: Path, problems: list[str]) -> dict[str, Any]:
+    _guard_batch(directory)
     meta_path = directory / "run_meta.json"
     if not meta_path.is_file():
         return {}
@@ -97,26 +104,45 @@ def _analysis(directory: Path) -> tuple[analyze.Analysis, list[str]]:
     Without a valid dataset the records can still be counted, they just cannot
     be scored: that is reported instead of silently scoring nothing.
     """
+    _guard_batch(directory)
     problems: list[str] = []
     dataset = None
     try:
         dataset = schema.load_dataset(dataset_path())
     except Exception as exc:  # noqa: BLE001 - reported, not raised
         problems.append(f"dataset.json is not valid: {type(exc).__name__}")
-    if dataset is not None:
-        analysis = analyze.load_analysis(directory, dataset)
-        return analysis, problems + list(analysis.problems)
+    try:
+        if dataset is not None:
+            analysis = analyze.load_analysis(directory, dataset)
+            return analysis, problems + list(analysis.problems)
 
-    analysis = analyze.Analysis(results_dir=directory)
-    analysis.records = _raw_records(directory, problems)
-    analysis.meta = _read_meta(directory, problems)
-    return analysis, problems
+        analysis = analyze.Analysis(results_dir=directory)
+        analysis.records = _raw_records(directory, problems)
+        analysis.meta = _read_meta(directory, problems)
+        return analysis, problems
+    except QuarantinedPathError:
+        raise HTTPException(
+            status_code=404, detail="evaluation batch is quarantined"
+        ) from None
 
 
 def _batches() -> list[Path]:
     """Batches that actually recorded something, newest first."""
-    found = report.find_results_dirs(results_root())
-    return list(reversed(found))[:MAX_BATCHES]
+    root = results_root()
+    if not root.exists() or is_quarantined(root):
+        return []
+    found = report.find_results_dirs(root)
+    return [directory for directory in reversed(found) if not is_quarantined(directory)][:MAX_BATCHES]
+
+
+def _guard_batch(directory: Path) -> None:
+    """Reject marked paths if quarantine changed after batch discovery."""
+    try:
+        assert_not_quarantined(directory)
+    except QuarantinedPathError:
+        raise HTTPException(
+            status_code=404, detail="evaluation batch is quarantined"
+        ) from None
 
 
 def _batch(run: str) -> Path:
@@ -124,8 +150,15 @@ def _batch(run: str) -> Path:
     wanted = (run or "").strip()
     if not wanted or Path(wanted).name != wanted or wanted in {".", ".."}:
         raise HTTPException(status_code=404, detail="no such evaluation batch")
+    root = results_root()
+    if is_quarantined(root):
+        raise HTTPException(status_code=404, detail="evaluation batch is quarantined")
+    candidate = root if root.name == wanted else root / wanted
+    if is_quarantined(candidate):
+        raise HTTPException(status_code=404, detail="evaluation batch is quarantined")
     for directory in _batches():
         if directory.name == wanted:
+            _guard_batch(directory)
             return directory
     raise HTTPException(status_code=404, detail="no such evaluation batch")
 
@@ -190,14 +223,22 @@ def _metric(triple: tuple[int, int, float | None]) -> dict[str, Any]:
 
 def _charts(directory: Path) -> list[dict[str, str]]:
     """The charts this batch actually has, as guarded hrefs."""
+    _guard_batch(directory)
     charts_dir = directory / "charts"
+    _guard_batch(charts_dir)
     if not charts_dir.is_dir():
         return []
     rows: list[dict[str, str]] = []
     for path in sorted(charts_dir.iterdir()):
         if len(rows) >= MAX_CHARTS:
             break
-        if not path.is_file() or path.suffix.lower() not in CHART_SUFFIXES:
+        if path.suffix.lower() not in CHART_SUFFIXES:
+            continue
+        try:
+            target = _chart_path(directory, path.name)
+        except HTTPException:
+            continue
+        if not target.is_file():
             continue
         rows.append(
             {
@@ -212,6 +253,7 @@ def _charts(directory: Path) -> list[dict[str, str]]:
 
 def _chart_path(directory: Path, name: str) -> Path:
     """One chart file inside ``<batch>/charts``; anything else is a 404."""
+    _guard_batch(directory)
     candidate = (name or "").strip()
     if not candidate or Path(candidate).name != candidate:
         raise HTTPException(status_code=404, detail="no such chart")
@@ -219,6 +261,7 @@ def _chart_path(directory: Path, name: str) -> Path:
         raise HTTPException(status_code=404, detail="no such chart")
     charts_dir = (directory / "charts").resolve()
     target = (charts_dir / candidate).resolve()
+    _guard_batch(target)
     try:
         target.relative_to(charts_dir)
     except ValueError:  # pragma: no cover - the name check already refuses
@@ -234,6 +277,7 @@ def runs(request: Request) -> dict:
     guard(request)
     batches: list[dict[str, Any]] = []
     for directory in _batches():
+        _guard_batch(directory)
         problems: list[str] = []
         meta = _read_meta(directory, problems)
         records = _raw_records(directory, problems)

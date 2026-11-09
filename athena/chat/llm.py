@@ -42,6 +42,47 @@ def _request_text(messages: list[dict[str, Any]]) -> str:
         return str(messages)
 
 
+def _unsupported_stream_options(error: Exception) -> bool:
+    """Only retry an explicit pre-stream 400/422 rejection of this field."""
+    response = _get(error, "response")
+    status = _get(error, "status_code", _get(response, "status_code"))
+    if status not in (400, 422):
+        return False
+
+    body = _get(error, "body", {})
+    details = body.get("error", body) if isinstance(body, dict) else {}
+    param = _get(error, "param") or _get(details, "param")
+    code = _get(error, "code") or _get(details, "code")
+    message = _get(details, "message") or str(error)
+    text = str(message).lower()
+    stream_option_param = (
+        param == "stream_options"
+        or isinstance(param, str) and param.startswith("stream_options.")
+    )
+    if stream_option_param and str(code).lower() in {
+        "unsupported_parameter",
+        "unknown_parameter",
+    }:
+        return True
+    if "stream_options" not in text:
+        return False
+    return any(
+        phrase in text
+        for phrase in (
+            "unsupported",
+            "not supported",
+            "unrecognized",
+            "unknown parameter",
+            "unknown field",
+            "unexpected",
+            "not allowed",
+            "additional properties",
+            "extra field",
+            "extra input",
+        )
+    )
+
+
 async def stream_completion(
     target: ChatTarget,
     messages: list[dict[str, Any]],
@@ -96,9 +137,10 @@ async def stream_completion(
                 response = await litellm.acompletion(
                     **kwargs, stream_options={"include_usage": True}
                 )
-            except Exception:
-                # Some OpenAI-compatible gateways reject stream_options. Retrying
-                # without it is safe because no stream was returned yet.
+            except Exception as exc:
+                # Retry only a clear unsupported-field response before streaming.
+                if not _unsupported_stream_options(exc):
+                    raise
                 response = await litellm.acompletion(**kwargs)
 
             async for chunk in response:

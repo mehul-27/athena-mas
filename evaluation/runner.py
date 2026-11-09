@@ -16,14 +16,19 @@ can quietly lie:
   evidence, a timeout or a completed run is a result and is never re-rolled to
   get a nicer sample.
 * Nothing is estimated into existence. Token counts come from the event store,
-  cost comes from a published price table or stays ``null`` (with
-  ``pricing.priced = False`` naming the unpriced model), and the final answer
-  comes from the blackboard ``final_report``.
+  cost is priced per agent against the model that event actually called (the
+  ADK and CrewAI halves may differ), and a token-bearing segment with no known
+  rate makes the run's total cost ``null`` with ``pricing.priced = False``
+  naming the unpriced model. A partly priced run reports the priced subtotal in
+  ``cost_basis`` and keeps the total null; it never pretends the subtotal is the
+  run's cost. Counts mirrored in an A2A acknowledgement are priced once.
 * Provenance is resolved from the *same* helper ``scripts/dev_up.py`` uses, and
   the ADK and CrewAI models are recorded separately because they can differ.
 * A timeout or an exception is recorded and the batch continues.
 * The batch resumes: keys already present in ``raw.jsonl`` are skipped, so an
-  interrupted batch does not start over and does not double-count.
+  interrupted batch does not start over and does not double-count. The attempt
+  cap and known/unknown spend are restored from those records before another
+  invocation, so a restart cannot silently reset the budget.
 * ``--dry-run`` writes nothing at all.
 
 The preferred execution path is in-process (``athena.run.run_one``). The
@@ -45,8 +50,10 @@ import argparse
 import asyncio
 import contextlib
 import hashlib
+import inspect
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -58,6 +65,8 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from evaluation import __version__, outcomes, schema
 from evaluation import accounts as accounts_module
+from evaluation.output_lock import OutputDirectoryBusyError, OutputDirectoryLock
+from evaluation.quarantine import QuarantinedPathError, assert_not_quarantined
 from evaluation.schema import (
     AttemptAccounting,
     EvalDataset,
@@ -91,6 +100,17 @@ EXIT_OK = 0
 EXIT_INVALID = 2
 EXIT_PRECONDITION = 3
 EXIT_INTERRUPTED = 130
+
+_RETRYABLE_PROVIDER_FAILURE = re.compile(
+    r"\b(?:HTTP(?: status)?|status(?:_code)?|http_status|error[_ ]?code|code)"
+    r"\s*[:=]?\s*5\d\d\b|\b5\d\d\s+(?:Bad Gateway|Service Unavailable|"
+    r"Gateway Timeout|Internal Server Error)\b|\b(?:BadGateway(?:Error)?|"
+    r"ServiceUnavailable(?:Error)?|GatewayTimeout(?:Error)?|InternalServerError|"
+    r"APIConnectionError|ConnectionError|ConnectError|ConnectTimeout|ReadTimeout|"
+    r"ConnectionRefusedError|ConnectionResetError|RemoteProtocolError)\b|"
+    r"connection (?:error|refused|reset|timed out)|timed out",
+    re.IGNORECASE,
+)
 
 
 # --- Small utilities -------------------------------------------------------
@@ -312,6 +332,11 @@ def prepare_out_dir(out_dir: Path) -> Path:
     maps to ``EXIT_INVALID``; nothing is written in that case, not even a partial
     ``run_meta.json``.
     """
+    assert_not_quarantined(out_dir)
+    assert_not_quarantined(out_dir / "raw.jsonl")
+    assert_not_quarantined(out_dir / "logs")
+    assert_not_quarantined(out_dir / "plan.json")
+    assert_not_quarantined(out_dir / "run_meta.json")
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "logs").mkdir(parents=True, exist_ok=True)
@@ -319,7 +344,7 @@ def prepare_out_dir(out_dir: Path) -> Path:
         raise OutputDirectoryError(
             f"cannot create the results directory {out_dir}: {exc}"
         ) from exc
-    probe = out_dir / ".write-probe"
+    probe = out_dir / f".write-probe-{os.getpid()}-{uuid.uuid4().hex}"
     try:
         probe.write_text("", encoding="utf-8")
         probe.unlink()
@@ -492,12 +517,30 @@ def estimate_cost(
 
 
 def pricing_record(
-    config: ExperimentConfig, model: str, cost: float | None, basis: str
+    config: ExperimentConfig,
+    model: str,
+    cost: float | None,
+    basis: str,
+    *,
+    unpriced_models: Sequence[str] | None = None,
 ) -> PricingRecord:
     """The record-level answer to "is this cost a number or an unknown?"."""
     if cost is not None:
         return PricingRecord(
             priced=True, basis=basis, currency=config.pricing.currency
+        )
+    if basis == "no token counts recorded" or basis.startswith("unattributed_usage:"):
+        return PricingRecord(priced=False, basis=basis, currency=config.pricing.currency)
+    if unpriced_models:
+        names = [str(name) for name in unpriced_models if str(name).strip()]
+        return PricingRecord(
+            priced=False,
+            unpriced_models=names,
+            basis=(
+                f"{basis or 'unknown_model'}; est_cost_usd is null, not zero "
+                f"(unpriced: {', '.join(names)})"
+            ),
+            currency=config.pricing.currency,
         )
     named = (model or "").strip() or "(no model configured)"
     return PricingRecord(
@@ -508,6 +551,105 @@ def pricing_record(
             "data/pricing.json; est_cost_usd is null, not zero"
         ),
         currency=config.pricing.currency,
+    )
+
+
+def _usage_segment_model(
+    segment: Mapping[str, Any],
+    provenance: ModelProvenance | None,
+    fallback_model: str,
+) -> str:
+    """The model one usage segment should be priced against, or "" if unknown.
+
+    An event that reported its served model is authoritative. Otherwise the
+    resolved provenance supplies the model for the framework that produced the
+    event; an A2A acknowledgement is the CrewAI server's usage even though the
+    caller emits it. Nothing is inferred from a neighbour's rate.
+    """
+    reported = str(segment.get("model") or "").strip()
+    if reported:
+        return reported
+    source = str(segment.get("source") or "")
+    framework = str(segment.get("framework") or "").strip().lower()
+    if source == "a2a_call" or framework == "crewai":
+        return (provenance.crew_model if provenance else "").strip()
+    if framework == "adk":
+        configured = provenance.adk_model if provenance else ""
+        return (configured or fallback_model or "").strip()
+    return ""
+
+
+def estimate_usage_cost(
+    config: ExperimentConfig,
+    usage_by_agent: Mapping[str, Any],
+    *,
+    provenance: ModelProvenance | None = None,
+    fallback_model: str = "",
+) -> tuple[float | None, str, list[str]]:
+    """Price per-agent usage against the model each half actually called.
+
+    ``event_totals`` selects one authoritative source per agent - the server's
+    ``model_call`` usage when it recorded any, otherwise the ``a2a_call``
+    acknowledgement - so mirrored CrewAI usage is priced once. ADK events carry
+    the served model in ``extra.model``; CrewAI events do not, so their usage is
+    priced against the resolved ``crew_model`` from provenance. A segment with
+    neither a reported model nor provenance stays unpriced.
+
+    Returns ``(cost, basis, unpriced_models)``. A cost is returned only when
+    every token-bearing segment is priced: a partly priced run returns ``None``
+    and names the unpriced models, because a subtotal is not the run's cost.
+    """
+    priced_subtotal = 0.0
+    unpriced: list[str] = []
+    priced_agents: dict[str, set[str]] = {}
+    tokens_seen = False
+
+    for agent, usage in usage_by_agent.items():
+        if not isinstance(usage, Mapping):
+            continue
+        for segment in usage.get("segments") or []:
+            if not isinstance(segment, Mapping):
+                continue
+            tokens_in = max(int(segment.get("tokens_in") or 0), 0)
+            tokens_out = max(int(segment.get("tokens_out") or 0), 0)
+            if not tokens_in and not tokens_out:
+                continue
+            tokens_seen = True
+            model = _usage_segment_model(segment, provenance, fallback_model)
+            if not model:
+                label = f"{agent} (no model recorded)"
+                if label not in unpriced:
+                    unpriced.append(label)
+                continue
+            cost, _basis = estimate_cost(config, model, tokens_in, tokens_out)
+            if cost is None:
+                if model not in unpriced:
+                    unpriced.append(model)
+                continue
+            priced_subtotal += cost
+            priced_agents.setdefault(str(agent), set()).add(model)
+
+    if not tokens_seen:
+        return None, "no token counts recorded", []
+
+    priced_basis = ", ".join(
+        f"{agent}=" + "+".join(sorted(models))
+        for agent, models in sorted(priced_agents.items())
+    )
+    if unpriced and priced_basis:
+        return (
+            None,
+            "partly_unpriced: priced subtotal "
+            f"{round(priced_subtotal, 6)} USD ({priced_basis}); no rate for "
+            + ", ".join(unpriced),
+            unpriced,
+        )
+    if unpriced:
+        return None, "unpriced:" + ", ".join(unpriced), unpriced
+    return (
+        round(priced_subtotal, 6),
+        f"priced:per_agent[{priced_basis}]",
+        [],
     )
 
 
@@ -549,8 +691,20 @@ def blackboard_sections(run_id: str) -> dict[str, Any]:
         return {}
 
 
-def event_totals(run_id: str) -> dict[str, Any] | None:
-    """Token and call totals from the monitoring event store."""
+def event_totals(
+    run_id: str, detail: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Token and call totals from the monitoring event store.
+
+    CrewAI reports each role twice: its own model_call and the usage its ADK
+    caller echoes back in a2a_call. Keep one source per agent - the server's
+    usage when it recorded any, otherwise the ack - as agent_metrics does.
+
+    When ``detail`` is supplied it receives ``usage_by_agent``: that same
+    per-agent choice plus the model each event reported. Cost is priced from
+    it, so the ADK and CrewAI halves use their own models instead of one batch
+    label. The totals mapping itself is unchanged for existing callers.
+    """
     try:
         from athena.observability.store import SQLiteEventStore
 
@@ -569,26 +723,101 @@ def event_totals(run_id: str) -> dict[str, Any] | None:
         "recovery_events": 0,
         "errors": 0,
     }
+    model_usage: dict[str, dict[str, Any]] = {}
+    a2a_usage: dict[str, dict[str, Any]] = {}
     for event in events:
         kind = getattr(event, "kind", "")
-        if kind == "model_call":
-            totals["model_calls"] += 1
-            totals["tokens_in"] += int(getattr(event, "tokens_in", 0) or 0)
-            totals["tokens_out"] += int(getattr(event, "tokens_out", 0) or 0)
-            totals["reasoning_tokens"] += int((getattr(event, "extra", {}) or {}).get(
-                "reasoning_tokens") or 0)
-        elif kind == "a2a_call":
-            totals["tokens_in"] += int(getattr(event, "tokens_in", 0) or 0)
-            totals["tokens_out"] += int(getattr(event, "tokens_out", 0) or 0)
-            totals["reasoning_tokens"] += int((getattr(event, "extra", {}) or {}).get(
-                "reasoning_tokens") or 0)
+        if kind in ("model_call", "a2a_call"):
+            agent = str(getattr(event, "agent", "") or "")
+            extra = getattr(event, "extra", {}) or {}
+            usage = (model_usage if kind == "model_call" else a2a_usage).setdefault(
+                agent,
+                {
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "reasoning_tokens": 0,
+                    "framework": str(getattr(event, "framework", "") or ""),
+                    "segments": [],
+                },
+            )
+            tokens_in = int(getattr(event, "tokens_in", 0) or 0)
+            tokens_out = int(getattr(event, "tokens_out", 0) or 0)
+            usage["tokens_in"] += tokens_in
+            usage["tokens_out"] += tokens_out
+            usage["reasoning_tokens"] += int(extra.get("reasoning_tokens") or 0)
+            usage["segments"].append(
+                {
+                    "source": kind,
+                    "framework": str(getattr(event, "framework", "") or ""),
+                    # Same lookup as telemetry_routes.Context.cost_of.
+                    "model": str(
+                        extra.get("model")
+                        or extra.get("model_name")
+                        or extra.get("model_id")
+                        or ""
+                    ).strip() or None,
+                    "tokens_in": tokens_in,
+                    "tokens_out": tokens_out,
+                }
+            )
+            if kind == "model_call":
+                totals["model_calls"] += 1
         elif kind == "tool_call":
             totals["tool_calls"] += 1
         elif kind == "recovery":
             totals["recovery_events"] += 1
         elif kind == "error":
             totals["errors"] += 1
+
+    usage_by_agent: dict[str, Any] = {}
+    for agent in {*model_usage, *a2a_usage}:
+        measured = model_usage.get(agent)
+        if measured and (measured["tokens_in"] or measured["tokens_out"]):
+            usage, source = measured, "model_call"
+        else:
+            usage, source = a2a_usage.get(agent), "a2a_call"
+        if usage is None:
+            continue
+        totals["tokens_in"] += usage["tokens_in"]
+        totals["tokens_out"] += usage["tokens_out"]
+        totals["reasoning_tokens"] += usage["reasoning_tokens"]
+        segments = [
+            dict(segment)
+            for segment in usage["segments"]
+            if segment["tokens_in"] or segment["tokens_out"]
+        ]
+        if detail is not None and segments:
+            usage_by_agent[agent] = {
+                "source": source,
+                "framework": usage["framework"],
+                "tokens_in": usage["tokens_in"],
+                "tokens_out": usage["tokens_out"],
+                "reasoning_tokens": usage["reasoning_tokens"],
+                "segments": segments,
+            }
+    if detail is not None:
+        detail["usage_by_agent"] = usage_by_agent
     return totals
+
+
+def collect_event_facts(
+    run_id: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """``event_totals`` plus per-agent usage, tolerating a one-argument override.
+
+    The detail travels through an out-parameter rather than widening the totals
+    mapping: existing callers assert its exact keys. A runner test (or plugin)
+    that monkeypatches ``event_totals`` with the old one-argument signature keeps
+    working and simply yields no per-agent detail; mixed-model totals then stay
+    unpriced rather than guessing which framework consumed them.
+    """
+    detail: dict[str, Any] = {}
+    try:
+        inspect.signature(event_totals).bind(run_id, detail)
+    except (TypeError, ValueError):
+        return event_totals(run_id), None
+    totals = event_totals(run_id, detail)
+    return totals, detail.get("usage_by_agent") or None
 
 
 def capture_report(sections: Mapping[str, Any]) -> dict[str, Any]:
@@ -720,8 +949,16 @@ def merge_run_facts(
     latency_s: float,
     errors: list[str],
     notes: list[str],
+    provenance: ModelProvenance | None = None,
+    usage_by_agent: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Fill a record from what the run actually produced."""
+    """Fill a record from what the run actually produced.
+
+    ``usage_by_agent`` is the per-agent, deduplicated event breakdown from
+    :func:`event_totals`. When present it prices each half of the pipeline with
+    the model that actually ran. Aggregate-only counts can be priced against a
+    single model, but stay unknown when the two frameworks used different models.
+    """
     summary = dict(summary or {})
     capture = capture_report(sections)
     approved, severity = critic_of(sections)
@@ -733,7 +970,21 @@ def merge_run_facts(
         tokens_in = int(summary["adk_tokens"])
         notes.append("token counts come from the ADK event stream only")
 
-    cost, basis = estimate_cost(config, model, tokens_in, tokens_out)
+    if usage_by_agent:
+        cost, basis, unpriced = estimate_usage_cost(
+            config, usage_by_agent, provenance=provenance, fallback_model=model
+        )
+    elif (
+        totals is not None and provenance is not None
+        and provenance.adk_model and provenance.crew_model
+        and provenance.adk_model != provenance.crew_model
+    ):
+        cost = None
+        basis = "unattributed_usage: mixed-model token totals have no per-agent breakdown"
+        unpriced = []
+    else:
+        cost, basis = estimate_cost(config, model, tokens_in, tokens_out)
+        unpriced = []
 
     stage_errors = list(summary.get("stage_errors") or [])
     failed = bool(summary.get("failed"))
@@ -783,7 +1034,10 @@ def merge_run_facts(
             "model_calls": totals.get("model_calls") if totals else None,
             "est_cost_usd": cost,
             "cost_basis": basis if cost is not None else (basis or "unknown_model"),
-            "pricing": pricing_record(config, model, cost, basis).model_dump(mode="json"),
+            "pricing": pricing_record(
+                config, model, cost, basis,
+                unpriced_models=unpriced if usage_by_agent else None,
+            ).model_dump(mode="json"),
             "tool_calls": (
                 summary.get("tool_calls")
                 if summary.get("tool_calls") is not None
@@ -917,11 +1171,12 @@ class InProcessExecutor:
 
         elapsed = time.perf_counter() - started
         sections = blackboard_sections(run_id or entry.run_key)
-        totals = event_totals(run_id or entry.run_key)
+        totals, usage_by_agent = collect_event_facts(run_id or entry.run_key)
         record = merge_run_facts(
             record, run_id=run_id, summary=summary, sections=sections, totals=totals,
             config=self.spec.config, model=self.spec.model, latency_s=elapsed,
-            errors=errors, notes=notes,
+            errors=errors, notes=notes, provenance=self.spec.provenance,
+            usage_by_agent=usage_by_agent,
         )
         record["log_path"] = _relative(log_path)
         return RunRecord.model_validate(record).model_dump(mode="json")
@@ -1032,11 +1287,12 @@ class SubprocessExecutor:
                 )
 
         sections = blackboard_sections(run_id)
-        totals = event_totals(run_id)
+        totals, usage_by_agent = collect_event_facts(run_id)
         record = merge_run_facts(
             record, run_id=run_id, summary=summary, sections=sections, totals=totals,
             config=self.spec.config, model=self.spec.model, latency_s=elapsed,
-            errors=errors, notes=notes,
+            errors=errors, notes=notes, provenance=self.spec.provenance,
+            usage_by_agent=usage_by_agent,
         )
         record["log_path"] = _relative(log_path)
         return RunRecord.model_validate(record).model_dump(mode="json")
@@ -1119,10 +1375,46 @@ def should_retry(record: Mapping[str, Any]) -> bool:
     pipeline-level failure are results. Re-running them to get a nicer sample
     would corrupt the comparison, so they are never retried.
     """
-    state = str(record.get("terminal_state") or "")
-    if state not in schema.TRANSIENT_INFRA_STATES:
+    if str(record.get("terminal_state") or "") not in schema.TRANSIENT_INFRA_STATES:
         return False
-    if record.get("critic_status") or record.get("critic_approved") is not None:
+    classification = outcomes.classify(record)
+    if not classification.is_infrastructure:
+        return False
+    messages: list[str] = []
+    for name in ("errors", "stage_errors", "notes", "problems", "failure_reason"):
+        value = record.get(name)
+        if isinstance(value, str):
+            messages.append(value)
+        elif isinstance(value, Sequence):
+            messages.extend(str(item) for item in value if item)
+    text = "\n".join(messages)
+    if re.search(
+        r"\b(?:400|401|403|404|422)\b|\b429\b|AuthenticationError|"
+        r"PermissionDenied|invalid (?:api )?key|unauthori[sz]ed|forbidden|"
+        r"invalid request|bad request|unsupported parameter|unknown model|"
+        r"quota|rate.?limit|tokens per day|billing",
+        text,
+        re.IGNORECASE,
+    ):
+        return False
+    if classification.failure_code == "infrastructure_timeout":
+        retryable_cause = True
+    elif classification.failure_code == "provider_unavailable":
+        retryable_cause = bool(_RETRYABLE_PROVIDER_FAILURE.search(text))
+    else:
+        # Local rate-limit refusals, exhausted provider quota, process setup and
+        # broad/ambiguous API errors do not justify an immediate new attempt.
+        retryable_cause = False
+    if not retryable_cause:
+        return False
+
+    status = str(record.get("critic_status") or "").strip().lower()
+    if (str(record.get("final_answer") or "").strip()
+            or record.get("critic_evaluable") is True
+            or record.get("critic_approved") is True
+            or status in {"approved", "rejected"}):
+        return False
+    if record.get("critic_approved") is False and status not in {"missing", "failed"}:
         return False
     return True
 
@@ -1131,14 +1423,17 @@ class BudgetTracker:
     """Stops the batch instead of letting it spend without limit.
 
     ``max_runs`` counts **attempts**, not plan entries, so a retry consumes
-    budget: a batch cannot exceed its hard attempt cap by retrying.
+    budget: a batch cannot exceed its hard attempt cap by retrying. Attempts and
+    cost already present in ``raw.jsonl`` are restored before a resumed
+    invocation, so restarting the runner cannot reset either cap.
 
     The USD caps are applied to whatever cost the records actually carry. When the
     model is unpriced every cost is ``None``, so the running total stays zero and
     a dollar cap can never fire; ``usd_enforceable`` reports that truth in
     ``run_meta.json`` rather than letting a zero total imply safety. Enforcement
     itself is never switched off, because a run that *does* report a cost must
-    still count against the cap.
+    still count against the cap. Attempts with an unknown cost are counted
+    separately and are never treated as free.
     """
 
     def __init__(self, budget: schema.Budget, *, usd_enforceable: bool = True) -> None:
@@ -1146,14 +1441,47 @@ class BudgetTracker:
         self.usd_enforceable = usd_enforceable
         self.spent_usd = 0.0
         self.runs = 0
+        #: Attempts whose cost is unknown. They are not zero and must never be
+        #: mistaken for free runs when a resumed batch is audited.
+        self.runs_with_unknown_cost = 0
+        self.prior_wall_s = 0.0
+        self._run_cost_stop: str | None = None
         self.started = time.monotonic()
+
+    def restore(
+        self, records: Iterable[Mapping[str, Any]], *, elapsed_wall_s: float = 0.0
+    ) -> int:
+        """Count attempts this output directory already recorded.
+
+        A resumed batch is the same batch: its attempt cap and known spend are
+        cumulative, so a restart cannot silently reset either. Every line in
+        ``raw.jsonl`` is one real attempt - failed attempts and retries included
+        - and a null cost is counted as an unknown cost, not as zero spend.
+        """
+        restored = 0
+        recorded_wall_s = 0.0
+        for record in records:
+            self.record(record)
+            restored += 1
+            latency = record.get("latency_s")
+            if isinstance(latency, (int, float)) and latency > 0:
+                recorded_wall_s += latency
+        # Metadata includes orchestration overhead; latencies are a lower bound
+        # for older or interrupted batches. Time spent offline is not execution.
+        self.prior_wall_s = max(float(elapsed_wall_s), recorded_wall_s, 0.0)
+        return restored
+
+    def elapsed_wall_s(self) -> float:
+        return self.prior_wall_s + time.monotonic() - self.started
 
     def exhausted(self) -> str | None:
         if self.runs >= self.budget.max_runs:
             return f"max_runs={self.budget.max_runs} reached"
         if self.spent_usd >= self.budget.max_total_usd:
             return f"max_total_usd={self.budget.max_total_usd} reached"
-        if time.monotonic() - self.started >= self.budget.max_total_wall_s:
+        if self._run_cost_stop:
+            return self._run_cost_stop
+        if self.elapsed_wall_s() >= self.budget.max_total_wall_s:
             return f"max_total_wall_s={self.budget.max_total_wall_s:.0f} reached"
         return None
 
@@ -1162,29 +1490,41 @@ class BudgetTracker:
         cost = record.get("est_cost_usd")
         if isinstance(cost, (int, float)):
             self.spent_usd += float(cost)
+        else:
+            self.runs_with_unknown_cost += 1
         if isinstance(cost, (int, float)) and cost > self.budget.max_run_usd:
-            return (
+            self._run_cost_stop = (
                 f"run cost estimate {cost:.4f} USD exceeded max_run_usd="
                 f"{self.budget.max_run_usd}"
             )
+            return self._run_cost_stop
         return None
 
     def as_dict(self) -> dict[str, Any]:
+        enforceable = self.usd_enforceable and not self.runs_with_unknown_cost
+        note = (
+            "the configured model(s) are priced, so the USD caps act on estimates"
+            if enforceable
+            else "with unpriced models or attempts with unknown cost, the USD caps "
+            "cannot bound real spend. Known recorded costs still count; attempt "
+            "and execution-time caps remain effective."
+        )
+        if self.runs_with_unknown_cost:
+            note += (
+                f" {self.runs_with_unknown_cost} attempt(s) have no numeric cost and "
+                "are not counted as zero."
+            )
         return {
             "runs_started": self.runs,
             "spent_usd_estimate": round(self.spent_usd, 6),
+            "runs_with_unknown_cost": self.runs_with_unknown_cost,
             "max_runs": self.budget.max_runs,
             "max_total_usd": self.budget.max_total_usd,
             "max_run_usd": self.budget.max_run_usd,
             "max_total_wall_s": self.budget.max_total_wall_s,
-            "usd_cap_enforceable": self.usd_enforceable,
-            "usd_cap_note": (
-                "the configured model(s) are priced, so the USD caps act on estimates"
-                if self.usd_enforceable
-                else "the configured model(s) are unpriced: every cost is null, so the "
-                "USD caps collect nothing and cannot bound real spend - max_runs is the "
-                "only effective cap. A recorded cost, if any, still counts."
-            ),
+            "elapsed_wall_s": round(self.elapsed_wall_s(), 6),
+            "usd_cap_enforceable": enforceable,
+            "usd_cap_note": note,
         }
 
 
@@ -1215,6 +1555,11 @@ class Runner:
         accounts: Sequence[Any] | None = None,
         logger: Callable[[str], None] | None = None,
     ) -> None:
+        assert_not_quarantined(out_dir)
+        assert_not_quarantined(out_dir / "raw.jsonl")
+        assert_not_quarantined(out_dir / "logs")
+        assert_not_quarantined(out_dir / "plan.json")
+        assert_not_quarantined(out_dir / "run_meta.json")
         self.dataset = dataset
         self.config = config
         self.out_dir = out_dir
@@ -1277,6 +1622,7 @@ class Runner:
             planned=len(self.entries), hard_max_attempts=budget.max_runs
         )
         self._seen_attempt_ids: set[str] = set()
+        self._budget_restored = False
 
     # --- selection ------------------------------------------------------
     def selected(self) -> list[PlanEntry]:
@@ -1286,9 +1632,38 @@ class Runner:
         return entries
 
     def pending(self, entries: Sequence[PlanEntry]) -> tuple[list[PlanEntry], set[str]]:
+        assert_not_quarantined(self.raw_path)
         existing, problems = read_records(self.raw_path)
         for problem in problems:
             self.logger(f"warning: {problem}")
+        # A resumed batch is the same batch. Restore the attempts and the
+        # known/unknown spend already on disk before deciding whether another
+        # invocation is allowed, so a restart cannot silently reset the caps.
+        # Restored once: a second selection pass must not count the ledger twice.
+        if existing and not self._budget_restored:
+            elapsed = 0.0
+            meta_path = self.out_dir / "run_meta.json"
+            assert_not_quarantined(meta_path)
+            try:
+                prior_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                prior_budget = prior_meta.get("budget", {})
+                elapsed = float(prior_budget.get("elapsed_wall_s") or 0)
+                covered = int(prior_budget.get("runs_started") or 0)
+                if elapsed > 0 and 0 <= covered < len(existing):
+                    # A crash can leave appended attempts newer than metadata.
+                    elapsed += sum(
+                        max(float(record.get("latency_s") or 0), 0)
+                        for record in existing[covered:]
+                    )
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass  # Older metadata may have no elapsed time; use record latencies.
+            restored = self.budget.restore(existing, elapsed_wall_s=elapsed)
+            self._budget_restored = True
+            self.logger(
+                f"budget: restored {restored} prior attempt(s), "
+                f"{self.budget.spent_usd:.6f} USD known cost, "
+                f"{self.budget.runs_with_unknown_cost} with unknown cost"
+            )
         skipped = done_keys(existing, self.retry_failed) if self.resume else set()
         # Attempt numbering continues from what is already on disk, so a resumed
         # retry never reuses attempt 1's id or overwrites its record.
@@ -1302,10 +1677,19 @@ class Runner:
 
     # --- execution ------------------------------------------------------
     def run(self) -> dict[str, Any]:
-        # A bad --out is a precondition, not a crash (B4): one readable message,
-        # no partial run_meta.json, EXIT_INVALID from main().
+        assert_not_quarantined(self.out_dir)
+        assert_not_quarantined(self.raw_path)
+        assert_not_quarantined(self.out_dir / "logs")
         prepare_out_dir(self.out_dir)
+        with OutputDirectoryLock(self.out_dir):
+            assert_not_quarantined(self.out_dir)
+            assert_not_quarantined(self.raw_path)
+            assert_not_quarantined(self.out_dir / "logs")
+            assert_not_quarantined(self.out_dir / "plan.json")
+            assert_not_quarantined(self.out_dir / "run_meta.json")
+            return self._run_locked()
 
+    def _run_locked(self) -> dict[str, Any]:
         entries = self.selected()
         pending, skipped = self.pending(entries)
         self.accounting.planned = len(entries)
@@ -1359,7 +1743,9 @@ class Runner:
             }
         )
         self._write_meta(meta)
-        (self.out_dir / "plan.json").write_text(
+        plan_path = self.out_dir / "plan.json"
+        assert_not_quarantined(plan_path)
+        plan_path.write_text(
             json.dumps(
                 {
                     "plan_id": self.config.plan.id,
@@ -1400,6 +1786,14 @@ class Runner:
             while attempt_id in self._seen_attempt_ids:  # pragma: no cover - uuid4 collision
                 attempt_id = new_attempt_id(entry.run_key, attempt)
             self._seen_attempt_ids.add(attempt_id)
+
+            log_path = self.out_dir / "logs" / f"{entry.run_key}.log"
+            assert_not_quarantined(log_path)
+            if self.backend == "subprocess":
+                suffix = f".a{attempt}" if attempt > 1 else ""
+                assert_not_quarantined(
+                    self.out_dir / "logs" / f"{entry.run_key}{suffix}.summary.json"
+                )
 
             # B2: a progress line before the attempt, flushed, so a redirected
             # log shows work while it is happening rather than only at exit.
@@ -1454,11 +1848,17 @@ class Runner:
         stub executor a one-liner without losing attempt identity in real runs.
         """
         try:
+            signature = inspect.signature(self.executor)
+        except (TypeError, ValueError):
+            # An opaque callable gets one invocation using the current contract;
+            # never probe it by calling twice after a runtime TypeError.
             return self.executor(entry, item, attempt=attempt, attempt_id=attempt_id)
-        except TypeError as exc:
-            if "attempt" not in str(exc):
-                raise
+        try:
+            signature.bind(entry, item, attempt=attempt, attempt_id=attempt_id)
+        except TypeError:
+            signature.bind(entry, item)
             return self.executor(entry, item)
+        return self.executor(entry, item, attempt=attempt, attempt_id=attempt_id)
 
     def _stamp(self, record: dict[str, Any], *, attempt: int, attempt_id: str) -> dict[str, Any]:
         """Guarantee the attempt identity and provenance on a returned record.
@@ -1608,7 +2008,9 @@ class Runner:
         }
 
     def _write_meta(self, meta: Mapping[str, Any]) -> None:
-        (self.out_dir / "run_meta.json").write_text(
+        meta_path = self.out_dir / "run_meta.json"
+        assert_not_quarantined(meta_path)
+        meta_path.write_text(
             json.dumps(meta, indent=2) + "\n", encoding="utf-8"
         )
 
@@ -1641,6 +2043,7 @@ class Runner:
 
     def _append(self, record: Mapping[str, Any]) -> None:
         """Append one record and make it durable before the next attempt starts."""
+        assert_not_quarantined(self.raw_path)
         with self.raw_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
             handle.flush()
@@ -2044,6 +2447,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- live batch -----------------------------------------------------
     out_dir = Path(args.out) if args.out else DEFAULT_RESULTS_ROOT / timestamp_slug()
+    try:
+        assert_not_quarantined(out_dir)
+    except QuarantinedPathError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_INVALID
     status = preflight()
     if status.get("crew_a2a_server") != "up":
         print(
@@ -2064,7 +2472,7 @@ def main(argv: list[str] | None = None) -> int:
     # partial run_meta.json - and maps to EXIT_INVALID.
     try:
         prepare_out_dir(out_dir)
-    except OutputDirectoryError as exc:
+    except (OutputDirectoryError, QuarantinedPathError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_INVALID
 
@@ -2116,27 +2524,32 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
 
-    runner = Runner(
-        dataset, config, out_dir,
-        entries=entries,
-        backend=backend,
-        timeout_s=timeout_s,
-        resume=args.resume,
-        retry_failed=args.retry_failed,
-        limit=None,
-        model=model,
-        max_runs=args.max_runs,
-        max_usd=args.max_usd,
-        config_path=config_path,
-        dataset_path=dataset_path,
-        provenance=provenance,
-        acknowledge_unpriced=args.acknowledge_unpriced,
-        max_attempts_per_run=args.max_attempts_per_run,
-        accounts=authorised,
-    )
-
     try:
+        runner = Runner(
+            dataset, config, out_dir,
+            entries=entries,
+            backend=backend,
+            timeout_s=timeout_s,
+            resume=args.resume,
+            retry_failed=args.retry_failed,
+            limit=None,
+            model=model,
+            max_runs=args.max_runs,
+            max_usd=args.max_usd,
+            config_path=config_path,
+            dataset_path=dataset_path,
+            provenance=provenance,
+            acknowledge_unpriced=args.acknowledge_unpriced,
+            max_attempts_per_run=args.max_attempts_per_run,
+            accounts=authorised,
+        )
         runner.run()
+    except OutputDirectoryBusyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_PRECONDITION
+    except QuarantinedPathError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_INVALID
     except OutputDirectoryError as exc:
         # B4: a clear message and EXIT_INVALID, no partial run_meta.json.
         print(f"error: {exc}", file=sys.stderr)

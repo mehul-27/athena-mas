@@ -1,18 +1,20 @@
 """The writer role: turn task + evidence into a Draft and a FinalReport.
 
 The model writes the prose; ``sanitize_report`` decides what counts as a source
-and which tools ran. Generation is retried once with the validation error, and
-then falls back to a minimal valid report so the pipeline always completes.
+and which tools ran. Invalid structured output gets one correction attempt and
+a minimal report fallback. Provider and local-limit failures propagate.
 """
 
 from __future__ import annotations
 
 from typing import Callable
 
+from pydantic import ValidationError
+
 from athena.agents import bb_io
 from athena.agents.crew_roles import crew_call, unpack_result
-from athena.agents.report_sanitize import sanitize_report
-from athena.agents.requirements import finding_requirement
+from athena.agents.report_sanitize import redact_final_report, sanitize_report
+from athena.agents.requirements import finding_requirement, required_findings
 from athena.agents.routing import request_profile
 from athena.agents.sufficiency import (
     assess,
@@ -60,14 +62,88 @@ def _generate_report(prompt: str) -> tuple[object, dict]:
     return crew_call("writer", "Write a cited research report.", prompt, FinalReport)
 
 
-def _fallback_report(run_id: str, exc: Exception) -> FinalReport:
+class _InvalidReportOutput(Exception):
+    def __init__(self, summary: str, stats: dict | None = None) -> None:
+        super().__init__(summary)
+        self.stats = stats or {}
+
+
+def _validation_error(exc: BaseException) -> ValidationError | None:
+    """Find only a validation failure for this exact report schema."""
+    if isinstance(exc, ValidationError) and exc.title == "FinalReport":
+        return exc
+    # CrewAI's converter wraps failed output validation in this concrete type.
+    # Do not walk arbitrary exception chains: provider failures may be chained
+    # from an earlier validation problem and must still propagate.
+    try:
+        from crewai.utilities.converter import ConverterError
+    except ImportError:  # pragma: no cover - CrewAI is optional for offline users
+        return None
+    cause = exc.__cause__ or exc.__context__
+    if isinstance(exc, ConverterError) and isinstance(cause, ValidationError):
+        if cause.title == "FinalReport":
+            return cause
+    return None
+
+
+def _validation_summary(exc: ValidationError) -> str:
+    """Keep correction prompts and retry events free of model-returned values."""
+    from athena.guardrails.secrets import redact_text
+
+    details = []
+    for error in exc.errors(include_input=False):
+        location = ".".join(str(part) for part in error.get("loc", ())) or "report"
+        details.append(f"{location}: {error.get('msg', 'invalid value')}")
+    summary = "FinalReport validation failed: " + "; ".join(details[:8])
+    return redact_text(summary) or "FinalReport validation failed"
+
+
+def _parse_generated_report(value: object) -> tuple[FinalReport, dict]:
+    report, stats = unpack_result(value)
+    if isinstance(report, FinalReport):
+        return report, stats
+    try:
+        parsed = (
+            FinalReport.model_validate_json(report)
+            if isinstance(report, str)
+            else FinalReport.model_validate(report)
+        )
+    except ValidationError as exc:
+        if exc.title != "FinalReport":
+            raise
+        raise _InvalidReportOutput(_validation_summary(exc), stats) from exc
+    return parsed, stats
+
+
+def _generate_validated(generate: Generate, prompt: str) -> tuple[FinalReport, dict]:
+    try:
+        value = generate(prompt)
+    except Exception as exc:
+        validation = _validation_error(exc)
+        if validation is None:
+            raise
+        raise _InvalidReportOutput(_validation_summary(validation)) from exc
+    return _parse_generated_report(value)
+
+
+def _merge_stats(*values: dict) -> dict:
+    merged: dict = {}
+    for key in ("tokens_in", "tokens_out", "reasoning_tokens", "calls", "model_ms"):
+        present = [value[key] for value in values if isinstance(value.get(key), (int, float))]
+        if present:
+            merged[key] = sum(present)
+    if any(value.get("estimated") for value in values):
+        merged["estimated"] = True
+    return merged
+
+
+def _fallback_report(run_id: str) -> FinalReport:
     """A legal FinalReport so the pipeline finishes instead of crashing."""
-    short = " ".join(str(exc).split())[:160]
     return FinalReport(
         answer=(
-            f"The report could not be generated: writer failed with "
-            f"{type(exc).__name__}: {short}. The evidence remains on the "
-            "blackboard for inspection."
+            "The report could not be generated because the writer's structured "
+            "output remained invalid after one correction attempt. The evidence "
+            "remains on the blackboard for inspection."
         ),
         key_points=[],
         citations=[],
@@ -138,6 +214,14 @@ def writer_prompt(
     status_block = (
         f"TOOL AND EVIDENCE STATUS:\n{tool_status}\n\n" if tool_status else ""
     )
+    requested_findings = required_findings(bb_io.task_text(blackboard))
+    output_shape = (
+        f"exactly {requested_findings} key points/findings and at least "
+        f"{requested_findings} citations, with a distinct primary-source URL "
+        "for each finding"
+        if requested_findings
+        else "3-5 key points and 1-3 citations"
+    )
     return (
         f"{instruction}\n\nTASK:\n{bb_io.task_text(blackboard)}\n\n"
         f"PLAN:\n{bb_io.plan_text(blackboard)}\n\n"
@@ -155,8 +239,8 @@ def writer_prompt(
         f"{finding_requirement(bb_io.task_text(blackboard))}\n"
         f"{_preferences_block()}"
         f"Write an answer of at most {MAX_ANSWER_WORDS} words that ends with a "
-        "full stop, 3-5 key points, and 1-3 citations whose source_ref is "
-        "copied verbatim from the evidence lines above. confidence is 0 to 1. "
+        f"full stop, {output_shape}; copy each citation's source_ref verbatim "
+        "from the evidence lines above. confidence is 0 to 1. "
         "Do not claim a tool was used unless the tool status shows a real "
         "invocation; describe an unmet requirement instead of filling it in. "
         "If usable evidence exists, answer from it and clearly qualify any "
@@ -203,6 +287,7 @@ def write_report(
             guardrail_flags=[],
             run_id=run_id,
         )
+        report = redact_final_report(report)
         blackboard.write(
             "draft",
             Draft(text=report.answer, based_on_evidence_ids=[]),
@@ -228,29 +313,24 @@ def write_report(
 
     fallback = False
     stats: dict = {}
-    failure: Exception | None = None
     problems: list[str] = []
     try:
-        report, stats = unpack_result(generate(prompt))
-    except Exception as exc:  # noqa: BLE001 - one bad generation must not stop the run
+        report, stats = _generate_validated(generate, prompt)
+    except _InvalidReportOutput as exc:
         try:
             # The second call below is a real retry of the same work, so it is
             # reported as one (and only one) ``retry`` event before it runs.
-            retry_invalid_output(exc, agent="writer")
-            report, stats = unpack_result(
-                generate(
-                    f"{prompt}\n\nYour previous output was rejected: {exc}\n"
-                    "Return only valid JSON."
-                )
+            retry_invalid_output(str(exc), agent="writer")
+            report, retry_stats = _generate_validated(
+                generate,
+                f"{prompt}\n\nYour previous output was rejected: {exc}\n"
+                "Return only valid JSON.",
             )
-        except Exception as exc2:  # noqa: BLE001 - documented fallback
-            report = _fallback_report(run_id, exc2)
+            stats = _merge_stats(exc.stats, retry_stats)
+        except _InvalidReportOutput as exc2:
+            stats = _merge_stats(exc.stats, exc2.stats)
+            report = _fallback_report(run_id)
             fallback = True
-            failure = exc2
-
-    if not isinstance(report, FinalReport):
-        report = FinalReport.model_validate(report)
-
     # A cut-off answer is a real defect: retry once, then mark it.
     truncated = False
     if looks_truncated(report.answer):
@@ -258,12 +338,12 @@ def write_report(
         # emitted here, in the branch that decided to retry, and only here.
         retry_truncated_report(agent="writer")
         try:
-            retry = generate(prompt + SHORTER)
-            if not isinstance(retry, FinalReport):
-                retry = FinalReport.model_validate(retry)
+            retry, retry_stats = _generate_validated(generate, prompt + SHORTER)
             report = retry
-        except Exception:  # noqa: BLE001 - keep the first answer rather than fail
-            pass
+            stats = _merge_stats(stats, retry_stats)
+        except _InvalidReportOutput as exc:
+            # The first report is still available and will be marked truncated.
+            stats = _merge_stats(stats, exc.stats)
         if looks_truncated(report.answer):
             report = _truncate(report)
             truncated = True
@@ -300,10 +380,7 @@ def write_report(
         ack["claim_flags"] = problems
     if fallback:
         ack["fallback"] = True
-        ack["note"] = (
-            "writer failed with "
-            f"{type(failure).__name__}: {' '.join(str(failure).split())[:160]}"
-        )
+        ack["note"] = "writer output remained invalid after one correction attempt"
     if truncated:
         ack["truncated"] = True
     return ack

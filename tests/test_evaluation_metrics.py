@@ -19,11 +19,7 @@ def _stats(records, dataset=None):
     """Summarise a group the way the dashboard does."""
     dataset = dataset or schema.EvalDataset(items=[])
     scores, _ = scoring.score_records(records, dataset)
-    pairs = []
-    by_key = {score.run_key: score for score in scores}
-    for record in records:
-        pairs.append((record, by_key.get(record["run_key"])))
-    return analyze.summarise_group(pairs)
+    return analyze.summarise_group(analyze.pair_records_with_scores(records, scores))
 
 
 REPO = Path(__file__).resolve().parents[1]

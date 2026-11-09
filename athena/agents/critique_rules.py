@@ -1,16 +1,9 @@
 """Deterministic post-processing for the critic's verdict.
 
-A model can approve a report that plainly admits it could not answer the
-question. These rules make that impossible to ship: if the report has low
-confidence, or says in so many words that the evidence does not cover the core
-question, the critique is rejected with at least medium severity.
-
-The phrase rule is deliberately conservative - it needs a hedge phrase *and* a
-word pointing at the core question in the same sentence - so ordinary caveats
-about details ("the appendix does not state the publication date") do not trip
-it. It cannot understand context, so a sentence that happens to combine both is
-a false positive; the revision loop only reacts to severity "high", so the cost
-of a false positive is a medium-severity note, not another revision.
+Low confidence and direct admissions that the core question is unanswered
+block approval. Generic evidence-gap wording is only a blocker when coverage
+assessment says the requested answer is incomplete, with the existing
+qualified-partial exception preserved.
 """
 
 from __future__ import annotations
@@ -27,14 +20,17 @@ _QUALIFICATION = re.compile(
 
 UNANSWERED_PHRASES = (
     "does not state",
+    "does not answer",
     "does not define",
     "does not contain",
     "not found in the evidence",
     "cannot be determined",
     "no explicit definition",
     "unable to determine",
+    "cannot answer",
 )
-CORE_HINTS = ("question", "answer", "definition", "evidence", "handbook")
+CORE_HINTS = ("question", "answer")
+CONTEXT_HINTS = ("definition", "evidence", "handbook")
 LOW_CONFIDENCE = 0.5
 ISSUE = "report does not answer the core question"
 
@@ -43,12 +39,20 @@ def _sentences(text: str) -> list[str]:
     return [part for part in re.split(r"(?<=[.!?])\s+", text or "") if part.strip()]
 
 
-def says_unanswered(text: str) -> bool:
-    """A hedge phrase about the core question, in the same sentence."""
+def says_unanswered(
+    text: str,
+    answer_as_asked: bool | None = None,
+    qualified_partial: bool = False,
+) -> bool:
+    """A direct admission or an evidence gap when the task lacks coverage."""
     for sentence in _sentences(text):
         lowered = sentence.lower()
-        if any(phrase in lowered for phrase in UNANSWERED_PHRASES) and any(
-            hint in lowered for hint in CORE_HINTS
+        if not any(phrase in lowered for phrase in UNANSWERED_PHRASES):
+            continue
+        if any(hint in lowered for hint in CORE_HINTS):
+            return True
+        if answer_as_asked is not True and not qualified_partial and any(
+            hint in lowered for hint in CONTEXT_HINTS
         ):
             return True
     return False
@@ -86,8 +90,14 @@ def calibrate(
         and not (qualified and qualified_possible)
     ):
         reason = f"confidence {report.confidence:.2f} is below {LOW_CONFIDENCE}"
-    elif says_unanswered(report.answer) or any(
-        says_unanswered(point) for point in report.key_points
+    elif any(
+        says_unanswered(
+            part,
+            getattr(assessment, "answer_as_asked", None),
+            qualified_partial=qualified
+            and bool(getattr(assessment, "qualified_possible", False)),
+        )
+        for part in (report.answer, *report.key_points)
     ):
         reason = "the report says the evidence does not answer the question"
 

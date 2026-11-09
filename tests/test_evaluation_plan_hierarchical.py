@@ -561,6 +561,7 @@ class _FlakyExecutor:
                 latency_s=0.5,
                 est_cost_usd=None,
                 cost_basis="not_run" if self.state == "infra_error" else "unknown_model",
+                errors=["HTTP 503 Service Unavailable"],
             )
         else:
             record = make_record(entry, item)
@@ -668,8 +669,15 @@ def test_a_pipeline_failure_is_not_retried(tmp_path):
 
 
 def test_should_retry_is_the_only_place_that_decides():
-    assert runner.should_retry({"terminal_state": "infra_error"}) is True
-    assert runner.should_retry({"terminal_state": "error"}) is True
+    assert runner.should_retry({"terminal_state": "infra_error"}) is False
+    assert runner.should_retry({"terminal_state": "error"}) is False
+    assert runner.should_retry({
+        "terminal_state": "error", "errors": ["ValueError: synthetic bug"]
+    }) is False
+    assert runner.should_retry({
+        "terminal_state": "infra_error",
+        "errors": ["HTTP 503 Service Unavailable"],
+    }) is True
     assert runner.should_retry({"terminal_state": "timeout"}) is True
     assert runner.should_retry({"terminal_state": "completed"}) is False
     assert runner.should_retry({"terminal_state": "failed"}) is False

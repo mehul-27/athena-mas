@@ -33,6 +33,8 @@ from athena.agents.supervisor import build_supervisor
 from athena.config.caps import cap_message, llm_call_cap
 from athena.config.llm import configure_process
 from athena.blackboard import Blackboard, Task
+from athena.guardrails.input import refusal_message, screen_input
+from athena.observability.guardrail_events import record_flags
 from athena.patterns import VALID_PATTERNS, UnknownPatternError
 from athena.run_report import ack_warning, parts_of, print_report, text_of, tool_lines
 from athena.summary import (
@@ -90,15 +92,38 @@ async def _execute(
     run_id: str | None = None,
     tools: list[str] | tuple[str, ...] | None = None,
 ) -> RunSummary:
+    verdict = screen_input(question, emit=False)
+    # Only the screened remainder becomes run state or model input. The original
+    # text stays out of this run's blackboard and guardrail audit details.
+    safe_question = verdict.model_text if not verdict.blocking else ""
     blackboard = Blackboard.create(
         Task(
-            question=question,
+            question=safe_question,
             pattern=pattern,
             run_id=run_id or "",
             tools=list(tools) if tools is not None else None,
         )
     )
+    record_flags(
+        verdict.flags,
+        screen="athena.run",
+        pipeline_stage="input",
+        run_id=blackboard.run_id,
+    )
     recorder = Recorder.for_run(blackboard.run_id)
+    if verdict.blocking:
+        reason = "input rejected by guardrails"
+        summary = RunSummary(pattern=pattern, run_id=blackboard.run_id)
+        summary.failed = True
+        summary.stage_errors.append(reason)
+        summary.outcome = "failed"
+        mark_degraded(summary, reason)
+        set_terminal(summary, "failure", reason)
+        _emit_summary(recorder, summary, pattern)
+        if verbose:
+            print(refusal_message(verdict), file=sys.stderr)
+        return summary
+
     # The plugin in `athena/observability` infers a tool retry from event order,
     # which it cannot do correctly: a *different* call to the same tool that
     # succeeds later is not a retry, and neither is a guard-blocked call. The
@@ -121,7 +146,7 @@ async def _execute(
 
         if verbose:
             print(
-                f"\nrun_id: {blackboard.run_id}\nquestion: {question}\n"
+                f"\nrun_id: {blackboard.run_id}\nquestion: {safe_question}\n"
                 f"pattern: {pattern}\nstages:"
             )
 
@@ -134,7 +159,9 @@ async def _execute(
             async for event in runner.run_async(
                 user_id=USER_ID,
                 session_id=session.id,
-                new_message=types.Content(role="user", parts=[types.Part(text=question)]),
+                new_message=types.Content(
+                    role="user", parts=[types.Part(text=safe_question)]
+                ),
                 run_config=run_config,
             ):
                 _note_event(summary, event, verbose)
@@ -450,7 +477,8 @@ async def run_one(
     run_id: str = "",
     tools: list[str] | tuple[str, ...] | None = None,
 ) -> RunSummary:
-    configure_process()  # export the endpoint and arm the guard
+    if not screen_input(question, emit=False).blocking:
+        configure_process()  # export the endpoint and arm the guard
     try:
         summary = await _execute(
             question, pattern, verbose=True, run_id=run_id or None, tools=tools
@@ -528,7 +556,9 @@ def main(argv: list[str] | None = None) -> int:
         except registry.UnknownToolError as exc:
             raise SystemExit(str(exc)) from exc
 
-    if not server_is_up():
+    question = question_from_args(args)
+    input_blocked = screen_input(question, emit=False).blocking
+    if not input_blocked and not server_is_up():
         print(
             "The CrewAI A2A server is not answering on 127.0.0.1:9001.\n"
             "Start it with:  python scripts/dev_up.py",
@@ -536,10 +566,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    question = question_from_args(args)
     summary: RunSummary | None = None
     try:
-        if args.compare:
+        if args.compare and input_blocked:
+            # A blocked comparison has no pattern results to compare. Create one
+            # audited terminal run and preserve the usual non-zero CLI status.
+            summary = asyncio.run(
+                run_one(
+                    question,
+                    args.pattern,
+                    run_id=args.run_id,
+                    tools=selected_tools,
+                )
+            )
+        elif args.compare:
             asyncio.run(run_compare(question, selected_tools))
         else:
             summary = asyncio.run(

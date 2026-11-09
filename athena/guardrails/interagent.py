@@ -173,7 +173,7 @@ def emit_rejection(
     framework: str | None = "crewai",
     run_id_source: str | None = None,
 ) -> int:
-    """Write the ``guardrail`` rows for one rejected verdict. Returns rows attempted.
+    """Write rejection and warning rows for one verdict. Returns rows attempted.
 
     One row per shape error (a decision) and one per flag, all at pipeline stage
     ``interagent``. It lives here so a caller that validates with ``emit=False``

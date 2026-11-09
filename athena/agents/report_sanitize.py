@@ -29,6 +29,7 @@ from athena.agents.routing import relevance
 from athena.agents.sufficiency import named_terms
 from athena.blackboard import Blackboard, Citation, FinalReport, GuardrailFlag
 from athena.guardrails.output import screen_output
+from athena.guardrails.secrets import contains_secret, redact_tree
 
 TOOL_FOR_SOURCE = {
     "rag": "rag_search",
@@ -42,6 +43,25 @@ STAGE = "final_output"
 
 def _flag(rule: str, action: str, detail: str) -> GuardrailFlag:
     return GuardrailFlag(stage=STAGE, rule=rule, action=action, detail=detail[:300])
+
+
+def redact_final_report(
+    report: FinalReport, *, inspected_fields: tuple[str, ...] | None = None
+) -> FinalReport:
+    """Record safe secret-detection flags, then redact every report string."""
+    payload = report.model_dump(mode="json")
+    if inspected_fields is not None:
+        payload = {name: payload[name] for name in inspected_fields}
+    detected = screen_output(payload, pipeline_stage="report_sanitize")
+    flags = [*report.guardrail_flags, *detected]
+    seen: set[tuple[str, str]] = set()
+    unique = []
+    for flag in flags:
+        key = (flag.rule, flag.detail)
+        if key not in seen:
+            seen.add(key)
+            unique.append(flag)
+    return redact_tree(report.model_copy(update={"guardrail_flags": unique}))
 
 
 def _tool_for(item) -> str | None:
@@ -98,6 +118,7 @@ def sanitize_report(
         item for item in items
         if item.source_type in CITABLE_SOURCE_TYPES
         and not _snippet_is_unread_pdf(item)
+        and not contains_secret(item.source_ref)
     ]
     citation_citable = [
         item for item in citable
@@ -107,7 +128,11 @@ def sanitize_report(
 
     citations: list[Citation] = []
     uncited_refs: list[str] = []
+    secret_citations = 0
     for citation in report.citations:
+        if contains_secret(citation.source_ref):
+            secret_citations += 1
+            continue
         evidence = by_ref.get(citation.source_ref)
         if evidence is None or relevance(evidence.content, question or "").name_collision:
             uncited_refs.append(citation.source_ref)
@@ -280,9 +305,10 @@ def sanitize_report(
         removed_claims=[*removed_answer, *removed_points],
         unbacked_refs=uncited_refs,
         unsupporting_refs=unsupporting_refs,
+        secret_citations=secret_citations,
         truncated="[truncated]" in answer,
     )
-    return report.model_copy(
+    report = report.model_copy(
         update={
             "answer": answer,
             "key_points": key_points,
@@ -296,6 +322,9 @@ def sanitize_report(
             # only true when nothing did.
             "guardrail_flags": flags,
         }
+    )
+    return redact_final_report(
+        report, inspected_fields=("citations", "tools_used", "guardrail_flags")
     )
 
 
@@ -316,6 +345,7 @@ def guardrail_flags_for(
     removed_claims: list[str] | None = None,
     unbacked_refs: list[str] | None = None,
     unsupporting_refs: list[str] | None = None,
+    secret_citations: int = 0,
     truncated: bool = False,
 ) -> list[GuardrailFlag]:
     """The flags a sanitized report must carry.
@@ -352,6 +382,14 @@ def guardrail_flags_for(
                 "sanitized",
                 f"dropped {len(unsupporting)} citation(s) that supported no "
                 "surviving claim: " + _refs(unsupporting),
+            )
+        )
+    if secret_citations:
+        flags.append(
+            _flag(
+                "report.secret_citation",
+                "sanitized",
+                f"dropped {secret_citations} citation(s) with secret-shaped source references",
             )
         )
     if truncated:

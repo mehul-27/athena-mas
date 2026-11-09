@@ -26,7 +26,11 @@ from athena.agents.planner import (
     parse_steps,
 )
 from athena.agents.critique_rules import calibrate
-from athena.agents.report_sanitize import evidence_ids_for, sanitize_report
+from athena.agents.report_sanitize import (
+    evidence_ids_for,
+    redact_final_report,
+    sanitize_report,
+)
 from athena.agents.researcher import build_researcher
 from athena.agents.routing import ensure_step_texts
 from athena.agents.sufficiency import (
@@ -39,7 +43,11 @@ from athena.agents.tool_report import build_tool_report, format_tool_status
 from athena.agents import a2a_client
 from athena.blackboard import Analysis, Blackboard, Critique, Draft, FinalReport, Plan
 from athena.observability.recorder import get_recorder
-from athena.patterns.context import P2PContext, render_plan
+from athena.patterns.context import (
+    CITABLE_EVIDENCE_TYPES,
+    P2PContext,
+    render_plan,
+)
 from athena.tools import registry
 
 
@@ -116,16 +124,29 @@ class P2PAgent(BaseAgent):
             yield _timing(role, started)
 
         recovery_rounds = 0
+        revision_rounds = 0
         assessment = assess(
             self.question,
             context.evidence,
             enabled_tools=selection,
             tool_report=build_tool_report(self.run_id, self.store),
         )
-        if (
+        recovery_needed = bool(
             not assessment.answer_as_asked
-            and (assessment.missing_subjects or assessment.missing_aspects or not assessment.ok)
-        ):
+            and (
+                assessment.missing_subjects
+                or assessment.missing_aspects
+                or not assessment.ok
+            )
+        )
+        critique = context.critique_verdict
+        high_rejection = bool(
+            critique is not None
+            and not critique.approved
+            and critique.severity == "high"
+        )
+
+        if recovery_needed:
             recovery_rounds = 1
             recovery_task = (
                 f"{self.question}\n\n"
@@ -158,10 +179,30 @@ class P2PAgent(BaseAgent):
                     content=types.Content(parts=[types.Part(text=content[:200])]),
                 )
                 yield _timing(role, started)
+        elif high_rejection:
+            # Evidence is sufficient for the asked subject, so the rejection is
+            # a prose problem. One writer + critic revision, using the
+            # calibrated inline critique; no further research and no loop.
+            revision_rounds = 1
+            context.critique_feedback = context.critique
+            self._note_revision(
+                "existing evidence is sufficient; revise with recorded evidence"
+            )
+            for role in ("writer", "critic"):
+                started = time.perf_counter()
+                content = await self._call_role(role, context)
+                yield Event(
+                    author=role,
+                    content=types.Content(parts=[types.Part(text=content[:200])]),
+                )
+                yield _timing(role, started)
 
         yield Event(
             author=self.name,
-            custom_metadata={"recovery_rounds": recovery_rounds},
+            custom_metadata={
+                "recovery_rounds": recovery_rounds,
+                "revision_rounds": revision_rounds,
+            },
         )
 
         report = self._blackboard().read("final_report")
@@ -220,8 +261,7 @@ class P2PAgent(BaseAgent):
             audited = self._audit_report(content, context.evidence)
             context.report = audited
             return audited
-        context.critique = content
-        return self._audit_critique(content, assessment)
+        return self._audit_critique(content, assessment, context)
 
     def _audit_analysis(self, content: str) -> str:
         try:
@@ -250,6 +290,7 @@ class P2PAgent(BaseAgent):
                 guardrail_flags=[],
                 run_id=self.run_id,
             )
+            report = redact_final_report(report)
         else:
             try:
                 report = FinalReport.model_validate(json.loads(content))
@@ -277,26 +318,70 @@ class P2PAgent(BaseAgent):
         self._blackboard().write("final_report", report, author="writer")
         return report.model_dump_json()
 
-    def _audit_critique(self, content: str, assessment=None) -> str:
+    def _audit_critique(
+        self,
+        content: str,
+        assessment=None,
+        context: P2PContext | None = None,
+    ) -> str:
+        """Calibrate one critique against the inline report and evidence.
+
+        The calibrated verdict, not the remote critic's raw content, is what
+        the context carries forward. That keeps recovery feedback and the
+        revision decision on the same evidence-aware verdict.
+        """
         try:
             critique = Critique.model_validate(json.loads(content))
         except Exception:  # noqa: BLE001
-            critique = Critique(issues=["critic returned invalid JSON"], severity="medium", approved=False)
-        report = self._blackboard().read("final_report")
+            critique = Critique(
+                issues=["critic returned invalid JSON"],
+                severity="medium",
+                approved=False,
+            )
+        report = self._inline_report(context)
+        evidence = context.evidence if context is not None else []
+        evidence_texts = [
+            item.content
+            for item in evidence
+            if getattr(item, "source_type", "") in CITABLE_EVIDENCE_TYPES
+        ]
         critique = calibrate(
-            critique, report[0] if report else None, assessment
+            critique,
+            report,
+            assessment,
+            evidence_texts=evidence_texts,
         )
+        calibrated = critique.model_dump_json()
         self._blackboard().write("critique", critique, author="critic")
-        return content
+        if context is not None:
+            context.critique = calibrated
+            context.critique_verdict = critique
+        return calibrated
+
+    @staticmethod
+    def _inline_report(context: P2PContext | None) -> FinalReport | None:
+        if context is None or not context.report:
+            return None
+        try:
+            return FinalReport.model_validate(json.loads(context.report))
+        except Exception:  # noqa: BLE001 - a malformed report cannot be calibrated
+            return None
 
     def _audit_failure(self, role: str, error: str) -> str:
         blackboard = self._blackboard()
         if role == "analyst":
             blackboard.write("analysis", Analysis(key_findings=[], gaps=[error]), author="analyst")
         elif role == "writer":
+            report = redact_final_report(
+                FinalReport(
+                    answer=f"The writer failed: {error}",
+                    confidence=0.0,
+                    run_id=self.run_id,
+                )
+            )
             blackboard.write(
                 "final_report",
-                FinalReport(answer=f"The writer failed: {error}", confidence=0.0, run_id=self.run_id),
+                report,
                 author="writer",
             )
         else:
@@ -318,6 +403,19 @@ class P2PAgent(BaseAgent):
             "adk",
             payload_summary="research recovery: " + reason,
             extra={"skipped": False, "role": role, "reason": reason},
+        )
+
+    def _note_revision(self, reason: str) -> None:
+        """Record the prose-only revision with the same shape as recovery."""
+        recorder = get_recorder()
+        if recorder is None:
+            return
+        recorder.emit(
+            "recovery",
+            "supervisor",
+            "adk",
+            payload_summary="research recovery skipped: " + reason,
+            extra={"skipped": True, "role": "", "reason": reason},
         )
 
     def _note_limitations(self, limitations: list[str]) -> None:

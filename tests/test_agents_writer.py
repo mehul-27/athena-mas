@@ -43,13 +43,13 @@ def test_writer_fallback_after_two_invalid_generations(bb: Blackboard, store: SQ
 
     def invalid(prompt: str):
         calls.append(prompt)
-        raise ValueError("output did not match FinalReport")
+        return {"answer": "incomplete structured output"}
 
     ack = write_report(bb.run_id, "write the report", store=store, generate=invalid)
 
     assert ack["fallback"] is True
     assert len(calls) == 2  # first attempt + one retry carrying the error
-    assert "output did not match FinalReport" in calls[1]
+    assert "FinalReport validation failed" in calls[1]
 
     report, _ = bb.read("final_report")
     assert report.confidence == 0.0

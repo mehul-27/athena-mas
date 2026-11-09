@@ -8,8 +8,9 @@ const path = require("node:path");
 const vm = require("node:vm");
 const logic = require("./logic.js");
 
-function makeNode(id = "") {
+function makeNode(id = "", focusState = null) {
   const classes = new Set();
+  const listeners = new Map();
   const node = {
     id,
     textContent: "",
@@ -33,11 +34,29 @@ function makeNode(id = "") {
     },
     setAttribute(name, value) { this.attributes[name] = String(value); },
     getAttribute(name) { return this.attributes[name] == null ? null : this.attributes[name]; },
-    addEventListener() {},
+    inert: false,
+    addEventListener(type, handler) {
+      const handlers = listeners.get(type) || [];
+      handlers.push(handler);
+      listeners.set(type, handlers);
+    },
+    dispatch(type, event = {}) {
+      const actual = {
+        target: this,
+        defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; },
+        ...event,
+      };
+      (listeners.get(type) || []).forEach((handler) => handler(actual));
+      return actual;
+    },
     appendChild(child) { this.children.push(child); return child; },
     replaceChildren(...children) { this.children = children; },
-    focus() {},
+    focus() { if (focusState) focusState.activeElement = this; },
     closest() { return null; },
+    contains(other) { return this === other || (this.focusables || []).includes(other); },
+    querySelectorAll() { return this.focusables || []; },
+    removeAttribute(name) { delete this.attributes[name]; },
   };
   return node;
 }
@@ -48,27 +67,64 @@ function textOf(node) {
 }
 
 function makeHarness() {
+  const focusState = { activeElement: null };
   const ids = {};
   ["context-panel", "context-backdrop", "context-close", "context-tabs",
    "context-title", "context-subtitle", "context-status",
    "context-pane-sources", "context-pane-run", "context-pane-context",
    "context-tab-sources", "context-tab-run", "context-tab-context"].forEach((id) => {
-    ids[id] = makeNode(id);
+    ids[id] = makeNode(id, focusState);
   });
+  const shell = makeNode("shell", focusState);
+  const appbar = makeNode("appbar", focusState);
+  const sidebar = makeNode("sidebar", focusState);
+  const stage = makeNode("stage", focusState);
+  const idsPanel = ids["context-panel"];
+  const backdrop = ids["context-backdrop"];
+  const outsideFocus = makeNode("outside-focus", focusState);
+  const insideAction = makeNode("inside-action", focusState);
+  ids["context-close"].tabIndex = 0;
+  insideAction.tabIndex = 0;
+  idsPanel.focusables = [ids["context-close"], insideAction];
+  idsPanel.contains = (other) => other === idsPanel || idsPanel.focusables.includes(other);
+  idsPanel.querySelectorAll = () => idsPanel.focusables;
+  const documentListeners = new Map();
+  const body = makeNode("body", focusState);
+  body.children = [appbar, shell];
+  shell.children = [sidebar, stage, idsPanel, backdrop];
   const tabs = ["sources", "run", "context"].map((tab) => {
     const node = ids["context-tab-" + tab];
     node.dataset.contextTab = tab;
+    node.tabIndex = -1;
     return node;
   });
-  const body = makeNode("body");
+  // querySelectorAll('button:not([disabled])') includes these controls even
+  // when roving-tabindex has removed them from the natural Tab sequence. The
+  // production focus trap must filter to effective tabIndex >= 0.
+  idsPanel.focusables = [ids["context-close"], ...tabs, insideAction];
   const document = {
     readyState: "complete",
     body,
+    get activeElement() { return focusState.activeElement; },
     getElementById: (id) => ids[id] || null,
-    createElement: () => makeNode(),
-    querySelector: () => null,
+    createElement: () => makeNode("", focusState),
+    querySelector: (selector) => selector === ".shell" ? shell : null,
     querySelectorAll: (selector) => selector === "#context-tabs .context-tab" ? tabs : [],
-    addEventListener() {},
+    addEventListener(type, handler) {
+      const handlers = documentListeners.get(type) || [];
+      handlers.push(handler);
+      documentListeners.set(type, handlers);
+    },
+    dispatch(type, event = {}) {
+      const actual = {
+        target: focusState.activeElement,
+        defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; },
+        ...event,
+      };
+      (documentListeners.get(type) || []).forEach((handler) => handler(actual));
+      return actual;
+    },
   };
   const storage = new Map();
   const localStorage = {
@@ -76,7 +132,15 @@ function makeHarness() {
     setItem: (key, value) => storage.set(key, String(value)),
   };
   const context = {
-    window: { innerWidth: 1200, addEventListener() {} },
+    window: {
+      innerWidth: 1200,
+      addEventListener(type, handler) {
+        const handlers = windowListeners.get(type) || [];
+        handlers.push(handler);
+        windowListeners.set(type, handlers);
+      },
+      dispatch(type) { (windowListeners.get(type) || []).forEach((handler) => handler()); },
+    },
     document,
     localStorage,
     requestAnimationFrame: (fn) => { fn(); return 1; },
@@ -85,18 +149,19 @@ function makeHarness() {
     AthenaLogic: logic,
     AthenaUi: {
       activityRow(row) {
-        const node = makeNode();
+        const node = makeNode("", focusState);
         node.textContent = [row.label, row.status].filter(Boolean).join(" ");
         return node;
       },
       showView() {},
     },
   };
+  const windowListeners = new Map();
   context.globalThis = context;
   vm.createContext(context);
   const source = fs.readFileSync(path.join(__dirname, "context.js"), "utf8");
   vm.runInContext(source, context);
-  return { context, ids, tabs, body };
+  return { context, ids, tabs, body, document, focusState, outsideFocus, insideAction, appbar, sidebar, stage };
 }
 
 function model(kind, id, title, prompt, sourceTitle) {
@@ -192,4 +257,97 @@ test("refresh updates the selected model without changing the target", () => {
   assert.match(textOf(ids["context-pane-sources"]), /second\.pdf/);
   assert.doesNotMatch(textOf(ids["context-pane-sources"]), /first\.pdf/);
   assert.deepEqual(context.AthenaContext.target(), { kind: "research", id: "r1" });
+});
+
+test("desktop context rail stays nonmodal and does not inert the shell", () => {
+  const { context, ids, body, appbar, sidebar, stage } = makeHarness();
+  context.window.innerWidth = 1440;
+  context.window.dispatch("resize");
+  assert.equal(body.classList.contains("context-rail"), true);
+  assert.equal(ids["context-panel"].inert, true);
+  assert.equal(ids["context-panel"].getAttribute("aria-hidden"), "true");
+  context.AthenaContext.open("sources", "research", "r1");
+
+  assert.equal(body.classList.contains("context-rail"), true);
+  assert.equal(body.classList.contains("context-overlay"), false);
+  assert.equal(ids["context-panel"].getAttribute("role"), "complementary");
+  assert.equal(ids["context-panel"].getAttribute("aria-modal"), null);
+  assert.equal(ids["context-backdrop"].classList.contains("hidden"), true);
+  assert.equal(appbar.inert, false);
+  assert.equal(sidebar.inert, false);
+  assert.equal(stage.inert, false);
+});
+
+test("mobile modal traps Tab, handles document Escape, and restores opener and inert state", () => {
+  const { context, ids, body, document, focusState, outsideFocus, insideAction, appbar, sidebar, stage } = makeHarness();
+  const opener = makeNode("opener", focusState);
+  stage.inert = true; // A pre-existing inert value must survive the modal.
+  context.AthenaContext.open("sources", "research", "r1", opener);
+
+  assert.equal(ids["context-panel"].getAttribute("role"), "dialog");
+  assert.equal(ids["context-panel"].getAttribute("aria-modal"), "true");
+  assert.equal(body.classList.contains("context-overlay"), true);
+  assert.equal(ids["context-backdrop"].classList.contains("hidden"), false);
+  assert.equal([appbar.inert, sidebar.inert, stage.inert].every(Boolean), true);
+
+  const close = ids["context-close"];
+  assert.equal(document.activeElement, close);
+  focusState.activeElement = insideAction;
+  let event = document.dispatch("keydown", { key: "Tab", shiftKey: false });
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(document.activeElement, close);
+  focusState.activeElement = close;
+  event = document.dispatch("keydown", { key: "Tab", shiftKey: true });
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(document.activeElement, insideAction);
+
+  focusState.activeElement = outsideFocus;
+  event = document.dispatch("keydown", { key: "Tab", shiftKey: false });
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(document.activeElement, close);
+
+  focusState.activeElement = outsideFocus;
+  event = document.dispatch("keydown", { key: "Escape" });
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(ids["context-panel"].classList.contains("hidden"), true);
+  assert.equal(ids["context-backdrop"].classList.contains("hidden"), true);
+  assert.equal(body.classList.contains("context-overlay"), false);
+  assert.equal(document.activeElement, opener);
+  assert.equal(appbar.inert, false);
+  assert.equal(sidebar.inert, false);
+  assert.equal(stage.inert, true);
+});
+
+test("backdrop click restores focus, and resize moves focus into then out of modal mode", () => {
+  const { context, ids, body, document, focusState, outsideFocus, insideAction, appbar, sidebar, stage } = makeHarness();
+  context.window.innerWidth = 1440;
+  const opener = makeNode("opener", focusState);
+  context.AthenaContext.open("sources", "research", "r1", opener);
+
+  // Moving into the modal breakpoint while focus is outside must put focus in
+  // the panel before background content becomes unusable.
+  focusState.activeElement = outsideFocus;
+  context.window.innerWidth = 1200;
+  context.window.dispatch("resize");
+  assert.equal(document.activeElement, ids["context-close"]);
+  assert.equal([appbar.inert, sidebar.inert, stage.inert].every(Boolean), true);
+
+  // Existing focus inside the panel survives a resize back to desktop, and
+  // inert state is restored without closing the selected context.
+  focusState.activeElement = insideAction;
+  context.window.innerWidth = 1440;
+  context.window.dispatch("resize");
+  assert.equal(document.activeElement, insideAction);
+  assert.equal(body.classList.contains("context-rail"), true);
+  assert.equal(body.classList.contains("context-overlay"), false);
+  assert.equal(appbar.inert, false);
+  assert.equal(sidebar.inert, false);
+  assert.equal(stage.inert, false);
+
+  context.window.innerWidth = 1200;
+  context.window.dispatch("resize");
+  ids["context-backdrop"].dispatch("click");
+  assert.equal(ids["context-panel"].classList.contains("hidden"), true);
+  assert.equal(document.activeElement, opener);
+  assert.equal([appbar.inert, sidebar.inert, stage.inert].every((value) => !value), true);
 });

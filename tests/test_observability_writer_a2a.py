@@ -90,7 +90,7 @@ def test_a_rejected_output_emits_one_retry_event(bb: Blackboard, tmp_path) -> No
     def generate(prompt: str):
         calls.append(prompt)
         if len(calls) == 1:
-            raise ValueError("output did not match FinalReport")
+            return {"answer": "incomplete structured output"}
         return _report("A complete answer.")
 
     write_report(bb.run_id, "write", store=bb.store, generate=generate)
@@ -150,7 +150,7 @@ def test_both_writer_branches_together_emit_exactly_two_retries(
     def generate(prompt: str):
         calls.append(prompt)
         if len(calls) == 1:
-            raise ValueError("not json")
+            return {"answer": "incomplete structured output"}
         return _report("Cut off mid senten")
 
     write_report(bb.run_id, "write", store=bb.store, generate=generate)

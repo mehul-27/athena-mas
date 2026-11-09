@@ -40,32 +40,26 @@ def test_every_static_script_parses(name: str) -> None:
     assert result.returncode == 0, result.stderr
 
 
-# --- the one breakpoint ----------------------------------------------------
+# --- persistent shell and initial accessibility state ----------------------
 
 
-def test_the_context_breakpoint_is_one_number_in_css_and_js() -> None:
-    context = _read("context.js")
-    css = _read("style.css")
+def test_context_panel_starts_closed_with_a_named_nonmodal_fallback() -> None:
+    html = _read("index.html")
+    panel_start = html.index('id="context-panel"')
+    panel = html[html.rfind("<aside", 0, panel_start):html.index(">", panel_start) + 1]
 
-    declared = re.search(r"const CONTEXT_BREAKPOINT = (\d+);", context)
-    assert declared, "context.js must declare CONTEXT_BREAKPOINT"
-    assert declared.group(1) == "1280"
-
-    # The panel's overlay behaviour is driven by the body class the script sets,
-    # so no media query repeats the number: it could only drift.
-    assert "1280" in css, "style.css must document the shared breakpoint"
-    assert "@media (max-width: 1280px)" not in css
-    assert "1040px" not in css
-    assert "body.context-overlay .context-panel" in css
-    assert "body.context-overlay .context-backdrop" in css
+    assert 'class="context-panel hidden"' in panel
+    assert 'role="complementary"' in panel
+    assert 'aria-label="Response context"' in panel
+    assert 'tabindex="-1"' in panel
+    assert 'id="context-backdrop"' in html
 
 
-def test_the_panel_width_is_clamped_and_owned_by_the_shell() -> None:
-    css = _read("style.css")
+def test_sidebar_open_state_keeps_its_existing_persistence_key() -> None:
+    app = _read("app.js")
 
-    assert "clamp(300px, 30vw, 380px)" in css
-    assert "body.context-open .main { min-width: 0; }" in css
-    assert "is-overlay" in _read("context.js")
+    assert 'localStorage.setItem("athena.sidebar", collapsed ? "collapsed" : "open")' in app
+    assert 'localStorage.getItem("athena.sidebar")' in app
 
 
 # --- the explicit Context toggle ------------------------------------------

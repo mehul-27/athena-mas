@@ -183,8 +183,9 @@ def get_adk_model(role: str | None = None):
 
     The key is passed explicitly so ADK does not depend on which
     provider-specific environment variable LiteLLM would otherwise look for.
-    ``num_retries`` lets LiteLLM absorb rate-limit and transient failures with
-    exponential backoff; it stops after MAX_RETRIES rather than looping.
+    ``num_retries`` bounds LiteLLM's wrapper attempts in the installed version;
+    it does not guarantee transient-only retries or exponential backoff for all
+    errors. See ``docs/PROVIDER_RESILIENCE.md`` for the version-specific rules.
     """
     from athena.config.limited_models import RateLimitedLiteLlm
 
@@ -207,9 +208,11 @@ def get_crewai_llm(role: str | None = None):
     ``is_litellm=True``; that client rejects LiteLLM-only kwargs such as
     ``num_retries`` (the live failure). Forcing the LiteLLM path keeps CrewAI on
     the same client ADK uses, keeps ``reasoning_effort``/``base_url`` working,
-    and keeps the prompt-cache marker workaround applicable. Retries are set
-    after construction, on whichever path we actually got, so a future crewai
-    that returns the native class cannot be handed ``num_retries`` either.
+    and keeps the prompt-cache marker workaround applicable. Retry settings
+    are set after construction. ``additional_params`` applies to ordinary
+    LiteLLM calls, but CrewAI's Instructor ``output_pydantic`` conversion uses
+    a direct completion client and does not forward these parameters; see
+    ``docs/PROVIDER_RESILIENCE.md``.
     """
     from athena.config.limited_models import make_crewai_llm_class
 
@@ -230,7 +233,7 @@ def get_crewai_llm(role: str | None = None):
 
 
 def _apply_retries(llm) -> None:
-    """LiteLLM takes ``num_retries``; the native SDKs take ``max_retries``."""
+    """Set ordinary-call retry kwargs; Instructor structured calls bypass them."""
     if getattr(llm, "is_litellm", False):
         params = getattr(llm, "additional_params", None)
         if isinstance(params, dict):
