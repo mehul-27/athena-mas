@@ -1,0 +1,97 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "44b5310a-426b-4075-b4a0-b97c2402625f",
+  "wall_s": 758.8566533000012,
+  "stage_ms": {
+    "planner": 153672.7,
+    "calc_researcher": 120463.4,
+    "analyst": 63902.9,
+    "writer": 68936.3,
+    "critic": 52756.4,
+    "web_researcher": 16560.2
+  },
+  "adk_tokens": 9656,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 1006,
+  "evidence_count": 1,
+  "citation_count": 0,
+  "tools_used": [
+    "calculate"
+  ],
+  "tool_calls": 1,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.3,
+  "approved": false,
+  "severity": "high",
+  "critic_status": "rejected",
+  "critique_reason": "The report refused to answer the core question despite the calculation evidence directly supporting the answer 7.34 (to two decimal places), making the report incomplete for what the evidence supports. | The report's confidence of 0.3 is unjustifiably low given that the recorded calculation result (6.5/2.4)**2 = 7.33506944444 directly and fully answers the question when rounded to two decimal places. | The sanitization removed the calculation citation even though the calculation evidence was recorded and directly supports a valid answer, so the final output lacks any supporting citation for the one available piece of evidence. | The report's statement that 'the captured evidence did not support the generated factual claims' is factually wrong because the captured calculation evidence supports the key claim that the collecting area ratio is 7.335, which rounds to 7.34. | The question explicitly asks for an answer to two decimal placesaren_specifically; a qualified partial answer was possible and the calculation tool returned usable evidence, so the refusal to answer violates the requirement to answer the supported part. | The guardrail action labeled 'unsupported_claim' incorrectly removed claims that were actually supported by the recorded calculation, namely the area ratio and its decimal value. | report does not answer the core question (confidence 0.30 is below 0.5)",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "calculate"
+  ],
+  "tools_invoked": [
+    "calculate"
+  ],
+  "tools_succeeded": [
+    "calculate"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "calculate"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": false,
+  "general_background": false,
+  "answer_as_asked": false,
+  "qualified_possible": false,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "area",
+    "collecting",
+    "compared",
+    "decimal",
+    "greater",
+    "many",
+    "mirror",
+    "place",
+    "telescope",
+    "time"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "none",
+  "confidence_ceiling": 0.3,
+  "confidence_notes": [
+    "missing subjects: area, collecting, compared, decimal, greater, many, mirror, place, telescope, time",
+    "2 claim(s) lack recorded support",
+    "the report ships without citations"
+  ],
+  "claim_checks": 2,
+  "claim_issues": [
+    "The captured evidence did not support the generated factual claims. The report has been reduced to its verified limitations. (no recorded source supports it)",
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

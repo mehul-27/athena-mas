@@ -1,0 +1,41 @@
+{
+  "source_config": "evaluation/hierarchical_30.json",
+  "source_sha256": "5187f10dd95b24fdc30cf50a0ca79ad89673e943ee398c951777e290fabdf416",
+  "runtime_config": "M:/Athena/athena-mas/evaluation/results/20261114T174056Z_amd_hierarchical_30/hierarchical_30_amd_runtime.json",
+  "runtime_sha256": "197f51191462105d1e6ff76f905917bcadd5af78aa5f173912c209a3016d7ede",
+  "selection_changed": false,
+  "planned_entries": 30,
+  "distinct_prompts": 24,
+  "deviations": [
+    {
+      "field": "matrix.per_run_timeout_s",
+      "from": 1200.0,
+      "to": 3600.0,
+      "reason": "AMD latency; slow runs must not be cut off by the wall clock"
+    },
+    {
+      "field": "budget.max_total_wall_s",
+      "from": 86400.0,
+      "to": 172800.0,
+      "reason": "48h batch wall budget so AMD slowness alone cannot abort"
+    },
+    {
+      "field": "note/pricing.note",
+      "from": "groq-specific text",
+      "to": "amd-specific text",
+      "reason": "honest provenance; pricing stays empty and costs null"
+    }
+  ],
+  "unchanged_policy": {
+    "backend": "subprocess",
+    "seed": null,
+    "llm_call_cap": null,
+    "budget.max_runs": 36,
+    "budget.max_total_usd": 8.0,
+    "budget.max_run_usd": 0.6,
+    "env_caps": "ATHENA_MAX_LLM_CALLS=12 etc. untouched; LLM_MAX_TOKENS and role caps untouched"
+  },
+  "source_sha256_raw": "69a45cbb712e9d320299c1249ce435d1fed7bbc364e2043a0e24d91d70f3088a",
+  "source_sha256_recorded": "5187f10dd95b24fdc30cf50a0ca79ad89673e943ee398c951777e290fabdf416",
+  "source_sha256_note": "The recorded value was computed over text read with universal-newline normalization; the raw-file hash is source_sha256_raw. The plan file is unmodified (git status shows no change)."
+}

@@ -1,0 +1,63 @@
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+REPO = Path(r"M:\Athena\athena-mas")
+OUT = REPO / "evaluation" / "results" / "20261114T174056Z_amd_hierarchical_30"
+
+policy = {
+    "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    "why": (
+        "The runner's run_meta records config.matrix.llm_call_cap but the "
+        "effective value comes from ATHENA_MAX_LLM_CALLS in the process "
+        "environment. This file records the effective policy explicitly."
+    ),
+    "effective": {
+        "llm_call_cap_hierarchical": 40,
+        "llm_call_cap_source": (
+            "runtime launcher export ATHENA_MAX_LLM_CALLS=40, matching "
+            "athena.config.caps.PATTERN_CAPS['hierarchical']=40; the stale .env "
+            "value 12 is overridden for runner, athena.run children, and the "
+            "CrewAI server"
+        ),
+        "provider_call_timeout_s": 900,
+        "a2a_role_timeout_s": 1200,
+        "per_run_timeout_s": 3600,
+        "batch_wall_budget_s": 172800,
+        "max_attempts": 36,
+        "max_attempts_per_run": 2,
+        "backend": "subprocess",
+        "seed": None,
+        "retry_policy": (
+            "only transient infrastructure failures are retried; critic "
+            "rejections and completed/failed results are never retried"
+        ),
+    },
+    "unchanged_guardrails": {
+        "LLM_MAX_TOKENS": 512,
+        "role_max_tokens": {
+            "planner": 1500,
+            "researcher": 2000,
+            "analyst": 3000,
+            "writer": 3000,
+            "critic": 3000,
+        },
+        "ATHENA_MAX_TOOL_CALLS": 3,
+        "ATHENA_RESEARCHER_MAX_MODEL_CALLS": 10,
+        "ATHENA_RESEARCHER_MAX_TOOL_CALLS": 8,
+        "ATHENA_WORKER_MAX_MODEL_CALLS": 6,
+        "ATHENA_CALC_MAX_MODEL_CALLS": 4,
+        "ATHENA_CALC_MAX_TOOL_CALLS": 4,
+        "critic_security_and_scoring": "untouched",
+    },
+    "pricing": {
+        "priced": False,
+        "cost_field": None,
+        "usd_cap_enforceable": False,
+        "note": "AMD endpoint price unknown; no rate invented.",
+    },
+}
+(OUT / "batch_policy.json").write_text(
+    json.dumps(policy, indent=2) + "\n", encoding="utf-8"
+)
+print("wrote", OUT / "batch_policy.json")

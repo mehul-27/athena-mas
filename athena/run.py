@@ -177,7 +177,6 @@ async def _execute(
             mark_degraded(summary, "the run was cancelled")
             set_terminal(summary, "cancelled", "the run was cancelled before it finished")
             _count_artifacts(summary, blackboard)
-            _emit_summary(recorder, summary, pattern)
             raise
         except TimeoutError as exc:
             summary.wall_s = time.perf_counter() - started
@@ -224,6 +223,9 @@ async def _execute(
             # summary is written.
             await close_toolsets(getattr(runner, "agent", None))
     finally:
+        # History and replay discover terminal runs through this event, including
+        # normal completions and failures whose exception propagates to the CLI.
+        _emit_summary(recorder, summary, pattern)
         set_recorder(None)
 
     if verbose:
@@ -466,7 +468,9 @@ def _emit_summary(recorder, summary: RunSummary, pattern: str) -> None:
         "supervisor",
         "adk",
         payload_summary=f"run_summary {pattern} terminal {summary.terminal_state}",
-        extra=asdict(summary),
+        # Event.extra is bounded; retain the terminal state before optional
+        # assessment details when the dataclass grows beyond that limit.
+        extra={"terminal_state": summary.terminal_state, **asdict(summary)},
     )
 
 

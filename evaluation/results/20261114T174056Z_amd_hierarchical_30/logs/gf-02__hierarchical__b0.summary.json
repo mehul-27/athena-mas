@@ -1,0 +1,112 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "5df22ebf-172e-45e6-8370-fe2c6609e463",
+  "wall_s": 1582.2374180999996,
+  "stage_ms": {
+    "planner": 97148.8,
+    "web_researcher": 635732.6,
+    "analyst": 64212.3,
+    "writer": 74780.0,
+    "critic": 48480.4
+  },
+  "adk_tokens": 100866,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 17,
+  "citation_count": 5,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 16,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "medium",
+  "critic_status": "approved",
+  "critique_reason": "The answer does not list the names of all eight authors, which is a core part of the question; the evidence only identifies Ashish Vaswani by name, so the report's qualified partial answer is appropriate, but the question's 'who' portion remains largely unaddressed. | The report omits the authors who can be identified from the evidence; specifically, the DBLP record cited in the evidence (VaswaniSPUJGKP17) implies additional author initials that are not explored in the answer, leaving the supported partial author list incomplete.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "fetch_page: HTTP 403",
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)",
+    "fetch_page: page contained no readable text",
+    "fetch_page: HTTP 429",
+    "fetch_page: unsupported content type: application/atom+xml"
+  ],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [
+    "fetch_page: HTTP 403",
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)",
+    "fetch_page: page contained no readable text",
+    "fetch_page: HTTP 429",
+    "fetch_page: unsupported content type: application/atom+xml"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some web searches failed (web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)); any successfully fetched pages remain usable evidence.",
+    "Some page fetches failed (fetch_page: HTTP 403; fetch_page: page contained no readable text; fetch_page: HTTP 429; fetch_page: unsupported content type: application/atom+xml); only pages that returned readable content were used."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "mechanism"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "done",
+    "organisation",
+    "who"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: done, organisation, who",
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

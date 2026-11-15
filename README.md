@@ -572,6 +572,35 @@ does not occupy the research run slot and a research run does not block chat.
 
 ---
 
+## Completed AMD evaluation
+
+The 14–15 November 2026 batch contains **30 hierarchical runs on AMD
+DeepSeek-V4-Flash**: 24 distinct prompts across 12 categories plus 6 repeats.
+All 30 completed execution; 23 passed the deterministic rubric and 17 were
+approved by the critic. Costs are unknown because the AMD endpoint is unpriced.
+This is a single-pattern evaluation, not a comparison of the four architectures.
+
+- [Evaluation overview](evaluation/REPORT.md)
+- [Full batch report](evaluation/results/20261114T174056Z_amd_hierarchical_30/BATCH_REPORT.md)
+- [All 30 prompts and answers](evaluation/results/20261114T174056Z_amd_hierarchical_30/ALL_RUN_OUTPUTS.md)
+- [Per-run metrics CSV](evaluation/results/20261114T174056Z_amd_hierarchical_30/runs.csv)
+- [Latency boxplots](evaluation/results/20261114T174056Z_amd_hierarchical_30/charts/latency_by_tier_all_attempts.png)
+
+To inspect these runs in the UI, open **Research → Recordings** and select an
+`amd-eval-…` entry. All 30 outcomes are included, including critic rejections.
+The committed recordings contain the saved answers, sources, Blackboard
+sections, events and archived heatmaps; opening a recording makes no model
+calls and needs no provider key. Start the existing recording viewer with:
+
+```powershell
+.venv\Scripts\python.exe scripts/demo.py --replay-only
+```
+
+On the evaluation machine, the original databases also provide the runs in
+**Research history** with full telemetry. Those local SQLite databases and
+provider credentials are not included in Git. On a fresh clone, use Recordings;
+live telemetry endpoints still require the original event database.
+
 ## Testing
 
 Offline tests are the default and make no live network/provider calls:

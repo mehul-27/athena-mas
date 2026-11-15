@@ -1,0 +1,101 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "74764b6a-e337-4bfc-bec6-23c58b4bcdeb",
+  "wall_s": 744.3064190000005,
+  "stage_ms": {
+    "planner": 86667.5,
+    "web_researcher": 487506.9,
+    "analyst": 54125.9,
+    "writer": 55843.9,
+    "critic": 60027.3
+  },
+  "adk_tokens": 22692,
+  "a2a_bytes_out": 479,
+  "a2a_bytes_in": 431,
+  "evidence_count": 7,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 6,
+  "revision_rounds": 0,
+  "recovery_rounds": 0,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The answer's claim that 'the primary mirror consists of 18 hexagonal beryllium segments' is supported by the Wikipedia evidence which says 'gold-coated beryllium primary mirror made up of 18 separate hexagonal mirrors', and the NASA source confirms '18 hexagonal-shaped mirror segments' each 1.32 meters in diameter; this claim is fully traceable. | The claim that the mirror is 'the largest ever launched into space' is supported by the NASA Webbs Mirrors evidence which states 'Webb's primary mirror is the largest ever launched into space' - this is traceable. | The claim that 'Webb launched on Dec. 25th 2021' is supported by the NASA mission page evidence ('Webb launched on Dec. 25th 2021') and the Wikipedia timeline source ('launched on 25 December 2021') - this is traceable. | The answer's core claim of a 6.5-meter (21 feet 4 inches) primary mirror is supported by the NASA Webbs Mirrors evidence ('Webb's primary mirror is 6.5 meters (21 feet 4 inches) across') and Wikipedia ('6.5-meter-diameter (21-foot)') - this is traceable. | The citations listed in the report match the recorded evidence references; no unrecorded citation issue remains in the final report, and the guardrail flag indicates the sanitization was properly applied.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)",
+    "fetch_page: HTTP 403"
+  ],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)",
+    "fetch_page: HTTP 403"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some web searches failed (web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)); any successfully fetched pages remain usable evidence.",
+    "Some page fetches failed (fetch_page: HTTP 403); only pages that returned readable content were used."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": true,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.8,
+  "confidence_notes": [
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [
+    "The James Webb Space Telescope's primary mirror is 6.5 meters (21 feet 4 inches) across, and it is the largest ever launched into space. Webb launched on Dec. 2 (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

@@ -1,0 +1,94 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "f5b8f7ae-e025-4348-b315-c9e710a34181",
+  "wall_s": 672.1629739,
+  "stage_ms": {
+    "planner": 63427.1,
+    "web_researcher": 56254.7,
+    "analyst": 70502.5,
+    "writer": 424.7,
+    "critic": 53986.8
+  },
+  "adk_tokens": 20529,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 761,
+  "evidence_count": 6,
+  "citation_count": 0,
+  "tools_used": [],
+  "tool_calls": 4,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.0,
+  "approved": false,
+  "severity": "high",
+  "critic_status": "rejected",
+  "critique_reason": "The answer refuses to answer the core question despite the presence of multiple recorded fetched web pages and web search results that directly identify Python 3.15.2 as the current stable release and newest patch release in that series. | The draft and report claim 'No relevant fetched web pages were recorded,' which contradicts the evidence list, which contains four fetched web pages and two web search results relevant to Python releases. | The evidence coverage assessment states 'Subject-specific evidence: no' and 'Evidence quality: none,' but the recorded evidence directly answers the question: the latest Python release is 3.15.2, per multiple python.org sources. | The report sets confidence to 0.0 and states a further research pass is needed, but the evidence already supports a direct answer and the report therefore unnecessarily rejects a supportable answer. | The report fails to cite or use the recorded evidence sources (python.org/downloads/, devguide.python.org/versions/, python.org/downloads/release/python-3152/) which are clearly relevant and support the answer. | report does not answer the core question (confidence 0.00 is below 0.5)",
+  "evidence_sufficient": false,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [
+    "No relevant fetched web pages were recorded; search snippets and irrelevant RAG chunks are not sufficient evidence."
+  ],
+  "evidence_limitations": [],
+  "subject_specific": false,
+  "general_background": false,
+  "answer_as_asked": false,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "release",
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "current",
+    "sery"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "none",
+  "confidence_ceiling": 0.3,
+  "confidence_notes": [
+    "missing subjects: current, sery",
+    "1 claim(s) lack recorded support",
+    "the report ships without citations"
+  ],
+  "claim_checks": 2,
+  "claim_issues": [
+    "No relevant fetched web pages were recorded; search snippets and irrelevant RAG chunks are not sufficient evidence. (no recorded source supports it; not about the asked subject)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

@@ -1,0 +1,102 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "b540bee5-1ecb-4171-8f65-b34a9ad1a422",
+  "wall_s": 1083.5852759999998,
+  "stage_ms": {
+    "planner": 99605.6,
+    "rag_researcher": 155078.1,
+    "web_researcher": 85700.2,
+    "calc_researcher": 234600.1,
+    "analyst": 128473.5,
+    "writer": 40779.2,
+    "critic": 46588.1
+  },
+  "adk_tokens": 63306,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 720,
+  "evidence_count": 22,
+  "citation_count": 2,
+  "tools_used": [
+    "calculate",
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tool_calls": 10,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.6,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The draft contains a stray typo 'ikuha' and a slightly garbled arXiv quote; both are cosmetic and do not affect the substance. | The draft explicitly notes it is a qualified partial answer and names the unverified roofline-walkthrough remainder, which is appropriate given the evidence coverage. | The two cited sources (GitHub chapter and arXiv paper) are both recorded and excerpted in the evidence, and each independently supports the bandwidth-bound claim for autoregressive decoding.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate"
+  ],
+  "tools_invoked": [
+    "calculate",
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "calculate",
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "calculate",
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "evidence",
+    "rather"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: evidence, rather"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [
+    "Autoregressive decoding generates one token at a time and streams the full weight set per token, so arithmetic intensity per byte transferred is low. (not about the asked subject)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

@@ -1,0 +1,330 @@
+{
+  "generated_at": "2026-11-14T17:43:10+00:00",
+  "purpose": "Preflight evidence for the authorised full live 30-run Athena hierarchical evaluation on the saved amd profile only.",
+  "authorization": {
+    "thirty_runs": true,
+    "deepseek_subagents_via_framework": true,
+    "deployment": false,
+    "paid_service_installation": false,
+    "commit_or_push": false,
+    "note": "Operator was told the endpoint is unpriced so USD caps cannot bound spend; acknowledged via --acknowledge-unpriced."
+  },
+  "workspace": {
+    "root": "M:\\Athena\\athena-mas",
+    "branch": "main",
+    "commit": "3584d5b77595f0a546aae435b77f8401633f8759",
+    "git_status_short": [
+      "M scripts/dev_up.py",
+      "?? evaluation/quarantine/",
+      "?? evaluation/results/20261114T174056Z_amd_hierarchical_30/"
+    ],
+    "dev_up_py_sha256": "361e1424d7c373d305a667f6bcd4180f059e18007787e8705f2dc42dcd555d5c",
+    "dev_up_expected_sha256": "361E1424D7C373D305A667F6BCD4180F059E18007787E8705F2DC42DCD555D5C",
+    "quarantine": {
+      "path": "M:\\Athena\\athena-mas\\evaluation\\quarantine",
+      "file_count": 22,
+      "tree_sha256": "e5261ad56499d49c859df5c8b7d8328736f2d90c1e9019a6ef81f737cb85bb03"
+    }
+  },
+  "profile": {
+    "name": "amd",
+    "id": "367f57c4-d107-447c-a857-632fa8e6a454",
+    "model": "openai/DeepSeek-V4-Flash",
+    "host": "api.tokenlab.amd.com",
+    "active": true,
+    "key_present": true
+  },
+  "crew_server": {
+    "card": {
+      "status": 200,
+      "body": {
+        "name": "crewai-team",
+        "description": "Athena's CrewAI team: analyst, writer and critic, addressed by role.",
+        "supportedInterfaces": [
+          {
+            "url": "http://127.0.0.1:9001",
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0"
+          },
+          {
+            "url": "http://127.0.0.1:9001",
+            "protocolBinding": "HTTP+JSON",
+            "protocolVersion": "1.0"
+          }
+        ],
+        "version": "1.0.0",
+        "capabilities": {
+          "streaming": false,
+          "pushNotifications": false
+        },
+        "defaultInputModes": [
+          "text/plain"
+        ],
+        "defaultOutputModes": [
+          "text/plain"
+        ],
+        "skills": [
+          {
+            "id": "analyst",
+            "name": "Analyst",
+            "description": "Runs the analyst role against one blackboard run.",
+            "tags": [
+              "crewai",
+              "analyst"
+            ]
+          },
+          {
+            "id": "writer",
+            "name": "Writer",
+            "description": "Runs the writer role against one blackboard run.",
+            "tags": [
+              "crewai",
+              "writer"
+            ]
+          },
+          {
+            "id": "critic",
+            "name": "Critic",
+            "description": "Runs the critic role against one blackboard run.",
+            "tags": [
+              "crewai",
+              "critic"
+            ]
+          }
+        ]
+      }
+    },
+    "health": {
+      "crew_server": "up",
+      "provider_configured": true,
+      "active_profile": {
+        "id": "367f57c4-d107-447c-a857-632fa8e6a454",
+        "name": "amd",
+        "model": "openai/DeepSeek-V4-Flash",
+        "api_host": "api.tokenlab.amd.com",
+        "has_key": true
+      },
+      "model": "openai/DeepSeek-V4-Flash",
+      "api_host": "api.tokenlab.amd.com",
+      "replay_available": 4,
+      "patterns": [
+        "sequential",
+        "parallel",
+        "hierarchical",
+        "p2p"
+      ]
+    },
+    "log_tail_model_line": "crew model: openai/DeepSeek-V4-Flash | api host: https://api.tokenlab.amd.com/v1",
+    "python_processes": [
+      {
+        "pid": 15076,
+        "ppid": 13776,
+        "kind": "other"
+      },
+      {
+        "pid": 18608,
+        "ppid": 15076,
+        "kind": "other"
+      },
+      {
+        "pid": 10124,
+        "ppid": 23268,
+        "kind": "crew_server"
+      },
+      {
+        "pid": 2612,
+        "ppid": 10124,
+        "kind": "crew_server"
+      },
+      {
+        "pid": 3580,
+        "ppid": 20996,
+        "kind": "other"
+      },
+      {
+        "pid": 880,
+        "ppid": 3580,
+        "kind": "other"
+      },
+      {
+        "pid": 23600,
+        "ppid": 880,
+        "kind": "other"
+      },
+      {
+        "pid": 21148,
+        "ppid": 23600,
+        "kind": "other"
+      }
+    ],
+    "no_eval_or_athena_run_processes": true
+  },
+  "tools": {
+    "mcp": {
+      "servers": [
+        {
+          "name": "rag (MCP)",
+          "tools": [
+            {
+              "name": "rag_search",
+              "description": "Search Athena's NASA document corpus and return the closest passages."
+            }
+          ]
+        },
+        {
+          "name": "web (MCP)",
+          "tools": [
+            {
+              "name": "fetch_page",
+              "description": "Read a public web page so claims can cite page text, not just snippets."
+            },
+            {
+              "name": "web_search",
+              "description": "Search the web and return titles, URLs and snippets."
+            }
+          ]
+        },
+        {
+          "name": "calc (MCP)",
+          "tools": [
+            {
+              "name": "calculate",
+              "description": "Evaluate an arithmetic expression safely."
+            },
+            {
+              "name": "forecast",
+              "description": "Forecast the next values of a numeric series."
+            }
+          ]
+        }
+      ]
+    },
+    "rag_probe": {
+      "ok": true,
+      "error": "",
+      "hits": 7,
+      "first_docs": [
+        "nasa_Systems_handbook.pdf",
+        "nasa_Systems_handbook.pdf",
+        "nasa_Systems_handbook.pdf"
+      ]
+    },
+    "web_probe": {
+      "ok": true,
+      "error": "",
+      "hits": 2,
+      "first_urls": [
+        "https://www.nasa.gov/humans-in-space/artemis/",
+        "https://www.nasa.gov/feature/artemis-/"
+      ]
+    }
+  },
+  "endpoint": {
+    "dns": "resolved",
+    "tcp_443": "connect ok",
+    "note": "reachability only; no model call was made in preflight"
+  },
+  "policy_env_non_secret": {
+    "LLM_MODEL": "groq/qwen/qwen3.8-27b",
+    "LLM_MAX_TOKENS": "512",
+    "ATHENA_MAX_REVISIONS": "1",
+    "ATHENA_MAX_LLM_CALLS": "12",
+    "ATHENA_MAX_TOOL_CALLS": "3",
+    "ATHENA_WORKER_MAX_MODEL_CALLS": "6",
+    "ATHENA_RESEARCHER_MAX_TOOL_CALLS": "8",
+    "ATHENA_RESEARCHER_MAX_MODEL_CALLS": "10",
+    "ATHENA_CALC_MAX_TOOL_CALLS": "4",
+    "ATHENA_CALC_MAX_MODEL_CALLS": "4",
+    "LLM_ITPM_LIMIT": "7000",
+    "LLM_OTPM_LIMIT": "1000",
+    "LLM_RATELIMIT_MAX_WAIT_S": "120",
+    "SEARCH_PROVIDER": "duckduckgo",
+    "EMBEDDING_PROVIDER": "fastembed",
+    "CORPUS_DIR": "data/corpus",
+    "CHROMA_PATH": "data/chroma",
+    "RAG_COLLECTION": "athena_documents"
+  },
+  "runtime_config": {
+    "path": "M:/Athena/athena-mas/evaluation/results/20261114T174056Z_amd_hierarchical_30/hierarchical_30_amd_runtime.json",
+    "sha256": "197f51191462105d1e6ff76f905917bcadd5af78aa5f173912c209a3016d7ede",
+    "source_path": "M:/Athena/athena-mas/evaluation/hierarchical_30.json",
+    "source_sha256": "69a45cbb712e9d320299c1249ce435d1fed7bbc364e2043a0e24d91d70f3088a",
+    "deviations_file": "M:/Athena/athena-mas/evaluation/results/20261114T174056Z_amd_hierarchical_30/runtime_config_deviations.json",
+    "deviations": [
+      "matrix.per_run_timeout_s 1200 -> 3600",
+      "budget.max_total_wall_s 86400 -> 172800",
+      "note/pricing.note rewritten for AMD honesty"
+    ],
+    "unchanged": [
+      "30 plan entries and 24 distinct prompts",
+      "12 core + 12 breadth + 6 variance; 12 categories",
+      "seed=null, no seed forwarded; stochastic replicates",
+      "backend=subprocess; llm_call_cap=null",
+      "budget.max_runs=36 (30 scheduled + <=6 transient retries)",
+      "LLM_MAX_TOKENS and ATHENA_* call/token caps"
+    ]
+  },
+  "plan": {
+    "planned_entries": 30,
+    "distinct_prompts": 24,
+    "distinct_run_keys": 30,
+    "tiers": {
+      "breadth": 12,
+      "core": 12,
+      "variance": 6
+    },
+    "run_keys": [
+      "gf-01__hierarchical__r0",
+      "te-02__hierarchical__r0",
+      "ne-02__hierarchical__r0",
+      "cm-02__hierarchical__r0",
+      "cv-01__hierarchical__r0",
+      "ms-02__hierarchical__r0",
+      "cs-01__hierarchical__r0",
+      "dr-01__hierarchical__r0",
+      "nc-01__hierarchical__r0",
+      "ie-01__hierarchical__r0",
+      "pi-01__hierarchical__r0",
+      "tp-01__hierarchical__r0",
+      "gf-02__hierarchical__b0",
+      "te-01__hierarchical__b0",
+      "ne-01__hierarchical__b0",
+      "cm-03__hierarchical__b0",
+      "cv-02__hierarchical__b0",
+      "ms-04__hierarchical__b0",
+      "cs-04__hierarchical__b0",
+      "dr-04__hierarchical__b0",
+      "nc-03__hierarchical__b0",
+      "ie-03__hierarchical__b0",
+      "pi-03__hierarchical__b0",
+      "tp-04__hierarchical__b0",
+      "gf-01__hierarchical__r1",
+      "te-02__hierarchical__r1",
+      "ne-02__hierarchical__r1",
+      "cm-02__hierarchical__r1",
+      "cv-01__hierarchical__r1",
+      "ms-02__hierarchical__r1"
+    ]
+  },
+  "pricing": {
+    "priced": false,
+    "model": "openai/DeepSeek-V4-Flash",
+    "cost_field": null,
+    "usd_cap_enforceable": false,
+    "note": "No published AMD endpoint price; no rate invented. max_runs=36 is the only hard attempt cap."
+  },
+  "dry_run": {
+    "adk_model": "openai/DeepSeek-V4-Flash",
+    "crew_model": "openai/DeepSeek-V4-Flash",
+    "models_differ": false,
+    "api_host": "https://api.tokenlab.amd.com/v1",
+    "profile_applied": true,
+    "per_run_timeout_s": 3600.0,
+    "preconditions": "crew server up, keys present, RAG and web reachable"
+  },
+  "known_limitations": [
+    "No extra live model smoke call was made; the first planned run is the initial validation and its record is retained either way.",
+    "Endpoint pricing is unknown, so est_cost_usd is null and the USD caps cannot bound real spend.",
+    "The batch is hierarchy-only; it makes no architecture-comparison claim and is not a 40-run result."
+  ]
+}

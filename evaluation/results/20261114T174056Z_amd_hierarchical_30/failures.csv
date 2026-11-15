@@ -1,0 +1,7 @@
+failure_category,runs
+critic_rejected,13
+unsupported_claims,9
+answer_key_miss,8
+missing_required_evidence,7
+no_citations,7
+structure_violation,4

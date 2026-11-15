@@ -1,0 +1,100 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "72c03480-7ce1-4c5d-9192-0a4faa5782d0",
+  "wall_s": 645.0231093000002,
+  "stage_ms": {
+    "planner": 107444.8,
+    "web_researcher": 354090.4,
+    "analyst": 87590.8,
+    "writer": 37002.7,
+    "critic": 58726.1
+  },
+  "adk_tokens": 22759,
+  "a2a_bytes_out": 479,
+  "a2a_bytes_in": 431,
+  "evidence_count": 9,
+  "citation_count": 5,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 7,
+  "revision_rounds": 0,
+  "recovery_rounds": 0,
+  "confidence": 0.5,
+  "approved": false,
+  "severity": "medium",
+  "critic_status": "rejected",
+  "critique_reason": "The answer text contains a malformed instruction-like fragment 'Skip the crafted preposition' embedded in the sentence, rendering the final sentence grammatically broken and incomplete: 'She is also associated with warfare and handicraft)Skip the crafted preposition.' | The answer text does not match the source evidence cleanly for the phrase 'warfare and handicraft' in the second sentence; it is unsupported by the fetched Theoi page which says 'wisdom and good counsel, war, the defence of towns, heroic endeavour, weaving, pottery and various other crafts' (the Wikipedia snippet does support 'wisdom, warfare, and handicraft' but the phrasing in the answer is garbled by the insertion). | The report's final answer claims the city 'took its name from the goddess after she won the land' which is supported, but the preceding malformed fragment (including the word 'Skip') is not supported by any recorded evidence and is a clear artifact that should have been removed.",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [
+    "fetch_page: HTTP 403",
+    "fetch_page: HTTP 404"
+  ],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [
+    "fetch_page: HTTP 403",
+    "fetch_page: HTTP 404"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some page fetches failed (fetch_page: HTTP 403; fetch_page: HTTP 404); only pages that returned readable content were used."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": true,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.8,
+  "confidence_notes": [
+    "critic rejected the report (medium severity)",
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

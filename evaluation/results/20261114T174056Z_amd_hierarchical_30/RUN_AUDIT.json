@@ -1,0 +1,489 @@
+{
+  "records": 30,
+  "scheduled_keys": 30,
+  "distinct_scheduled_keys_seen": 30,
+  "missing_scheduled_keys": [],
+  "extra_run_keys": [],
+  "duplicate_attempt_ids": [],
+  "states": {
+    "completed": 30
+  },
+  "critic_status": {
+    "approved": 17,
+    "rejected": 13
+  },
+  "critic_approved": 17,
+  "critic_evaluable": 30,
+  "valid_completed": 30,
+  "completed_without_evidence": [
+    "pi-01__hierarchical__r0"
+  ],
+  "completed_without_tokens": [],
+  "completed_without_model_calls": [],
+  "provenance_variants": [
+    [
+      "openai/DeepSeek-V4-Flash",
+      "openai/DeepSeek-V4-Flash",
+      "https://api.tokenlab.amd.com/v1",
+      "https://api.tokenlab.amd.com/v1",
+      "amd",
+      false
+    ]
+  ],
+  "llm_call_caps_recorded": [
+    40
+  ],
+  "null_cost_records": 30,
+  "per_key": {
+    "gf-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "gf-01__hierarchical__r0#a1-b3f3a9334201"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "te-02__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "te-02__hierarchical__r0#a1-b624a2ca6d93"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ne-02__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ne-02__hierarchical__r0#a1-a4ff7ef5c72e"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cm-02__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cm-02__hierarchical__r0#a1-00f0983a4ebe"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cv-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cv-01__hierarchical__r0#a1-27e81921ebda"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ms-02__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ms-02__hierarchical__r0#a1-5caaa3fbd5c4"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cs-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cs-01__hierarchical__r0#a1-1e790f1c3f01"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "dr-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "dr-01__hierarchical__r0#a1-53b114b5c8f4"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "nc-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "nc-01__hierarchical__r0#a1-daec8ec771fe"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ie-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ie-01__hierarchical__r0#a1-67a23381b54a"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "pi-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "pi-01__hierarchical__r0#a1-104a1a30a346"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "tp-01__hierarchical__r0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "tp-01__hierarchical__r0#a1-1ea60e9e2ae8"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "gf-02__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "gf-02__hierarchical__b0#a1-75c744511bf9"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "te-01__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "te-01__hierarchical__b0#a1-18877ed9ac73"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ne-01__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ne-01__hierarchical__b0#a1-f606df84ca29"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cm-03__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cm-03__hierarchical__b0#a1-72135da805de"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cv-02__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cv-02__hierarchical__b0#a1-1631fae4dd87"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ms-04__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ms-04__hierarchical__b0#a1-f045f73873de"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cs-04__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cs-04__hierarchical__b0#a1-72d325475922"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "dr-04__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "dr-04__hierarchical__b0#a1-5b62b930cab4"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "nc-03__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "nc-03__hierarchical__b0#a1-957542f09241"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ie-03__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ie-03__hierarchical__b0#a1-47448c4f8901"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "pi-03__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "pi-03__hierarchical__b0#a1-bdf0ea8d0bf1"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "tp-04__hierarchical__b0": {
+      "attempts": 1,
+      "attempt_ids": [
+        "tp-04__hierarchical__b0#a1-8e928a356b90"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "gf-01__hierarchical__r1": {
+      "attempts": 1,
+      "attempt_ids": [
+        "gf-01__hierarchical__r1#a1-97f08f8a288e"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "te-02__hierarchical__r1": {
+      "attempts": 1,
+      "attempt_ids": [
+        "te-02__hierarchical__r1#a1-d2da12066caf"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ne-02__hierarchical__r1": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ne-02__hierarchical__r1#a1-9d256ae88274"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cm-02__hierarchical__r1": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cm-02__hierarchical__r1#a1-91d356229f3e"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "cv-01__hierarchical__r1": {
+      "attempts": 1,
+      "attempt_ids": [
+        "cv-01__hierarchical__r1#a1-4977d65540d0"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "rejected"
+      ],
+      "valid_completed": [
+        true
+      ]
+    },
+    "ms-02__hierarchical__r1": {
+      "attempts": 1,
+      "attempt_ids": [
+        "ms-02__hierarchical__r1#a1-57ed6ace8ab2"
+      ],
+      "states": [
+        "completed"
+      ],
+      "critic": [
+        "approved"
+      ],
+      "valid_completed": [
+        true
+      ]
+    }
+  }
+}

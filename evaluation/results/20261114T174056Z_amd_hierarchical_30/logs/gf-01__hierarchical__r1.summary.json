@@ -1,0 +1,105 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "30e5d358-446f-4951-90ab-0d22e2434dee",
+  "wall_s": 693.5885536999995,
+  "stage_ms": {
+    "planner": 124293.0,
+    "web_researcher": 264423.9,
+    "rag_researcher": 120000.5,
+    "analyst": 84241.2,
+    "writer": 41594.8,
+    "critic": 58884.7
+  },
+  "adk_tokens": 21286,
+  "a2a_bytes_out": 479,
+  "a2a_bytes_in": 431,
+  "evidence_count": 15,
+  "citation_count": 2,
+  "tools_used": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tool_calls": 5,
+  "revision_rounds": 0,
+  "recovery_rounds": 0,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The confidence value of 0.55 is not justified by the evidence; the answer is well-supported by two primary web sources and should have a higher confidence, though this is a reporting-calibration issue rather than a content error. | The report could have noted that some page fetches returned HTTP 403, but this non-blocking limitation is mentioned in the guardrail flags rather than in the answer wording itself, which is a minor clarity point.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "fetch_page: HTTP 403"
+  ],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [
+    "fetch_page: HTTP 403"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search",
+    "web_search"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some page fetches failed (fetch_page: HTTP 403); only pages that returned readable content were used."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": true,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.8,
+  "confidence_notes": [
+    "1 claim(s) lack recorded support",
+    "1 claim(s) are not supported by a cited source"
+  ],
+  "claim_checks": 6,
+  "claim_issues": [
+    "Tungsten is solid at room temperature, per the reference source. (not about the asked subject)",
+    "The NASA Systems Handbook document excerpts did not contain chemistry-relevant information on this element. (no cited source supports it)",
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

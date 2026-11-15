@@ -1,0 +1,89 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "3d2e76fd-dfe6-4195-8343-63c845fe0ba8",
+  "wall_s": 594.2836822000008,
+  "stage_ms": {
+    "planner": 100277.0,
+    "rag_researcher": 55183.2,
+    "analyst": 48430.9,
+    "writer": 100243.7,
+    "critic": 34114.2
+  },
+  "adk_tokens": 6174,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 9,
+  "citation_count": 4,
+  "tools_used": [
+    "rag_search"
+  ],
+  "tool_calls": 1,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The formal enumeration of the three process sets in section 2.1 (p14-chunk-40) is truncated in the recorded excerpt, so the named sets rest on inference from p15-chunk-41's mention of the same three groups rather than on the formal enumeration itself; this is a minor evidentiary gap but does not undermine the answer since the three names are directly consistent across both chunks. | Citation 4 (p18-chunk-54) is duplicated in substance with citation 2 (p18-chunk-55) and does not independently support the process-set claim. | The answer correctly names the unverified remainder (the truncated enumeration), keeping the qualified partial answer complete.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search"
+  ],
+  "tools_invoked": [
+    "rag_search"
+  ],
+  "tools_succeeded": [
+    "rag_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "rag_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "indexed",
+    "locally"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "secondary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: indexed, locally",
+    "1 claim(s) lack recorded support",
+    "2 claim(s) are not supported by a cited source"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [
+    "According to the locally indexed NASA Systems Engineering Handbook, the three sets of common technical processes in the SE engine are the system design processe (no cited source supports it)",
+    "Processes 1 through 9 represent tasks in the execution of a project, while processes 10 through 17 are crosscutting tools. (no cited source supports it)",
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

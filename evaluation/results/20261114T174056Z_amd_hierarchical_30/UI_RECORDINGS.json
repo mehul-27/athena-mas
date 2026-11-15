@@ -1,0 +1,186 @@
+{
+  "summary_imports": 30,
+  "note": "Saved CLI terminal summaries were appended to the local event store with import provenance; raw benchmark records unchanged. No new research calls.",
+  "runs": [
+    {
+      "run_key": "gf-01__hierarchical__r0",
+      "run_id": "2c6487bc-0df1-4313-94d7-1c2cfd14cf4a",
+      "recording": "data/demo/replay/amd-eval-01-gf-01-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "te-02__hierarchical__r0",
+      "run_id": "bf05a635-418c-4382-a58e-e4aa7b62c923",
+      "recording": "data/demo/replay/amd-eval-02-te-02-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "ne-02__hierarchical__r0",
+      "run_id": "74764b6a-e337-4bfc-bec6-23c58b4bcdeb",
+      "recording": "data/demo/replay/amd-eval-03-ne-02-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "cm-02__hierarchical__r0",
+      "run_id": "cb4dbea4-8ba8-473b-81be-4623c89c23aa",
+      "recording": "data/demo/replay/amd-eval-04-cm-02-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "cv-01__hierarchical__r0",
+      "run_id": "f5b8f7ae-e025-4348-b315-c9e710a34181",
+      "recording": "data/demo/replay/amd-eval-05-cv-01-r0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "ms-02__hierarchical__r0",
+      "run_id": "b540bee5-1ecb-4171-8f65-b34a9ad1a422",
+      "recording": "data/demo/replay/amd-eval-06-ms-02-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "cs-01__hierarchical__r0",
+      "run_id": "f36542b2-ef0b-49e4-8538-c5c41fac7cf2",
+      "recording": "data/demo/replay/amd-eval-07-cs-01-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "dr-01__hierarchical__r0",
+      "run_id": "3d2e76fd-dfe6-4195-8343-63c845fe0ba8",
+      "recording": "data/demo/replay/amd-eval-08-dr-01-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "nc-01__hierarchical__r0",
+      "run_id": "3524cb66-c468-4c54-98e7-cbe35871a86e",
+      "recording": "data/demo/replay/amd-eval-09-nc-01-r0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "ie-01__hierarchical__r0",
+      "run_id": "76c0d2bd-7985-4225-9855-6a002ce6d790",
+      "recording": "data/demo/replay/amd-eval-10-ie-01-r0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "pi-01__hierarchical__r0",
+      "run_id": "e09f7fc2-848e-4d54-abf8-c511bd625ada",
+      "recording": "data/demo/replay/amd-eval-11-pi-01-r0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "tp-01__hierarchical__r0",
+      "run_id": "3ef17975-0ab6-4b88-b0c4-a7d9f02cc7a6",
+      "recording": "data/demo/replay/amd-eval-12-tp-01-r0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "gf-02__hierarchical__b0",
+      "run_id": "5df22ebf-172e-45e6-8370-fe2c6609e463",
+      "recording": "data/demo/replay/amd-eval-13-gf-02-b0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "te-01__hierarchical__b0",
+      "run_id": "4806ee7c-4fde-4da8-8460-a229825e5138",
+      "recording": "data/demo/replay/amd-eval-14-te-01-b0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "ne-01__hierarchical__b0",
+      "run_id": "72c03480-7ce1-4c5d-9192-0a4faa5782d0",
+      "recording": "data/demo/replay/amd-eval-15-ne-01-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "cm-03__hierarchical__b0",
+      "run_id": "8200f6f1-29ac-40f6-823f-bdc0ac7b3c62",
+      "recording": "data/demo/replay/amd-eval-16-cm-03-b0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "cv-02__hierarchical__b0",
+      "run_id": "d1aa40f3-d39c-4630-90db-11e24d9e9189",
+      "recording": "data/demo/replay/amd-eval-17-cv-02-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "ms-04__hierarchical__b0",
+      "run_id": "5ffcf0f8-49ad-4b03-9562-c09b32f1aa65",
+      "recording": "data/demo/replay/amd-eval-18-ms-04-b0.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "cs-04__hierarchical__b0",
+      "run_id": "3fef2e17-2735-4258-9b30-43cc3210a791",
+      "recording": "data/demo/replay/amd-eval-19-cs-04-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "dr-04__hierarchical__b0",
+      "run_id": "41c6a4b0-eae7-4b29-8a90-df12fda2d49d",
+      "recording": "data/demo/replay/amd-eval-20-dr-04-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "nc-03__hierarchical__b0",
+      "run_id": "44b5310a-426b-4075-b4a0-b97c2402625f",
+      "recording": "data/demo/replay/amd-eval-21-nc-03-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "ie-03__hierarchical__b0",
+      "run_id": "11a2c4c7-88fa-4e1e-8662-d89e43660859",
+      "recording": "data/demo/replay/amd-eval-22-ie-03-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "pi-03__hierarchical__b0",
+      "run_id": "a524d8f5-d605-4da8-a146-3b9069570841",
+      "recording": "data/demo/replay/amd-eval-23-pi-03-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "tp-04__hierarchical__b0",
+      "run_id": "1f6740b2-015b-4ea8-9a71-d4260a99cdc4",
+      "recording": "data/demo/replay/amd-eval-24-tp-04-b0.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "gf-01__hierarchical__r1",
+      "run_id": "30e5d358-446f-4951-90ab-0d22e2434dee",
+      "recording": "data/demo/replay/amd-eval-25-gf-01-r1.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "te-02__hierarchical__r1",
+      "run_id": "838a41dd-d55d-4166-b08b-a6ef9c4a86ab",
+      "recording": "data/demo/replay/amd-eval-26-te-02-r1.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "ne-02__hierarchical__r1",
+      "run_id": "9bd82062-a80f-45fe-87e6-66d437bd87e4",
+      "recording": "data/demo/replay/amd-eval-27-ne-02-r1.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "cm-02__hierarchical__r1",
+      "run_id": "004ae2e3-6fdf-44b6-9076-2dd298cd37ef",
+      "recording": "data/demo/replay/amd-eval-28-cm-02-r1.json",
+      "critic_approved": true
+    },
+    {
+      "run_key": "cv-01__hierarchical__r1",
+      "run_id": "80dca55d-b435-4de9-909e-5d3076f8835f",
+      "recording": "data/demo/replay/amd-eval-29-cv-01-r1.json",
+      "critic_approved": false
+    },
+    {
+      "run_key": "ms-02__hierarchical__r1",
+      "run_id": "6ebc615c-3623-4437-9cac-7492ae589aa7",
+      "recording": "data/demo/replay/amd-eval-30-ms-02-r1.json",
+      "critic_approved": true
+    }
+  ]
+}

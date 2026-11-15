@@ -1,0 +1,94 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "80dca55d-b435-4de9-909e-5d3076f8835f",
+  "wall_s": 732.704118499998,
+  "stage_ms": {
+    "planner": 151697.7,
+    "web_researcher": 56612.1,
+    "analyst": 65330.6,
+    "writer": 579.1,
+    "critic": 9425.1
+  },
+  "adk_tokens": 21539,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 761,
+  "evidence_count": 7,
+  "citation_count": 0,
+  "tools_used": [],
+  "tool_calls": 5,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.0,
+  "approved": false,
+  "severity": "high",
+  "critic_status": "rejected",
+  "critique_reason": "The draft and report both assert that no relevant fetched web pages were recorded, yet the evidence log contains fetched web pages from python.org and devguide.python.org that directly address the question, so the claim of no evidence is contradicted by the record. | The answer refuses to address the core question even though the fetched evidence provides the stable release series (Python 3.15, per the 'second maintenance release of 3.15' and 'maintenance mode or stable release' wording) and the newest patch release (3.15.2, per the Python 3.15.2 release page), so the answer is not complete for what the evidence supports. | The report lists zero citations and zero tools used despite multiple successful fetch_page and web_search invocations returning usable evidence, so the tool usage and citation audit do not match the execution record. | The direct admission that the evidence cannot answer the core question is a truncation of an answerable question, warranting rejection under the grading rule that a direct admission of unanswerability for the core question is a high-severity issue. | Confidence 0.0 is set even though the coverage assessment itself states the requested parts (release and definition) are covered, so the confidence value is inconsistent with the recorded evidence coverage. | report does not answer the core question (confidence 0.00 is below 0.5)",
+  "evidence_sufficient": false,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [
+    "No relevant fetched web pages were recorded; search snippets and irrelevant RAG chunks are not sufficient evidence."
+  ],
+  "evidence_limitations": [],
+  "subject_specific": false,
+  "general_background": false,
+  "answer_as_asked": false,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "release",
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "current",
+    "sery"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "none",
+  "confidence_ceiling": 0.3,
+  "confidence_notes": [
+    "missing subjects: current, sery",
+    "1 claim(s) lack recorded support",
+    "the report ships without citations"
+  ],
+  "claim_checks": 2,
+  "claim_issues": [
+    "No relevant fetched web pages were recorded; search snippets and irrelevant RAG chunks are not sufficient evidence. (no recorded source supports it; not about the asked subject)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

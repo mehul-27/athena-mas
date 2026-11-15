@@ -1,0 +1,94 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "11a2c4c7-88fa-4e1e-8662-d89e43660859",
+  "wall_s": 529.8266739999999,
+  "stage_ms": {
+    "planner": 99627.3,
+    "rag_researcher": 52549.2,
+    "analyst": 61072.9,
+    "writer": 456.3,
+    "critic": 63030.2
+  },
+  "adk_tokens": 5996,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 761,
+  "evidence_count": 8,
+  "citation_count": 0,
+  "tools_used": [],
+  "tool_calls": 1,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.0,
+  "approved": false,
+  "severity": "high",
+  "critic_status": "rejected",
+  "critique_reason": "The draft explicitly refuses to answer the core question, stating no relevant local-document evidence was recorded, but the question asks for a specific accuracy figure from the repository corpus and the evidence gap is non-blocking, so a qualified partial answer acknowledging the unverified remainder should have been attempted. | The report lists tools_used as empty despite the evidence coverage indicating rag_search was actually attempted and returned usable evidence, which makes the tool usage metadata inconsistent with the recorded evidence. | The report's confidence is set to 0.0 while the evidence coverage block specifies a confidence ceiling of 0.30 for a qualified partial answer, so the confidence is inconsistent with the established evidence coverage parameters. | The answer is truncated in the sense that it refuses to address any part of the question, despite the instruction that a qualified partial answer is acceptable when it explains the supported general principle and directly answers the part the evidence can support. | report does not answer the core question (confidence 0.00 is below 0.5)",
+  "evidence_sufficient": false,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search"
+  ],
+  "tools_invoked": [
+    "rag_search"
+  ],
+  "tools_succeeded": [
+    "rag_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "rag_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [
+    "No relevant local-document evidence was recorded for this question."
+  ],
+  "evidence_limitations": [
+    "No retrieved source mentions Athena; claims specific to that name remain unverified."
+  ],
+  "subject_specific": false,
+  "general_background": false,
+  "answer_as_asked": false,
+  "qualified_possible": false,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "Athena",
+    "accuracy",
+    "achieved",
+    "corpus",
+    "has",
+    "local",
+    "set"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "none",
+  "confidence_ceiling": 0.3,
+  "confidence_notes": [
+    "missing subjects: Athena, accuracy, achieved, corpus, has, local, set",
+    "1 claim(s) lack recorded support",
+    "the report ships without citations"
+  ],
+  "claim_checks": 2,
+  "claim_issues": [
+    "No relevant local-document evidence was recorded for this question. (no recorded source supports it)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

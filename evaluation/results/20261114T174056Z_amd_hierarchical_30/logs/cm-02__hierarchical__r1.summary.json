@@ -1,0 +1,101 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "004ae2e3-6fdf-44b6-9076-2dd298cd37ef",
+  "wall_s": 851.2108050000024,
+  "stage_ms": {
+    "planner": 99713.0,
+    "web_researcher": 55949.0,
+    "rag_researcher": 127603.3,
+    "analyst": 46413.3,
+    "writer": 71410.6,
+    "critic": 59853.7
+  },
+  "adk_tokens": 34027,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 15,
+  "citation_count": 4,
+  "tools_used": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tool_calls": 5,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.55,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The answer is supported by the recorded evidence and the citations align with the claims made. | The coverage assessment notes that the indexed, locally available copy was not fully retrieved, and the answer appropriately relies on secondary sources while addressing the definitions; this is a qualified partial answer as permitted.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search",
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "indexed",
+    "locally"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "secondary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: indexed, locally",
+    "2 claim(s) are not supported by a cited source"
+  ],
+  "claim_checks": 6,
+  "claim_issues": [
+    "According to the NASA Systems Engineering Handbook, product verification demonstrates that an end product conforms to its requirements or specifications, answer (no cited source supports it)",
+    "The two processes are similar in nature but have fundamentally different objectives (not about the asked subject)",
+    "Some generated claims were omitted because the captured evidence did not support them. (no cited source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

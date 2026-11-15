@@ -1,0 +1,92 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "5ffcf0f8-49ad-4b03-9562-c09b32f1aa65",
+  "wall_s": 1095.8188504999998,
+  "stage_ms": {
+    "planner": 84061.2,
+    "web_researcher": 270778.6,
+    "analyst": 69368.2,
+    "writer": 63525.0,
+    "critic": 55717.0
+  },
+  "adk_tokens": 45245,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 1007,
+  "evidence_count": 14,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 9,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "medium",
+  "critic_status": "approved",
+  "critique_reason": "The answer contains a typo/garbled fragment \"resolvers)Skip-in-CeDoc;\" that corrupts the enterprise-restoration sentence and should be cleaned before delivery. | The question explicitly asks to explain \"where it breaks enterprise content filtering,\" and the answer names no specific filtering category, control, or scenario that DoH defeats, only a generic bypass claim, which should be stated as an explicit unverified remainder per the coverage assessment. | The PCN and ScienceDirect sources record concrete impacts (browser-level resolver selection bypassing the OS/enterprise resolver; adversaries using DoH for command-and-control and exfiltration) that were dropped as unsupported; the report's guardrail flag treated these as unsupported even though they appear in the captured evidence, so the report under-uses available evidence on where filtering breaks.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "changes"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "break"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: break",
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 7,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

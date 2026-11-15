@@ -204,6 +204,37 @@ def test_a_run_without_a_critique_is_a_terminal_failure() -> None:
     assert summary.critic_status == "missing"
 
 
+@pytest.mark.parametrize("result", ["success", "timeout", "failure", "cancelled"])
+def test_terminal_summary_is_persisted_once_for_history(result) -> None:
+    from athena.observability.store import SQLiteEventStore
+
+    run_ids = []
+
+    def factory(run_id, pattern, recorder):
+        run_ids.append(run_id)
+        if result == "success":
+            return _Runner(run_id, evidence=EVIDENCE, critique=True)
+        errors = {
+            "timeout": TimeoutError("deadline"),
+            "failure": RuntimeError("model failed"),
+            "cancelled": asyncio.CancelledError(),
+        }
+        return _Boom(errors[result])
+
+    if result in {"failure", "cancelled"}:
+        expected = RuntimeError if result == "failure" else asyncio.CancelledError
+        with pytest.raises(expected):
+            _execute(factory)
+    else:
+        _execute(factory)
+    events = SQLiteEventStore().events(run_ids[0])
+    summaries = [event for event in events
+                 if (event.payload_summary or "").startswith("run_summary")]
+    assert len(summaries) == 1
+    assert summaries[0].extra["terminal_state"] == result
+    assert summaries[0].extra["run_id"] == run_ids[0]
+
+
 def test_a_timed_out_run_records_timeout_and_keeps_its_summary() -> None:
     summary = _execute(
         lambda run_id, pattern, recorder: _Boom(TimeoutError("stage deadline"))

@@ -1,0 +1,103 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "41c6a4b0-eae7-4b29-8a90-df12fda2d49d",
+  "wall_s": 1062.6965039999995,
+  "stage_ms": {
+    "planner": 92969.7,
+    "web_researcher": 62838.7,
+    "rag_researcher": 177026.2,
+    "analyst": 67487.9,
+    "writer": 77107.3,
+    "critic": 41141.4
+  },
+  "adk_tokens": 37621,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 1007,
+  "evidence_count": 24,
+  "citation_count": 1,
+  "tools_used": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tool_calls": 7,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": false,
+  "severity": "high",
+  "critic_status": "rejected",
+  "critique_reason": "The answer does not name all eight processes as a list; it names six (Technical Planning, management of requirements, interfaces, technical risk, configuration, and technical data) plus technical assessment and decision analysis, which totals eight only if each 'management of X' is counted separately, leaving the count ambiguous. | The supporting citation (p122-chunk-470) only states that the chapter describes technical management processes 10-17; it does not itself enumerate the eight named processes, so the enumeration in the answer is not directly traceable to the recorded evidence. | The claim that the handbook 'names' these processes is only supported by the fetched NASA web page (https://www.nasa.gov/reference/6-0-crosscutting-technical-management/), which was dropped as an unrecorded citation in the report; the rag excerpts (chunk-471, chunk-472) name only 'Technical Planning' as the first process and do not enumerate the rest. | The answer omits the fact that the report was flagged for dropping two citations that were recorded (https://www.nasa.gov/reference/6-0-crosscutting-technical-management/ and chunk-472) even though they are the only sources naming these eight processes, so the surviving citation is insufficient to support the enumerated list. | The answer does not explicitly state which portion of the eight-process list is verified by the locally indexed handbook versus the NASA web page, so the reader cannot tell which details are from the indexed source and which from the web source. | The answer does not flag that the question asked for the processes 'from the locally indexed NASA Systems Engineering Handbook' and that the local handbook excerpts available only name Technical Planning directly, with the full eight-process list coming from the web page.",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "degraded": true,
+  "degraded_reason": "worker budget stopped the loop early: web_researcher | outcome rejected",
+  "recovered_errors": [
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search",
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "indexed",
+    "locally",
+    "name"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "secondary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: indexed, locally, name",
+    "critic rejected the report (high severity)",
+    "1 claim(s) are not supported by a cited source"
+  ],
+  "claim_checks": 4,
+  "claim_issues": [
+    "Named processes include Technical Planning; management of requirements, interfaces, technical risk, configuration, and technical data; technical assessment; and (no cited source supports it)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

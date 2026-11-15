@@ -282,6 +282,25 @@ def test_history_lists_runs_with_summaries(client: TestClient, monkeypatch) -> N
     }]
 
 
+def test_history_keeps_the_latest_fifty_runs(client: TestClient, monkeypatch) -> None:
+    import athena.api.app as app_module
+
+    class Store:
+        def runs(self):
+            return [f"run-{number}" for number in range(80)]
+
+    class Board:
+        def read(self, _section):
+            return None
+
+    monkeypatch.setattr(app_module, "_store", lambda: Store())
+    monkeypatch.setattr(app_module, "_summary", lambda *_args: {"pattern": "hierarchical"})
+    monkeypatch.setattr(app_module.Blackboard, "open", lambda *_args: Board())
+
+    runs = client.get("/api/runs").json()["runs"]
+    assert [run["run_id"] for run in runs] == [f"run-{number}" for number in range(79, 29, -1)]
+
+
 class _FakeStore:
     def runs(self) -> list[str]:
         return ["r1"]

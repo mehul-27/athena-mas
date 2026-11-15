@@ -1,0 +1,107 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "76c0d2bd-7985-4225-9855-6a002ce6d790",
+  "wall_s": 1096.1414220999995,
+  "stage_ms": {
+    "planner": 77435.2,
+    "web_researcher": 338792.5,
+    "analyst": 74441.9,
+    "writer": 63975.9,
+    "critic": 54197.9
+  },
+  "adk_tokens": 54041,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 720,
+  "evidence_count": 23,
+  "citation_count": 0,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 16,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.4,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The report's supporting key point about the fair's dates (May 1-October 30, 1893) was moved to key_points even though it was dropped from the final answer's citations, leaving the key point without a recorded citation in the report's citation array. | The second-day NYT figure (contrast between >500,000 and <50,000 on May 2) could have supported a qualified partial answer naming the second day (May 2) as a relevant date, but the report did not mention it; this is a minor completeness gap for a qualified partial answer, not an unsupported claim.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "fetch_page: HTTP 403",
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)"
+  ],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [
+    "fetch_page: HTTP 403",
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some web searches failed (web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)); any successfully fetched pages remain usable evidence.",
+    "Some page fetches failed (fetch_page: HTTP 403); only pages that returned readable content were used.",
+    "No retrieved source mentions Tuesday; claims specific to that name remain unverified."
+  ],
+  "subject_specific": false,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "Tuesday",
+    "exact",
+    "figure",
+    "subject-specific source"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "background",
+  "confidence_ceiling": 0.5,
+  "confidence_notes": [
+    "missing subjects: Tuesday, exact, figure, subject-specific source",
+    "1 claim(s) lack recorded support",
+    "the report ships without citations"
+  ],
+  "claim_checks": 4,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

@@ -1,0 +1,105 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "3fef2e17-2735-4258-9b30-43cc3210a791",
+  "wall_s": 970.6136915999996,
+  "stage_ms": {
+    "planner": 118586.3,
+    "web_researcher": 158859.8,
+    "analyst": 72479.7,
+    "writer": 41462.9,
+    "critic": 60861.9
+  },
+  "adk_tokens": 41112,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 15,
+  "citation_count": 1,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 11,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.55,
+  "approved": false,
+  "severity": "medium",
+  "critic_status": "rejected",
+  "critique_reason": "The answer does not name the two specific conflicting accounts (vendor's 10x claim vs independent 1.3x report) or attribute each figure to a source, as the coverage requirement explicitly instructs. | The report does not identify the unverified organization-specific details (which vendor, which alternative, which benchmark report), leaving the qualified partial answer incomplete per the coverage assessment. | The single citation (ANN-Benchmarks methodology) supports the general protocol principle but the answer's central subject\u2014the actual 10x vendor claim and 1.3x independent benchmark\u2014has no retrieved source that states either number. | The draft/report is near-verbatim identical to the draft provided, with no meaningful independent synthesis beyond the source material.",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [
+    "fetch_page: response exceeded 1000000 bytes",
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)"
+  ],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [
+    "fetch_page: response exceeded 1000000 bytes",
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some web searches failed (web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)); any successfully fetched pages remain usable evidence.",
+    "Some page fetches failed (fetch_page: response exceeded 1000000 bytes); only pages that returned readable content were used.",
+    "Retrieved sources state both competing accounts (vendor vector database 10x faster than alternative vs independent benchmark report 1.3x gap adjudicate conflict); report the conflict and attribute each account to its source."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "1.3x",
+    "adjudicate",
+    "conflict",
+    "report"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [
+    "Retrieved sources state both competing accounts (vendor vector database 10x faster than alternative vs independent benchmark report 1.3x gap adjudicate conflict); report the conflict and attribute each account to its source."
+  ],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: 1.3x, adjudicate, conflict, report"
+  ],
+  "claim_checks": 4,
+  "claim_issues": [],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

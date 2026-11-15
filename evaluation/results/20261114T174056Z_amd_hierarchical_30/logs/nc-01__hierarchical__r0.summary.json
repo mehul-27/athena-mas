@@ -1,0 +1,100 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "3524cb66-c468-4c54-98e7-cbe35871a86e",
+  "wall_s": 722.6832874000011,
+  "stage_ms": {
+    "planner": 115023.5,
+    "calc_researcher": 95284.0,
+    "analyst": 62743.7,
+    "writer": 56798.6,
+    "critic": 86021.3,
+    "web_researcher": 61928.4
+  },
+  "adk_tokens": 6603,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 1007,
+  "evidence_count": 1,
+  "citation_count": 0,
+  "tools_used": [
+    "calculate"
+  ],
+  "tool_calls": 1,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.3,
+  "approved": false,
+  "severity": "high",
+  "critic_status": "rejected",
+  "critique_reason": "The report entirely refuses to answer the core question, which the calculation evidence fully supports: 30/(18+30)*100 = 62.5% is a direct, verified answer to the question asked. | The report's blanket claim that 'The captured evidence did not support the generated factual claims' contradicts the recorded evidence, which does support the Phase D percentage calculation. | The guardrail sanitization removed a claim (Phase D = 62.5%) that is traceable to the recorded calculation evidence, so the unsupported_claim flag was applied incorrectly. | The report omits the supported answer rather than providing the qualified answer that the evidence allows, which is a truncated answer on the core question. | report does not answer the core question (confidence 0.30 is below 0.5)",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "calculate"
+  ],
+  "tools_invoked": [
+    "calculate"
+  ],
+  "tools_succeeded": [
+    "calculate"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "calculate"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "No retrieved source mentions Phase, D; claims specific to that name remain unverified."
+  ],
+  "subject_specific": false,
+  "general_background": false,
+  "answer_as_asked": false,
+  "qualified_possible": false,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "Phase",
+    "D",
+    "combined",
+    "decimal",
+    "effort",
+    "month",
+    "percentage",
+    "person",
+    "place",
+    "project",
+    "spend"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "none",
+  "confidence_ceiling": 0.3,
+  "confidence_notes": [
+    "missing subjects: Phase, D, combined, decimal, effort, month, percentage, person, place, project, spend",
+    "2 claim(s) lack recorded support",
+    "the report ships without citations"
+  ],
+  "claim_checks": 2,
+  "claim_issues": [
+    "The captured evidence did not support the generated factual claims. The report has been reduced to its verified limitations. (no recorded source supports it)",
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

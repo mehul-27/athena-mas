@@ -1,0 +1,99 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "cb4dbea4-8ba8-473b-81be-4623c89c23aa",
+  "wall_s": 930.1659132999994,
+  "stage_ms": {
+    "planner": 90693.9,
+    "web_researcher": 58905.9,
+    "rag_researcher": 177149.4,
+    "analyst": 21688.2,
+    "writer": 73751.2,
+    "critic": 80153.9
+  },
+  "adk_tokens": 31509,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 15,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tool_calls": 5,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The answer is complete and every claim is traceable to the recorded evidence, with the core definition directly supported by the locally indexed handbook chunks and complementary web sources.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search",
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "indexed",
+    "locally"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "secondary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: indexed, locally",
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 6,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

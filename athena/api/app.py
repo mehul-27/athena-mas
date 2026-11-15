@@ -406,7 +406,7 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
                 "outcome": summary.get("outcome"),
                 "degraded": summary.get("degraded"),
             })
-        return {"runs": list(reversed(runs))[-50:]}
+        return {"runs": list(reversed(runs))[:50]}
 
     @app.get("/api/tools")
     def tools() -> dict:

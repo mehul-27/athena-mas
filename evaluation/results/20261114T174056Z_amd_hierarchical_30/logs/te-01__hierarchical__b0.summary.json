@@ -1,0 +1,96 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "4806ee7c-4fde-4da8-8460-a229825e5138",
+  "wall_s": 706.4491538000002,
+  "stage_ms": {
+    "planner": 147743.4,
+    "web_researcher": 59423.5,
+    "analyst": 93313.9,
+    "writer": 60900.6,
+    "critic": 56752.5
+  },
+  "adk_tokens": 17743,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 6,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 5,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.58,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The answer is fully supported by the recorded evidence; the definition, the O(1) reasoning, the average-case caveat, and the factors for maintaining O(1) all trace directly to the retrieved sources. | The report meets the hierarchical pattern by defining the structure, then the mechanism for O(1), then the caveats and dependency factors, so the structure requirement is satisfied. | A non-blocking evidence limitation (a 403 on one fetch_page) was noted in the evidence coverage, and the answer does not rely on any unread page content, so no rejection is warranted.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "fetch_page: HTTP 403",
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "degraded": true,
+  "degraded_reason": "worker budget stopped the loop early: web_researcher",
+  "recovered_errors": [
+    "fetch_page: HTTP 403",
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "fetch_page"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some page fetches failed (fetch_page: HTTP 403); only pages that returned readable content were used."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "described"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: described"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

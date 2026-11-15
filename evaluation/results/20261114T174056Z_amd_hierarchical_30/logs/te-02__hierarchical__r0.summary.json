@@ -1,0 +1,102 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "bf05a635-418c-4382-a58e-e4aa7b62c923",
+  "wall_s": 844.0244274999995,
+  "stage_ms": {
+    "planner": 121714.9,
+    "rag_researcher": 104850.8,
+    "web_researcher": 163657.8,
+    "analyst": 62962.1,
+    "writer": 15868.5,
+    "critic": 57854.7
+  },
+  "adk_tokens": 19638,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 14,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tool_calls": 5,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The answer names the slow start algorithm for the slow start phase and the congestion avoidance algorithm for the congestion avoidance phase, but RFC 5681 and the RFC 2001 excerpt name these as distinct algorithms rather than one 'algorithm for each phase' with the two being complementary, so the naming is accurate but slightly tautological.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "degraded": true,
+  "degraded_reason": "worker budget stopped the loop early: web_researcher",
+  "recovered_errors": [
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search",
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "rag_search",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "role"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "name"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: name",
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 6,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

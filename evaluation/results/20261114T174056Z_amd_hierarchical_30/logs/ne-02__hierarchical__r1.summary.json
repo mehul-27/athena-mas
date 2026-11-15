@@ -1,0 +1,89 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "9bd82062-a80f-45fe-87e6-66d437bd87e4",
+  "wall_s": 584.1518966000003,
+  "stage_ms": {
+    "planner": 100570.2,
+    "web_researcher": 300541.3,
+    "analyst": 66240.2,
+    "writer": 68109.4,
+    "critic": 48544.3
+  },
+  "adk_tokens": 15723,
+  "a2a_bytes_out": 479,
+  "a2a_bytes_in": 431,
+  "evidence_count": 8,
+  "citation_count": 4,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 4,
+  "revision_rounds": 0,
+  "recovery_rounds": 0,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The phrase 'each 1.32 meters flat-to-flat alert' contains a typo ('alert' should be 'across'), and the same typo appears in the report's answer field. | The draft and report state that the mirror is 'the largest primary mirror ever launched into space,' which is supported by the NASA source excerpt but that claim is not separately flagged in key_points or citations.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": true,
+  "qualified_possible": false,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.8,
+  "confidence_notes": [
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 4,
+  "claim_issues": [
+    "The James Webb Space Telescope's primary mirror is 6.5 meters (21 feet 4 inches) across, composed of 18 hexagonal beryllium segments, each 1.32 meters flat-to-f (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

@@ -1,0 +1,88 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "3ef17975-0ab6-4b88-b0c4-a7d9f02cc7a6",
+  "wall_s": 647.0072488999995,
+  "stage_ms": {
+    "planner": 100190.2,
+    "rag_researcher": 192360.2,
+    "analyst": 53574.7,
+    "writer": 67541.5,
+    "critic": 58655.0,
+    "web_researcher": 55575.8
+  },
+  "adk_tokens": 8825,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 15,
+  "citation_count": 5,
+  "tools_used": [
+    "rag_search"
+  ],
+  "tool_calls": 2,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.6,
+  "approved": false,
+  "severity": "medium",
+  "critic_status": "rejected",
+  "critique_reason": "The phrase 'hands to demonstrate customer and stakeholder satisfaction' in the draft's final sentence is an apparent typo/garble (likely 'aims to demonstrate' or 'is used to demonstrate'), which obscures the meaning of the sentence; the draft should either correct this wording or remove the claim. | The claim that validation is 'distinct from verification' is supported only by the juxtaposition of separate sections on verification (7.2.2.4) and validation (7.2.3) in Appendix I, and the retrieved evidence does not explicitly state the handbook distinguishes between the two; the claim goes beyond what the evidence directly supports. | The draft's statement that 'the handbook frames validation as distinct from verification... to demonstrate customer and stakeholder satisfaction rather than purely confirming requirements' asserts a definitional contrast that is not explicitly stated in any cited evidence, making it an unsupported interpretive claim. | The draft says 'Key outputs of validation include the validated end product, which is the end product that has successfully met the validation criteria,' but the recorded evidence only shows the validated end product is mentioned as a key output (chunk-440) and does not state the definitional phrase 'successfully met the validation criteria' verbatim, so that specific characterization is not directly traceable to the evidence. | report does not answer the core question",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "rag_search"
+  ],
+  "tools_invoked": [
+    "rag_search"
+  ],
+  "tools_succeeded": [
+    "rag_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "rag_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "anyway",
+    "assignment",
+    "garbage",
+    "just"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "secondary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: anyway, assignment, garbage, just"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

@@ -1,0 +1,97 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "f36542b2-ef0b-49e4-8538-c5c41fac7cf2",
+  "wall_s": 853.5838315000001,
+  "stage_ms": {
+    "planner": 100483.3,
+    "web_researcher": 75632.1,
+    "analyst": 55119.9,
+    "writer": 113922.3,
+    "critic": 6366.4
+  },
+  "adk_tokens": 29787,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 10,
+  "citation_count": 4,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 8,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.6,
+  "approved": true,
+  "severity": "medium",
+  "critic_status": "approved",
+  "critique_reason": "The report adds the NASA '293 as of August 2026' figure as a potentially conflicting unverified item, but no retrieved source supports the 293 count; the NASA source excerpt records '293 confirmed moons as of August 2026' without a reconciling explanation, so the report correctly flags it as unverified rather than resolving it. | The report's guardrail flag notes that the NASA citation was dropped because it supported no surviving claim, yet the report body does cite NASA's 293 figure; this is a minor internal inconsistency in the reporting trail, not a defect in the answer itself. | The report's resolution (146 + 128 = 274) is directly supported by the retrieved evidence, and the partial answer appropriately names the unverified remainder (the 293 figure) rather than inventing a reconciliation.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)"
+  ],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [
+    "web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)"
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [
+    "web_search"
+  ],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "Some web searches failed (web_search: search provider throttled; no fallback configured (set ATHENA_SEARXNG_URL to enable the optional SearXNG fallback)); any successfully fetched pages remain usable evidence."
+  ],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "another",
+    "discrepancy",
+    "resolved"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: another, discrepancy, resolved"
+  ],
+  "claim_checks": 4,
+  "claim_issues": [],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

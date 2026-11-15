@@ -1,0 +1,53 @@
+{
+  "source_config": "evaluation/hierarchical_30.json",
+  "source_sha256": "69a45cbb712e9d320299c1249ce435d1fed7bbc364e2043a0e24d91d70f3088a",
+  "runtime_config": "M:/Athena/athena-mas/evaluation/results/20261114T174056Z_amd_hierarchical_30/hierarchical_30_amd_runtime_v2.json",
+  "runtime_sha256": "52987fe6507bb62c9c5bcf47fa539b2e4c3f4744ef95a14508bd0a61c11acf66",
+  "selection_changed": false,
+  "planned_entries": 30,
+  "distinct_prompts": 24,
+  "deviations": [
+    {
+      "field": "matrix.llm_call_cap",
+      "from": "null (effective 12 from stale .env ATHENA_MAX_LLM_CALLS)",
+      "to": 40,
+      "reason": "documented hierarchical policy in athena.config.caps; the .env 12 is a Groq diagnostic leftover and would truncate a full hierarchical run",
+      "authorization": "independent audit finding 2; routine runtime config"
+    },
+    {
+      "field": "matrix.per_run_timeout_s",
+      "from": 1200.0,
+      "to": 3600.0,
+      "reason": "AMD latency; slow runs must not be cut off by the wall clock"
+    },
+    {
+      "field": "budget.max_total_wall_s",
+      "from": 86400.0,
+      "to": 172800.0,
+      "reason": "48h batch wall budget so AMD slowness alone cannot abort"
+    },
+    {
+      "field": "provider/A2A timeouts (runtime env, not config fields)",
+      "from": "ATHENA_LLM_TIMEOUT_S=300 inherited; A2A default 240",
+      "to": "ATHENA_LLM_TIMEOUT_S=900; ATHENA_A2A_TIMEOUT_S=1200",
+      "reason": "consistent timeout layers under the 3600 s per-run cap; provider timeout alone was not sufficient"
+    },
+    {
+      "field": "note/pricing.note",
+      "from": "groq-specific text",
+      "to": "amd-specific text",
+      "reason": "honest provenance; pricing stays empty and costs null"
+    }
+  ],
+  "unchanged_policy": {
+    "backend": "subprocess",
+    "seed": null,
+    "budget.max_runs": 36,
+    "budget.max_total_usd": 8.0,
+    "budget.max_run_usd": 0.6,
+    "env_caps_kept": "LLM_MAX_TOKENS=512 and role caps 1500/2000/3000; ATHENA_MAX_TOOL_CALLS=3, researcher/worker/calc model+tool caps; critic/security rules and scoring untouched"
+  },
+  "source_sha256_raw": "69a45cbb712e9d320299c1249ce435d1fed7bbc364e2043a0e24d91d70f3088a",
+  "source_sha256_recorded": "69a45cbb712e9d320299c1249ce435d1fed7bbc364e2043a0e24d91d70f3088a",
+  "source_sha256_note": "The recorded value was computed over text read with universal-newline normalization; the raw-file hash is source_sha256_raw. The plan file is unmodified (git status shows no change)."
+}

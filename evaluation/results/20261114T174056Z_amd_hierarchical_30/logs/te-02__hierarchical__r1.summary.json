@@ -1,0 +1,92 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "838a41dd-d55d-4166-b08b-a6ef9c4a86ab",
+  "wall_s": 702.491152300001,
+  "stage_ms": {
+    "planner": 105241.3,
+    "web_researcher": 61689.6,
+    "analyst": 62479.7,
+    "writer": 63878.5,
+    "critic": 52922.9
+  },
+  "adk_tokens": 21742,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 6,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 4,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": true,
+  "severity": "low",
+  "critic_status": "approved",
+  "critique_reason": "The answer claims RFC 1122 'requires a TCP to implement both algorithms,' which is supported by the RFC 2001 evidence excerpt. | The answer names the slow start phase algorithm as 'exponential slow start,' which is consistent with the GeeksforGeeks evidence describing exponential increment during slow start. | The answer names the congestion avoidance phase algorithm as 'additive increase (AIMD's additive component),' which is consistent with the GeeksforGeeks evidence describing additive increment (cwnd = cwnd + 1) in congestion avoidance. | The answer directly addresses both parts of the question (why both phases are used and naming one algorithm per phase) using the recorded evidence.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [],
+  "degraded": false,
+  "degraded_reason": "",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "role"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "name"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: name",
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 6,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

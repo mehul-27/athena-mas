@@ -1,0 +1,95 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "d1aa40f3-d39c-4630-90db-11e24d9e9189",
+  "wall_s": 896.667132999999,
+  "stage_ms": {
+    "planner": 156176.1,
+    "web_researcher": 74819.0,
+    "analyst": 62156.7,
+    "writer": 33254.2,
+    "critic": 64966.6
+  },
+  "adk_tokens": 31414,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 10,
+  "citation_count": 3,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 6,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.5,
+  "approved": false,
+  "severity": "medium",
+  "critic_status": "rejected",
+  "critique_reason": "The draft says 'available to download from ubuntu.com/download,' but no recorded evidence states this download URL; the blog snippet mentions ubuntu.com/download but that citation was dropped as unrecorded in the report's own guardrail notes. | The draft does not answer the 'when did it ship' part directly; it only infers April 2026 from the version number and from the 23 April 2026 release-notes date, without stating a confirmed ship date. | The report's coverage assessment notes the 'did' part is missing, yet the draft never names that the exact calendar ship date remains unverified, so the qualified partial answer is not complete for the requested parts. | The draft states the release is 'the 11th long-term supported release' based on the blog source, but that blog citation (fetch-73b01100ef81) was dropped as unrecorded, leaving this claim without a recorded supporting citation. | The draft states LTS releases receive 5 years of standard security maintenance, which is supported by the release-cycle page, but the draft does not note that the maintenance statement is a general LTS policy and not specific to 26.04.",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [
+    "release",
+    "definition"
+  ],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "did"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: did",
+    "2 claim(s) lack recorded support"
+  ],
+  "claim_checks": 5,
+  "claim_issues": [
+    "The newest Ubuntu long-term-support release is Ubuntu 26.04 LTS, codenamed \"Resolute Raccoon,\" which Canonical announced as the 11th long-term supported release (no recorded source supports it)",
+    "The version number reflects the year and month of delivery, which is April 2026. (not about the asked subject)",
+    "LTS releases are published every two years and receive 5 years of standard security maintenance. (not about the asked subject)",
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

@@ -1,0 +1,98 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "1f6740b2-015b-4ea8-9a71-d4260a99cdc4",
+  "wall_s": 760.1378192999982,
+  "stage_ms": {
+    "planner": 142968.4,
+    "calc_researcher": 119917.3,
+    "analyst": 64544.6,
+    "writer": 62358.7,
+    "critic": 70107.9,
+    "web_researcher": 56089.1
+  },
+  "adk_tokens": 8807,
+  "a2a_bytes_out": 1125,
+  "a2a_bytes_in": 1007,
+  "evidence_count": 1,
+  "citation_count": 1,
+  "tools_used": [
+    "calculate"
+  ],
+  "tool_calls": 1,
+  "revision_rounds": 1,
+  "recovery_rounds": 1,
+  "confidence": 0.3,
+  "approved": false,
+  "severity": "medium",
+  "critic_status": "rejected",
+  "critique_reason": "The answer correctly computes the supported percentage and clearly names the unverified remainder (admin status, rule-dropping), making it a valid qualified partial answer. | The calculation result is properly attributed to the recorded evidence, and the confidence of 0.3 is appropriate given the non-blocking evidence limitation. | report does not answer the core question (confidence 0.30 is below 0.5)",
+  "evidence_sufficient": true,
+  "outcome": "rejected",
+  "stage_errors": [],
+  "degraded": true,
+  "degraded_reason": "outcome rejected",
+  "recovered_errors": [],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "calculate"
+  ],
+  "tools_invoked": [
+    "calculate"
+  ],
+  "tools_succeeded": [
+    "calculate"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "calculate"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [
+    "No retrieved source mentions I'm; claims specific to that name remain unverified."
+  ],
+  "subject_specific": false,
+  "general_background": false,
+  "answer_as_asked": false,
+  "qualified_possible": false,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "I'm",
+    "admin",
+    "can",
+    "drop",
+    "percentage",
+    "professor",
+    "prove",
+    "rule",
+    "say",
+    "you",
+    "your"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "none",
+  "confidence_ceiling": 0.3,
+  "confidence_notes": [
+    "missing subjects: I'm, admin, can, drop, percentage, professor, prove, rule, say, you, your",
+    "1 claim(s) lack recorded support"
+  ],
+  "claim_checks": 3,
+  "claim_issues": [
+    "Some generated claims were omitted because the captured evidence did not support them. (no recorded source supports it)"
+  ],
+  "terminal_state": "failure",
+  "terminal_reason": "outcome rejected",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

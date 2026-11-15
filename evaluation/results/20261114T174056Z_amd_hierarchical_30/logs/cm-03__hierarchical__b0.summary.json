@@ -1,0 +1,92 @@
+{
+  "pattern": "hierarchical",
+  "run_id": "8200f6f1-29ac-40f6-823f-bdc0ac7b3c62",
+  "wall_s": 646.336723700002,
+  "stage_ms": {
+    "planner": 100813.0,
+    "web_researcher": 35215.4,
+    "analyst": 69604.6,
+    "writer": 82382.8,
+    "critic": 35326.4
+  },
+  "adk_tokens": 17774,
+  "a2a_bytes_out": 802,
+  "a2a_bytes_in": 719,
+  "evidence_count": 9,
+  "citation_count": 2,
+  "tools_used": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tool_calls": 6,
+  "revision_rounds": 0,
+  "recovery_rounds": 1,
+  "confidence": 0.55,
+  "approved": true,
+  "severity": "medium",
+  "critic_status": "approved",
+  "critique_reason": "The answer's core situational comparison is well supported: BM25 for exact-term technical identifiers and dense retrieval for zero-overlap conversational queries, both traceable to the fetched evidence. | The hybrid recommendation (BM25 baseline + dense retrieval, RRF fusion) is well supported by the denser.ai and suhasbhairav.com sources. | The answer does not explicitly cover 'low-latency' and 'governance/auditability' advantages of BM25 that the suhasbhairav source states, but these are supplemental, not required for the core comparison. | The 'freshness requirements' point for dense retrieval is supported by the suhasbhairav source and is appropriately mentioned. | Citation 2 quotes/summarizes denser.ai; the recorded excerpt does support that BM25 matches product codes/names/identifiers while dense matches meaning. | The report appropriately disclaims that situational guidance beyond the covered categories is unverified, given the evidence coverage notes that general 'say, situation' subjects were missing. | All citations used in the report are recorded in the evidence; no citation is fabricated or misattributed. | The confidence of 0.55 appropriately reflects the qualified partial answer status per the evidence coverage assessment.",
+  "evidence_sufficient": true,
+  "outcome": "approved",
+  "stage_errors": [
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "degraded": true,
+  "degraded_reason": "worker budget stopped the loop early: web_researcher",
+  "recovered_errors": [
+    "fetch_page: Blocked: this tool call was already made."
+  ],
+  "failed": false,
+  "estimated": false,
+  "toolset_failures": [],
+  "tools_enabled": [
+    "rag_search",
+    "web_search",
+    "fetch_page",
+    "calculate",
+    "forecast"
+  ],
+  "tools_planned": [
+    "web_search",
+    "fetch_page"
+  ],
+  "tools_invoked": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_succeeded": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_failed": [],
+  "tools_usable_evidence": [
+    "fetch_page",
+    "web_search"
+  ],
+  "tools_skipped": [],
+  "unmet_requirements": [],
+  "evidence_limitations": [],
+  "subject_specific": true,
+  "general_background": true,
+  "answer_as_asked": false,
+  "qualified_possible": true,
+  "supported_aspects": [],
+  "missing_aspects": [],
+  "missing_subjects": [
+    "say",
+    "situation"
+  ],
+  "missing_requirements": [],
+  "conflict_notes": [],
+  "evidence_quality": "primary",
+  "confidence_ceiling": 0.6,
+  "confidence_notes": [
+    "missing subjects: say, situation"
+  ],
+  "claim_checks": 6,
+  "claim_issues": [],
+  "terminal_state": "success",
+  "terminal_reason": "outcome approved",
+  "recovery_reason": "",
+  "recovery_skipped_reason": ""
+}

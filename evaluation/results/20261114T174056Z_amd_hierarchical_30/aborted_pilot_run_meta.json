@@ -1,0 +1,100 @@
+{
+  "harness_version": "1.0.0",
+  "started_at": "2026-11-14T17:43:53+00:00",
+  "git_commit": "3584d5b",
+  "python": "3.13.3",
+  "backend": "subprocess",
+  "model": "openai/DeepSeek-V4-Flash",
+  "adk_model": "openai/DeepSeek-V4-Flash",
+  "crew_model": "openai/DeepSeek-V4-Flash",
+  "provider": "openai",
+  "crew_provider": "openai",
+  "api_host": "https://api.tokenlab.amd.com/v1",
+  "crew_api_host": "https://api.tokenlab.amd.com/v1",
+  "profile_applied": true,
+  "profile_id": "367f57c4-d107-447c-a857-632fa8e6a454",
+  "profile_name": "amd",
+  "env_source": "profile",
+  "models_differ": false,
+  "provenance": {
+    "adk_model": "openai/DeepSeek-V4-Flash",
+    "crew_model": "openai/DeepSeek-V4-Flash",
+    "provider": "openai",
+    "crew_provider": "openai",
+    "api_host": "https://api.tokenlab.amd.com/v1",
+    "crew_api_host": "https://api.tokenlab.amd.com/v1",
+    "profile_applied": true,
+    "profile_id": "367f57c4-d107-447c-a857-632fa8e6a454",
+    "profile_name": "amd",
+    "env_source": "profile",
+    "models_differ": false,
+    "note": "ADK stages (planner/researchers) read this process's environment; the CrewAI stages (analyst/writer/critic) run in the dev_up.py server, whose environment is the active settings profile merged over it."
+  },
+  "seed_propagated_to_provider": false,
+  "seed_note": "Seeds are trial labels only. The pipeline never passes a seed to a provider, so a variance tier is a stochastic replicate, not a seeded reproduction, and its spread is sampling noise.",
+  "timeout_s": 3600.0,
+  "dataset_path": "evaluation/dataset.json",
+  "dataset_sha256": "bcff0a98e2813d7211912954d624cfe34241f90350bcc19c39c310dbf5faac28",
+  "config_sha256": "197f51191462105d1e6ff76f905917bcadd5af78aa5f173912c209a3016d7ede",
+  "dataset_items": 48,
+  "plan_id": "hierarchical-30",
+  "plan_scope": "focused",
+  "plan_target_runs": 30,
+  "plan_entries": 30,
+  "already_recorded": [],
+  "pricing": {
+    "source": "athena.observability.cost",
+    "table": "M:\\Athena\\athena-mas\\data\\pricing.json",
+    "as_of": "2026-11-06",
+    "entries": 30,
+    "unit": "usd_per_million_tokens",
+    "unknown_model_basis": "unpriced"
+  },
+  "pricing_status": {
+    "models": [
+      "openai/DeepSeek-V4-Flash",
+      "openai/DeepSeek-V4-Flash"
+    ],
+    "unpriced_models": [
+      "openai/DeepSeek-V4-Flash"
+    ],
+    "priced": false,
+    "usd_cap_enforceable": false,
+    "note": "Every run records est_cost_usd=null and pricing.priced=false for ['openai/DeepSeek-V4-Flash']. The USD caps (max_total_usd=8.0, max_run_usd=0.6) therefore cannot bound real spend for this batch - they are inert, and max_runs=36 is the only hard cap. Do not read a zero total as 'nothing was spent'."
+  },
+  "unpriced_acknowledged": {
+    "acknowledged": true,
+    "unpriced_models": [
+      "openai/DeepSeek-V4-Flash"
+    ],
+    "note": "The operator was told that costs are null and the USD caps are inert for this batch, and chose to proceed."
+  },
+  "budget": {
+    "runs_started": 0,
+    "spent_usd_estimate": 0.0,
+    "runs_with_unknown_cost": 0,
+    "max_runs": 36,
+    "max_total_usd": 8.0,
+    "max_run_usd": 0.6,
+    "max_total_wall_s": 172800.0,
+    "elapsed_wall_s": 0.108867,
+    "usd_cap_enforceable": false,
+    "usd_cap_note": "with unpriced models or attempts with unknown cost, the USD caps cannot bound real spend. Known recorded costs still count; attempt and execution-time caps remain effective."
+  },
+  "attempts": {
+    "planned": 30,
+    "attempted": 0,
+    "completed": 0,
+    "failed": 0,
+    "timeout": 0,
+    "infra_errors": 0,
+    "skipped": 0,
+    "retries": 0,
+    "hard_max_attempts": 36
+  },
+  "riders": {
+    "backend_note": "subprocess: the same entry point the demo HTTP API uses"
+  },
+  "stopped_reason": null,
+  "records_written": 0
+}
