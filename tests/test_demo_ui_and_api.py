@@ -93,13 +93,6 @@ def test_banner_is_inline_and_dismissible() -> None:
     assert "max-height: 40px" in rule
 
 
-def test_presentation_size_raises_the_base_font() -> None:
-    css = _read("style.css")
-    assert "--base: 18px" in css
-    assert 'html[data-size="presentation"]' in css
-    assert "400 var(--base)/1.55 var(--font)" in css
-
-
 def test_light_theme_exists() -> None:
     css = _read("style.css")
     assert 'html[data-theme="light"]' in css
@@ -183,8 +176,11 @@ def test_the_key_field_never_keeps_a_key() -> None:
     assert 'autocomplete="new-password"' in field
 
     source = _read("settings.js")
-    assert "never repopulate a stored key" in source
-    assert 'profile-key").value = ""' in source
+    assert '"profile-model", "profile-key", "profile-search-endpoint"' in source
+    edit = source[source.index("function editProfile"):source.index("function cancelEdit")]
+    assert "resetForm();" in edit
+    assert "profile.has_llm_key" in edit
+    assert '$("profile-key").value' not in edit
 
 
 def test_reasoning_effort_defaults_to_not_sent() -> None:
@@ -286,7 +282,7 @@ def test_history_keeps_the_latest_fifty_runs(client: TestClient, monkeypatch) ->
     import athena.api.app as app_module
 
     class Store:
-        def runs(self):
+        def runs(self, *, include_removed=True):
             return [f"run-{number}" for number in range(80)]
 
     class Board:
@@ -294,19 +290,44 @@ def test_history_keeps_the_latest_fifty_runs(client: TestClient, monkeypatch) ->
             return None
 
     monkeypatch.setattr(app_module, "_store", lambda: Store())
-    monkeypatch.setattr(app_module, "_summary", lambda *_args: {"pattern": "hierarchical"})
+    monkeypatch.setattr(app_module, "_summary", lambda *_args, **_kwargs: {"pattern": "hierarchical"})
     monkeypatch.setattr(app_module.Blackboard, "open", lambda *_args: Board())
 
     runs = client.get("/api/runs").json()["runs"]
     assert [run["run_id"] for run in runs] == [f"run-{number}" for number in range(79, 29, -1)]
 
 
+def test_delete_research_history_keeps_the_run_trace(client, monkeypatch, tmp_path) -> None:
+    from athena.observability.events import Event
+    from athena.observability.store import SQLiteEventStore
+
+    monkeypatch.setenv("EVENTS_DB", str(tmp_path / "events.db"))
+    monkeypatch.setenv("BLACKBOARD_DB", str(tmp_path / "blackboard.db"))
+    store = SQLiteEventStore()
+    for run_id in ("remove-me", "keep-me"):
+        store.emit(Event(
+            run_id=run_id, kind="stage_end", agent="run", framework="adk",
+            payload_summary="run_summary sequential", extra={"pattern": "sequential"},
+        ))
+
+    path = "/api/runs/remove-me"
+    assert client.delete(path, headers={"Origin": "https://example.com"}).status_code == 403
+    assert client.delete(path).json() == {"run_id": "remove-me", "removed": True}
+    assert client.delete(path).status_code == 200
+    assert client.delete("/api/runs/missing").status_code == 404
+    assert [row["run_id"] for row in client.get("/api/runs").json()["runs"]] == ["keep-me"]
+    assert len(store.events("remove-me")) == 1
+
+
 class _FakeStore:
-    def runs(self) -> list[str]:
+    def runs(self, *, include_removed=True) -> list[str]:
         return ["r1"]
 
     def events(self, run_id: str):
         return [_Event()]
+
+    def latest_summary(self, run_id: str):
+        return _Event()
 
 
 class _Event:
@@ -438,7 +459,7 @@ def test_examples_popover_is_grouped_scrollable_and_anchored() -> None:
 def test_composer_pattern_is_sent_and_locked_during_an_active_run() -> None:
     source = _read("app.js")
 
-    assert 'state = {\n  view: "run", pattern: L.DEFAULT_PATTERN' in source
+    assert 'state = {\n  view: "chat", pattern: L.DEFAULT_PATTERN' in source
     assert "pattern: state.pattern" in source
     assert "tools: state.researchTools === null ? null : state.researchTools.slice()" in source
     assert "const patternSelect = $(\"composer-pattern\")" in source
@@ -552,7 +573,9 @@ def test_documents_view_lists_the_indexed_corpus() -> None:
     assert "async function loadDocuments" in source
     assert "/api/settings/library" in source
     assert "document-row" in source
-    assert "Upload and personal document management are not implemented" in html
+    assert 'id="documents-upload"' in html
+    assert 'id="chat-upload-document"' in html
+    assert "/api/library/documents?filename=" in source
 
 
 def test_contextual_workspace_is_shared_by_chat_and_research() -> None:

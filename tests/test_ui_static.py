@@ -230,7 +230,7 @@ def test_the_evaluation_view_is_opt_in_and_never_fabricates() -> None:
     # Hidden until the harness has written a batch.
     assert 'class="nav-item hidden" data-view="eval"' in html
     assert "async function refreshEvalNav()" in app
-    assert "refreshEvalNav().catch(() => {});" in app
+    assert "requestIdleCallback(refreshEvalNav" in app
     assert "loadEvaluation(" in app
     assert "/api/eval/runs" in app and "/api/eval/summary?run=" in app
     # An empty batch says so instead of showing a zero row.

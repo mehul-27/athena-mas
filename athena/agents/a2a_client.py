@@ -14,14 +14,19 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import httpx
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.helpers import get_stream_response_text, new_text_message
 from a2a.types import Role, SendMessageRequest
+from opentelemetry.trace import SpanKind
 
 from athena.guardrails.interagent import TOKEN_ENV, PeerAuth, sign_message
+from athena.observability.a2a_trace import a2a_span, outgoing_trace_headers
+from athena.observability.recorder import get_recorder
 
 INSTRUCTION_LIMIT = 300
 MAX_PAYLOAD_BYTES = 600
@@ -91,6 +96,25 @@ def a2a_timeout() -> float:
     )
 
 
+@contextmanager
+def trace_role_call(role: str):
+    """Keep the client span active through the exchange and its audit event."""
+    started = time.perf_counter()
+    with a2a_span(SpanKind.CLIENT):
+        try:
+            yield started
+        except Exception as exc:
+            recorder = get_recorder()
+            if recorder is not None:
+                recorder.emit(
+                    "error", role, "adk", ok=False,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                    error_type=type(exc).__name__, error_message=str(exc),
+                    payload_summary=f"a2a {role}",
+                )
+            raise
+
+
 async def send_role_request(card_url: str, payload: str, timeout: float | None = None) -> str:
     """Send one payload and return the server's acknowledgement text."""
     timeout = a2a_timeout() if timeout is None else timeout
@@ -102,6 +126,7 @@ async def send_role_request(card_url: str, payload: str, timeout: float | None =
         card = await A2ACardResolver(httpx_client=http, base_url=base_url).get_agent_card(
             relative_card_path=parsed.path
         )
+        http.headers.update(outgoing_trace_headers())
         client = ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create(card)
 
         request = SendMessageRequest()

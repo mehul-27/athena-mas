@@ -17,7 +17,7 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
 from google.genai import types
 
-from athena.agents.a2a_client import build_payload, send_role_request
+from athena.agents.a2a_client import build_payload, send_role_request, trace_role_call
 from athena.agents.a2a_stage import DEFAULT_CARD_URL, INSTRUCTIONS
 from athena.agents.planner import (
     build_planner,
@@ -238,9 +238,9 @@ class P2PAgent(BaseAgent):
             if role == "critic":
                 context.limitations = list(assessment.issues)
         payload = build_payload(self.run_id, role, INSTRUCTIONS[role], context.for_role(role))
-        started = time.perf_counter()
-        reply = await send_role_request(self.card_url, payload)
-        self._record_call(role, reply, started)
+        with trace_role_call(role) as started:
+            reply = await send_role_request(self.card_url, payload)
+            self._record_call(role, reply, started)
         try:
             body = json.loads(reply)
         except ValueError:

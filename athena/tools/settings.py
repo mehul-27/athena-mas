@@ -66,6 +66,23 @@ def search_provider() -> str:
     return (os.getenv("SEARCH_PROVIDER") or "duckduckgo").lower()
 
 
+SEARCH_PROVIDERS = ("duckduckgo", "searxng", "firecrawl")
+
+
+def firecrawl_key() -> str:
+    return (os.getenv("FIRECRAWL_API_KEY") or "").strip()
+
+
+def search_unavailable_reason(provider: str) -> str:
+    if provider == "disabled":
+        return "Web search is disabled."
+    if provider not in SEARCH_PROVIDERS:
+        return f"Unsupported search provider {provider!r}."
+    if provider == "firecrawl" and not firecrawl_key():
+        return "Firecrawl needs FIRECRAWL_API_KEY on the Athena server."
+    return ""
+
+
 def searxng_url() -> str:
     """The SearXNG base URL, from ``ATHENA_SEARXNG_URL`` or ``SEARXNG_INSTANCE``.
 

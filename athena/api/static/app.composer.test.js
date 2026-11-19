@@ -52,6 +52,7 @@ function makeHarness() {
     querySelectorAll: () => [],
     querySelector: () => null,
   };
+  const frames = [];
   const source = fs.readFileSync(APP, "utf8");
   const end = source.indexOf(MARKER);
   assert.notEqual(end, -1, "app.js wiring marker must exist");
@@ -60,6 +61,7 @@ function makeHarness() {
       startRun,
       openRun,
       loadRunEvents,
+      addEvent,
       state,
       renderEvidenceTable,
       loadMetrics,
@@ -70,6 +72,7 @@ function makeHarness() {
         renderLiveMap = overrides.renderLiveMap || (() => {});
         updateProgress = overrides.updateProgress || (() => {});
         renderActivityTrace = overrides.renderActivityTrace || (() => {});
+        renderResearchResponseMeta = () => {};
         logEvent = overrides.logEvent || (() => {});
       },
       installOpenRun(overrides) {
@@ -110,11 +113,12 @@ function makeHarness() {
     document,
     history: { replaceState() {} },
     console,
+    requestAnimationFrame: (callback) => frames.push(callback),
   };
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(script, context);
-  return { app: context.__composer, document };
+  return { app: context.__composer, document, frames };
 }
 
 function install(app, document, reply) {
@@ -148,6 +152,23 @@ function prepare(question, pattern = "hierarchical") {
   harness.document.getElementById("composer-pattern").value = pattern;
   return harness;
 }
+
+test("research event bursts preserve each event and redraw once before paint", () => {
+  const { app, frames } = makeHarness();
+  let redraws = 0;
+  app.installEventRender({ renderTimeline: () => { redraws += 1; } });
+  app.state.view = "run";
+  app.state.runId = "r1";
+  for (let seq = 1; seq <= 3; seq += 1) {
+    app.addEvent({ run_id: "r1", seq, event_id: "e" + seq, kind: "model_call" });
+  }
+
+  assert.equal(app.state.events.length, 3);
+  assert.equal(frames.length, 1);
+  assert.equal(redraws, 0);
+  frames.shift()();
+  assert.equal(redraws, 1);
+});
 
 test("successful submission sends the original question and clears after a valid run id", async () => {
   const question = "  What changed in Python 3.13?  ";

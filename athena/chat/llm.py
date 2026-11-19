@@ -7,7 +7,7 @@ import json
 import os
 from typing import Any, AsyncIterator
 
-from athena.chat.models import ChatTarget, LLMDelta
+from athena.chat.models import ChatTarget, LLMDelta, deepseek_thinking_model, official_host
 from athena.config.endpoint_guard import expected_host_scope, install_guard
 from athena.config.ratelimit import estimate_tokens, get_limiter, get_output_limiter
 from athena.observability.litellm_usage import usage_from_response
@@ -96,14 +96,21 @@ async def stream_completion(
         install_guard()
         _GUARDED = True
 
+    # Athena uses its own cost telemetry. Avoid downloading an SDK model
+    # catalogue on the first message unless the operator opts in.
+    os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
     import litellm
 
     reserve = max(256, int(max_tokens or MAX_TOKENS))
-    estimate = estimate_tokens(_request_text(messages))
-    limiter = get_limiter()
-    output = get_output_limiter()
-    await asyncio.to_thread(limiter.acquire, estimate, "chat")
-    await asyncio.to_thread(output.acquire, reserve, "chat")
+    direct_deepseek = official_host(target.api_base) == "api.deepseek.com"
+    if not direct_deepseek:
+        # DeepSeek accounts have their own provider limits. They do not share
+        # Athena's local token window with the smaller hosted-tier accounts.
+        estimate = estimate_tokens(_request_text(messages))
+        limiter = get_limiter()
+        output = get_output_limiter()
+        await asyncio.to_thread(limiter.acquire, estimate, "chat")
+        await asyncio.to_thread(output.acquire, reserve, "chat")
 
     kwargs: dict[str, Any] = {
         "model": target.model,
@@ -122,11 +129,18 @@ async def stream_completion(
         kwargs["api_key"] = "local-no-key"
     if target.api_base:
         kwargs["api_base"] = target.api_base
-    if target.reasoning_effort:
-        kwargs["reasoning_effort"] = target.reasoning_effort
+    effort = target.reasoning_effort
+    deepseek_thinking = direct_deepseek and deepseek_thinking_model(target.model)
+    if deepseek_thinking and effort in {"", "off"}:
+        # The official API defaults to thinking. With no effort selected,
+        # chat asks for the direct answer instead of waiting for reasoning.
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    elif effort:
+        kwargs["reasoning_effort"] = "none" if effort == "off" else effort
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
+    capture_reasoning = deepseek_thinking and bool(tools) and effort not in {"", "off"}
 
     tokens_in = 0
     tokens_out = 0
@@ -162,6 +176,8 @@ async def stream_completion(
                     continue
                 choice = choices[0]
                 delta = _get(choice, "delta", None) or _get(choice, "message", {}) or {}
+                if capture_reasoning and (reasoning_part := _get(delta, "reasoning_content")):
+                    yield LLMDelta(provider_reasoning=str(reasoning_part))
                 content = _get(delta, "content", "") or ""
                 if content:
                     yield LLMDelta(text=str(content))
@@ -171,5 +187,6 @@ async def stream_completion(
                 if finish:
                     yield LLMDelta(finish_reason=str(finish))
     finally:
-        limiter.record(tokens_in or estimate)
-        output.record(tokens_out or reserve)
+        if not direct_deepseek:
+            limiter.record(tokens_in or estimate)
+            output.record(tokens_out or reserve)

@@ -44,6 +44,14 @@
     return typeof value === "number" && Number.isFinite(value);
   }
 
+  function traceDetails(trace) {
+    if (!isObject(trace) || !trace.trace_id || !trace.span_id) return [];
+    const kind = trace.span_kind ? trace.span_kind + " span" : "Span";
+    const details = ["Trace " + trace.trace_id, kind + " " + trace.span_id];
+    if (trace.parent_span_id) details.push("Parent " + trace.parent_span_id);
+    return details;
+  }
+
   function clamp01(value) {
     if (!isNumber(value)) return 0;
     if (value < 0) return 0;
@@ -455,8 +463,9 @@
         height: rowHeight,
         offsetLabel: formatMs(from),
         durationLabel: isNumber(span.duration_ms) ? formatMs(span.duration_ms) : "open",
-        title: (span.label || span.kind || "span") + " \u2014 " + (agent)
-          + " \u2014 " + (isNumber(span.duration_ms) ? formatMs(span.duration_ms) : "no duration recorded"),
+        title: [span.label || span.kind || "span", agent,
+          isNumber(span.duration_ms) ? formatMs(span.duration_ms) : "no duration recorded",
+          ...traceDetails(span.trace)].join(" \u00b7 "),
       });
     });
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => ({
@@ -517,6 +526,7 @@
       }
       if (event.payload_summary) bits.push(String(event.payload_summary));
       if (event.error_message) bits.push(String(event.error_message));
+      bits.push(...traceDetails(event.extra));
       return {
         key: event.event_id || "event:" + index,
         kind: String(event.kind || ""),

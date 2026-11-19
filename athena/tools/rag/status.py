@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 from athena.tools import settings
+from athena.tools.rag.index import open_client
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,7 @@ def chunk_count(path: str | Path | None = None, collection: str | None = None) -
     if not target.exists():
         return 0
     try:
-        import chromadb
-
-        client = chromadb.PersistentClient(path=str(target))
+        client = open_client(target)
         return int(client.get_collection(collection or settings.collection_name()).count())
     except Exception as exc:  # noqa: BLE001 - a status probe must not raise
         logger.info("RAG index status unavailable: %s", type(exc).__name__)
@@ -49,9 +48,7 @@ def document_rows(
         return []
     found: dict[str, dict] = {}
     try:
-        import chromadb
-
-        client = chromadb.PersistentClient(path=str(target))
+        client = open_client(target)
         store = client.get_collection(collection or settings.collection_name())
         offset = 0
         while True:
@@ -124,9 +121,7 @@ def document_preview(
     used = 0
     truncated = False
     try:
-        import chromadb
-
-        client = chromadb.PersistentClient(path=str(target))
+        client = open_client(target)
         store = client.get_collection(collection or settings.collection_name())
         offset = 0
         scanned = 0

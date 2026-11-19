@@ -9,6 +9,9 @@ Two defences, both cheap and both tested:
 
 from __future__ import annotations
 
+from dataclasses import replace
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -37,6 +40,10 @@ class ProfileIn(BaseModel):
     search_key: str | None = None
 
 
+class ProfileOrderIn(BaseModel):
+    profile_ids: list[str]
+
+
 @router.get("/profiles")
 def list_profiles(request: Request) -> dict:
     _guard(request)
@@ -56,12 +63,23 @@ def create_profile(payload: ProfileIn, request: Request) -> dict:
     return _save(payload, Profile(**payload.model_dump(exclude={"llm_key", "search_key"})))
 
 
+@router.put("/profiles/order")
+def put_profile_order(payload: ProfileOrderIn, request: Request) -> dict:
+    _guard(request)
+    try:
+        profiles = store.reorder(payload.profile_ids)
+    except ProfileError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"profiles": [profile.public() for profile in profiles]}
+
+
 @router.put("/profiles/{profile_id}")
 def update_profile(profile_id: str, payload: ProfileIn, request: Request) -> dict:
     _guard(request)
-    if store.find(profile_id) is None:
+    existing = store.find(profile_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail=f"no profile {profile_id!r}")
-    profile = Profile(id=profile_id, **payload.model_dump(exclude={"llm_key", "search_key"}))
+    profile = replace(existing, **payload.model_dump(exclude={"llm_key", "search_key"}))
     return _save(payload, profile)
 
 
@@ -69,6 +87,8 @@ def update_profile(profile_id: str, payload: ProfileIn, request: Request) -> dic
 def delete_profile(profile_id: str, request: Request) -> dict:
     _guard(request)
     store.delete(profile_id)
+    if defaults.chat_profile_id() == profile_id:
+        defaults.set_chat_profile("")
     return {"deleted": profile_id}
 
 
@@ -192,6 +212,14 @@ class ModelsIn(BaseModel):
     llm_key: str | None = None
 
 
+def _origin(base: str) -> tuple[str, str, int | None]:
+    try:
+        url = urlparse(base.strip())
+        return url.scheme, url.hostname or "", url.port or {"http": 80, "https": 443}.get(url.scheme)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid API base URL.") from exc
+
+
 def _model_ids(payload) -> list[str]:
     if isinstance(payload, list):
         rows = payload
@@ -228,7 +256,7 @@ async def discover_models(payload: ModelsIn, request: Request) -> dict:
         if profile is None:
             raise HTTPException(status_code=404, detail=f"no profile {profile_id!r}")
         base = base or profile.api_base
-        if not key:
+        if not key and _origin(base) == _origin(profile.api_base):
             key = default_vault().get(store.key_name(profile_id, "llm")) or ""
     try:
         base = validate_api_base(base)
@@ -237,9 +265,7 @@ async def discover_models(payload: ModelsIn, request: Request) -> dict:
     if not base:
         raise HTTPException(status_code=422, detail="api_base is required for model discovery")
     if not key:
-        from urllib.parse import urlparse
-
-        if (urlparse(base).hostname or "") not in {"localhost", "127.0.0.1", "::1"}:
+        if (urlparse(base).hostname or "") not in store.LOCAL_HOSTS:
             return {"models": [], "count": 0, "supported": False, "error": "API key required."}
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:

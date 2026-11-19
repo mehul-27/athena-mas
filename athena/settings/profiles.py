@@ -8,20 +8,23 @@ search provider to use; the keys live in the vault under
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
 from athena.settings.vault import SecretStore, default_vault
+from athena.tools.settings import SEARCH_PROVIDERS
 
 PROFILES_FILE = Path("data/settings/profiles.json")
 PRESETS_FILE = Path("data/presets.json")
+SHIPPED_PRESETS_FILE = Path(__file__).resolve().parents[2] / PRESETS_FILE
 ACTIVE_FILE = Path("data/settings/active_profile.json")
+_PROFILE_LOCK = threading.RLock()
 
-# Only providers the web tool actually implements. Brave/Tavily used to be
-# accepted by validation but always returned "unsupported SEARCH_PROVIDER".
-SEARCH_PROVIDERS = ("duckduckgo", "searxng")
 FALLBACK_PROVIDERS = ("", "searxng")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 ENV_KEYS = (
@@ -30,9 +33,7 @@ ENV_KEYS = (
     "SEARCH_FALLBACK_ENDPOINT",
 )
 
-# `data/presets.json` is the user-editable list, but a fresh clone must still
-# offer presets (the file is under `data/`, which is gitignored). This fallback
-# is the shipped list; it is used when the file is missing or malformed.
+# Built-in presets for installations that don't ship data/presets.json.
 DEFAULT_PRESETS = [
     {
         "id": "commandcode",
@@ -145,11 +146,11 @@ class Profile:
 
 
 def presets() -> list[dict]:
-    if PRESETS_FILE.exists():
+    for path in (PRESETS_FILE, SHIPPED_PRESETS_FILE):
         try:
-            data = json.loads(PRESETS_FILE.read_text(encoding="utf-8"))
-        except ValueError:
-            data = None
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            continue
         if isinstance(data, list) and data:
             return data
     return list(DEFAULT_PRESETS)
@@ -157,34 +158,53 @@ def presets() -> list[dict]:
 
 def load_profiles(path: Path | None = None) -> list[Profile]:
     path = path or PROFILES_FILE
-    if not path.exists():
-        return []
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    return [Profile(**item) for item in raw]
+    with _PROFILE_LOCK:
+        if not path.exists():
+            return []
+        return [Profile(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
 
 
 def save_profiles(profiles: list[Profile], path: Path | None = None) -> None:
     path = path or PROFILES_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps([asdict(p) for p in profiles], indent=2), encoding="utf-8")
+    with _PROFILE_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as handle:
+            temporary = Path(handle.name)
+        try:
+            temporary.write_text(json.dumps([asdict(p) for p in profiles], indent=2), encoding="utf-8")
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def upsert(profile: Profile, path: Path | None = None) -> Profile:
     profile.validate()
-    profiles = load_profiles(path)
-    for index, existing in enumerate(profiles):
-        if existing.id == profile.id:
-            profiles[index] = profile
-            break
-    else:
-        profiles.append(profile)
-    save_profiles(profiles, path)
+    with _PROFILE_LOCK:
+        profiles = load_profiles(path)
+        for index, existing in enumerate(profiles):
+            if existing.id == profile.id:
+                profiles[index] = profile
+                break
+        else:
+            profiles.append(profile)
+        save_profiles(profiles, path)
     return profile
+
+
+def reorder(profile_ids: list[str], path: Path | None = None) -> list[Profile]:
+    with _PROFILE_LOCK:
+        profiles = {profile.id: profile for profile in load_profiles(path)}
+        if len(profile_ids) != len(profiles) or set(profile_ids) != profiles.keys():
+            raise ProfileError("Model order must contain each saved profile once. Reopen Settings to reload the list.")
+        ordered = [profiles[profile_id] for profile_id in profile_ids]
+        save_profiles(ordered, path)
+        return ordered
 
 
 def delete(profile_id: str, path: Path | None = None, vault: SecretStore | None = None) -> None:
     store = vault or default_vault()
-    save_profiles([p for p in load_profiles(path) if p.id != profile_id], path)
+    with _PROFILE_LOCK:
+        save_profiles([p for p in load_profiles(path) if p.id != profile_id], path)
     store.delete(key_name(profile_id, "llm"))
     store.delete(key_name(profile_id, "search"))
     if active_id(path) == profile_id:
@@ -218,12 +238,14 @@ def env_for_profile(profile_id: str, vault: SecretStore | None = None,
         raise ProfileError(f"no profile {profile_id!r}")
     store = vault or default_vault()
 
-    env: dict[str, str] = {"LLM_MODEL": profile.model}
-    if profile.api_base:
-        env["LLM_API_BASE"] = profile.api_base
-    if profile.reasoning_effort:
-        env["LLM_REASONING_EFFORT"] = profile.reasoning_effort
+    env = {
+        "LLM_MODEL": profile.model,
+        "LLM_API_BASE": profile.api_base,
+        "LLM_REASONING_EFFORT": profile.reasoning_effort,
+    }
     llm_key = store.get(key_name(profile.id, "llm"))
+    if not llm_key and urlparse(profile.api_base).hostname in LOCAL_HOSTS:
+        llm_key = "local-no-key"
     if llm_key:
         env["LLM_API_KEY"] = llm_key
     env["SEARCH_PROVIDER"] = profile.search_provider

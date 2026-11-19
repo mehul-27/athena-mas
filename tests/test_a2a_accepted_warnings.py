@@ -80,6 +80,33 @@ def test_unverified_p2p_claim_does_not_choose_warning_audit_run(tmp_path):
     assert _warnings(events, "unverified-claimed-run") == []
 
 
+@pytest.mark.parametrize("active_run, audit_run, source", [
+    ("trusted-active-run", "trusted-active-run", "refused_no_verified_run"),
+    (None, "unattributed", "unattributed"),
+])
+def test_refused_signature_cannot_choose_an_existing_run_audit_log(
+    tmp_path, monkeypatch, active_run, audit_run, source
+):
+    board_store = SQLiteStore(tmp_path / "bb.db")
+    board = Blackboard.create(Task(question="Explain propulsion."), store=board_store)
+    events_path = tmp_path / "warnings.db"
+    events = SQLiteEventStore(events_path)
+    monkeypatch.setenv("EVENTS_DB", str(events_path))
+    monkeypatch.setenv("ATHENA_A2A_SHARED_TOKEN", "test-shared-token")
+    if active_run:
+        set_recorder(Recorder(active_run, events))
+    body = {"run_id": board.run_id, "role": "writer", "instruction": "Summarize",
+            "sig": "0" * 64}
+
+    ack = json.loads(run_role_request(json.dumps(body), store=board_store))
+
+    assert ack["ok"] is False
+    assert _warnings(events, board.run_id) == []
+    rows = _warnings(events, audit_run)
+    assert [row.extra["rule"] for row in rows] == ["interagent.signature"]
+    assert rows[0].extra["run_id_source"] == source
+
+
 def test_clean_accepted_request_does_not_invent_a_warning(tmp_path):
     events = SQLiteEventStore(tmp_path / "events.db")
     set_recorder(Recorder("active", events))

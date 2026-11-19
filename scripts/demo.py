@@ -43,18 +43,18 @@ def provider_ready() -> bool:
 
 
 def wait_for(url: str, timeout: float = 40.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=1.5) as response:
                 if response.status == 200:
                     return True
         except Exception:  # noqa: BLE001 - not up yet
-            time.sleep(0.4)
+            time.sleep(0.1)
     return False
 
 
-def start_crew_server() -> subprocess.Popen | None:
+def start_crew_server(*, wait: bool = True) -> subprocess.Popen | None:
     """Start the server with the active profile's environment, if there is one."""
     script = REPO / "scripts" / "dev_up.py"
     env = dict(os.environ)
@@ -65,6 +65,8 @@ def start_crew_server() -> subprocess.Popen | None:
     except Exception:  # noqa: BLE001 - settings are optional
         pass
     process = subprocess.Popen([sys.executable, str(script)], cwd=str(REPO), env=env)
+    if not wait:
+        return process
     process.wait(timeout=120)
     if process.returncode != 0:
         print("CrewAI server did not start; continuing in replay mode.")
@@ -88,11 +90,6 @@ def main(argv: list[str] | None = None) -> int:
     if not replay_only and not provider_ready():
         print("No provider key configured - starting in replay mode.")
         replay_only = True
-    if not replay_only:
-        print("Starting the CrewAI A2A server...")
-        if start_crew_server() is None:
-            replay_only = True
-
     import uvicorn
 
     from athena.api.app import create_app
@@ -103,24 +100,43 @@ def main(argv: list[str] | None = None) -> int:
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
-    if not wait_for(f"http://{HOST}:{args.port}/api/health"):
-        print(f"The API did not answer on {url}; see the traceback above.")
-        return 1
-
-    print(f"Athena demo: {url} ({'replay only' if replay_only else 'live'})")
-    print("Press Ctrl+C to stop.")
-    if not args.no_browser:
-        webbrowser.open(url)
-
+    crew_start = None
     try:
+        if not wait_for(f"http://{HOST}:{args.port}/healthz"):
+            print(f"The API did not answer on {url}; see the traceback above.")
+            return 1
+        if not replay_only:
+            print("Starting the CrewAI A2A server in the background...")
+            try:
+                crew_start = start_crew_server(wait=False)
+            except OSError as exc:
+                print(f"CrewAI could not start ({type(exc).__name__}); Chat and recordings are available.")
+        print(f"Athena demo: {url} ({'Research starting' if crew_start else 'Chat and recordings'})")
+        print("Press Ctrl+C to stop.")
+        if not args.no_browser:
+            webbrowser.open(url)
+
+        crew_status_reported = False
         while thread.is_alive():
+            if crew_start is not None and not crew_status_reported:
+                result = crew_start.poll()
+                if result is not None:
+                    crew_status_reported = True
+                    if result != 0:
+                        print("CrewAI did not start; Chat and recordings are available.")
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
+        if crew_start is not None and crew_start.poll() is None:
+            crew_start.terminate()
+            try:
+                crew_start.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                crew_start.kill()
         server.should_exit = True
         thread.join(timeout=10)
-        if not replay_only:
+        if crew_start is not None:
             stop_crew_server()
     return 0
 

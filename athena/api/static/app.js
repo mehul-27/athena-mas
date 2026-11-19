@@ -25,13 +25,14 @@ const RESEARCH_TOOL_FALLBACK = [
 ];
 
 const state = {
-  view: "run", pattern: L.DEFAULT_PATTERN, runId: null, events: [],
+  view: "chat", pattern: L.DEFAULT_PATTERN, runId: null, events: [],
   source: null, retries: 0, replaying: false, playback: false, bundles: [], presets: [],
   profiles: [], active: "", editing: "", rawJson: false, busy: false,
-  runs: [], historyLimit: HISTORY_LIMIT, speed: 1,
+  runs: [], historyLimit: HISTORY_LIMIT, historyRequest: 0, speed: 1,
   researchTools: loadResearchToolSelection(),
   researchToolCatalog: RESEARCH_TOOL_FALLBACK.slice(),
   researchToolsReady: false,
+  metricsRunId: null, replayHeatmap: null,
   traceExpanded: false, traceUserToggled: false,
   tab: L.tabReducer(undefined, { type: "select", tab: "answer" }),
   request: { status: "idle", message: "", rows: [] },
@@ -166,12 +167,6 @@ function applyTheme(theme) {
   document.dispatchEvent(new CustomEvent("athena:theme", { detail: { theme: theme } }));
 }
 
-function applySize(presentation) {
-  document.documentElement.dataset.size = presentation ? "presentation" : "normal";
-  try { localStorage.setItem("athena.presentation", presentation ? "1" : "0"); } catch (_) { /* ignore */ }
-  document.dispatchEvent(new CustomEvent("athena:size", { detail: { presentation: presentation } }));
-}
-
 function updateSidebarBackdrop() {
   const backdrop = $("sidebar-backdrop");
   if (!backdrop) return;
@@ -214,13 +209,19 @@ function showView(name) {
     item.classList.toggle("active", item.dataset.view === name);
   });
   if (name === "chat") window.AthenaChat?.activate();
-  if (name === "run") { setTab("answer"); renderLiveMap(); }
+  if (!chatMode && !state.historyRequest) loadHistory();
+  if (name === "run") {
+    setTab("answer");
+    autoGrow();
+    renderResearchUpdates();
+    loadQuestionsOnce();
+    if (!state.researchToolsReady) loadResearchTools();
+  }
   if (name === "details") {
     if (!state.runId || state.loadingRunId) { showView("run"); return; }
     if (state.tab.tab === "answer") setTab("activity");
     renderDetailsHeader($("user-question").textContent || "");
-    renderLiveMap();
-    renderActivityTrace();
+    renderResearchUpdates();
   }
   if (name === "how") { renderHowDiagram(); loadTools(); }
   if (name === "documents") loadDocuments();
@@ -293,7 +294,10 @@ function updateLockedControls() {
         : "";
     });
   };
-  mark("#history-list li:not(.sidebar-empty):not(.group-label)");
+  mark("#history-list .history-entry");
+  document.querySelectorAll("#history-list .history-entry button").forEach((button) => {
+    button.disabled = locked || button.dataset.deleting === "true";
+  });
   mark("#replay-list li:not(.sidebar-empty)");
 
   const patternSelect = $("composer-pattern");
@@ -606,11 +610,13 @@ function renderStatus() {
   $("status-crew-dot").className = dot ? "dot " + dot : "dot";
   renderRunStatus();
   renderPreviousRun();
-  const questionNode = $("user-question");
-  if (state.runId) renderDetailsHeader(questionNode ? questionNode.textContent : "");
-  renderResearchResponseMeta();
-  renderActivityTrace();
-  window.AthenaContext?.refresh("research", state.runId);
+  if (state.view === "run" || state.view === "details") {
+    const questionNode = $("user-question");
+    if (state.runId) renderDetailsHeader(questionNode ? questionNode.textContent : "");
+    renderResearchResponseMeta();
+    renderActivityTrace();
+    window.AthenaContext?.refresh("research", state.runId);
+  }
   updateLockedControls();
   updateNotice();
 }
@@ -661,6 +667,7 @@ async function refreshHealth() {
 function setTab(name) {
   state.tab = L.tabReducer(state.tab, { type: "select", tab: name });
   renderTabs();
+  if (name === "metrics" && state.view === "details") loadSelectedMetrics();
 }
 
 function setRunning(running) {
@@ -791,7 +798,13 @@ function updateExampleSelection() {
 function openExamples() {
   const panel = $("examples-popover");
   const toggle = $("examples-toggle");
-  if (!panel || !toggle || !exampleOptions().length) return;
+  if (!panel || !toggle) return;
+  if (!exampleOptions().length) {
+    loadQuestionsOnce().then(() => {
+      if (state.view === "run" && document.activeElement === toggle && exampleOptions().length) openExamples();
+    });
+    return;
+  }
   closePatternMenu(false);
   panel.classList.remove("hidden");
   toggle.setAttribute("aria-expanded", "true");
@@ -845,6 +858,12 @@ function chooseQuestion(value) {
   input.focus();
 }
 
+let questionsRequest = null;
+function loadQuestionsOnce() {
+  questionsRequest ||= loadQuestions().catch(() => { questionsRequest = null; });
+  return questionsRequest;
+}
+
 async function loadQuestions() {
   const data = await api("/api/questions");
   const list = $("examples-list");
@@ -888,7 +907,9 @@ async function loadQuestions() {
   }
 }
 
+let recordingsRequested = false;
 async function loadReplays() {
+  recordingsRequested = true;
   const host = $("replay-list");
   try {
     const data = await api("/api/replay");
@@ -900,6 +921,7 @@ async function loadReplays() {
     });
     updateLockedControls();
   } catch (error) {
+    recordingsRequested = false;
     host.replaceChildren();
     emptyItem(host, "recordings unavailable");
     updateLockedControls();
@@ -908,6 +930,10 @@ async function loadReplays() {
 
 function historyRow(row) {
   const item = document.createElement("li");
+  item.className = "history-entry";
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "history-row-open";
   const top = document.createElement("span");
   top.className = "row-top";
 
@@ -931,24 +957,63 @@ function historyRow(row) {
     text(count, "x" + row.count);
     top.appendChild(count);
   }
-  item.appendChild(top);
+  open.appendChild(top);
 
   const question = document.createElement("span");
   question.className = "row-sub";
   text(question, row.question || "(no question)");
-  item.appendChild(question);
-  item.addEventListener("click", () => openRun(row.run_id));
+  open.appendChild(question);
+  open.addEventListener("click", () => openRun(row.run_id));
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "history-row-delete";
+  remove.title = row.count > 1 ? "Remove latest run from history" : "Remove run from history";
+  remove.setAttribute("aria-label", remove.title + ": " + question.textContent);
+  remove.appendChild(window.AthenaIcons.icon("delete", "icon sm"));
+  remove.addEventListener("click", () => deleteHistoryRun(row, remove));
+  item.append(open, remove);
   return item;
 }
 
+async function deleteHistoryRun(row, button) {
+  if (isLocked()) { toast(lockedReason()); return; }
+  const label = row.count > 1 ? "Remove the latest run for this question from history?" : "Remove this run from history?";
+  if (!window.confirm(label)) return;
+  button.dataset.deleting = "true";
+  button.disabled = true;
+  try {
+    await api("/api/runs/" + encodeURIComponent(row.run_id), { method: "DELETE" });
+    state.runs = state.runs.filter((run) => run.run_id !== row.run_id);
+    renderHistory();
+    if (state.view !== "chat" && !state.replaying
+      && (state.loadingRunId || state.runId) === row.run_id) {
+      if (row.previous_run_id) openRun(row.previous_run_id);
+      else newChat();
+    }
+    delete state.scrollMap[row.run_id];
+    saveResearchScrollMap();
+    loadHistory();
+    toast("Run removed from history.");
+  } catch (error) {
+    toast("Could not remove run: " + error.message);
+  } finally {
+    delete button.dataset.deleting;
+    button.disabled = isLocked();
+  }
+}
+
 async function loadHistory() {
+  const request = ++state.historyRequest;
   const host = $("history-list");
   try {
     const data = await api("/api/runs", { cache: "no-store" });
+    if (request !== state.historyRequest) return;
     if (!data || !Array.isArray(data.runs)) throw new Error("unexpected history response");
     state.runs = data.runs;
     renderHistory();
   } catch (error) {
+    if (request !== state.historyRequest) return;
     host.replaceChildren();
     emptyItem(host, "history unavailable");
   }
@@ -956,9 +1021,11 @@ async function loadHistory() {
 
 function renderHistory() {
   const host = $("history-list");
+  const more = $("history-more");
   host.replaceChildren();
   if (!state.runs.length) {
     emptyItem(host, "no runs yet");
+    more.classList.add("hidden");
     updateLockedControls();
     return;
   }
@@ -970,7 +1037,6 @@ function renderHistory() {
     host.appendChild(label);
     group.items.forEach((row) => host.appendChild(historyRow(row)));
   });
-  const more = $("history-more");
   more.classList.toggle("hidden", grouped.hidden === 0);
   text(more, "show " + grouped.hidden + " more");
   updateLockedControls();
@@ -1216,7 +1282,13 @@ function handleResearchToolsKey(event) {
   }
 }
 
-async function loadResearchTools() {
+let researchToolsRequest = null;
+function loadResearchTools() {
+  researchToolsRequest ||= fetchResearchTools().finally(() => { researchToolsRequest = null; });
+  return researchToolsRequest;
+}
+
+async function fetchResearchTools() {
   try {
     const data = await api("/api/research/tools");
     const tools = Array.isArray(data.tools) ? data.tools : [];
@@ -1324,6 +1396,8 @@ function newChat() {
   state.summary = null;
   state.snapshot = null;
   state.toolReport = null;
+  state.metricsRunId = null;
+  state.replayHeatmap = null;
   state.seenEvents.clear();
   state.lastSeq = 0;
   state.lastEventAt = 0;
@@ -1426,6 +1500,8 @@ function beginRun(runId, replaying, mode) {
   state.replaying = replaying;
   state.mode = mode || (replaying ? "replay" : "live");
   if (state.mode === "live") state.restoreScroll = null;
+  state.metricsRunId = null;
+  state.replayHeatmap = null;
   state.events = [];
   state.seenEvents = new Set();
   state.lastSeq = 0;
@@ -1567,6 +1643,24 @@ function closeStream() {
   }
 }
 
+let researchRenderFrame = 0;
+function renderResearchUpdates() {
+  renderTimeline();
+  renderLiveMap();
+  updateProgress();
+  renderActivityTrace();
+  renderResearchResponseMeta();
+  window.AthenaContext?.refresh("research", state.runId);
+}
+
+function scheduleResearchRender() {
+  if (researchRenderFrame || !["run", "details"].includes(state.view)) return;
+  researchRenderFrame = requestAnimationFrame(() => {
+    researchRenderFrame = 0;
+    if (["run", "details"].includes(state.view)) renderResearchUpdates();
+  });
+}
+
 function addEvent(event) {
   if (!event || typeof event !== "object") return;
   if (event.run_id && state.runId && event.run_id !== state.runId) return;
@@ -1591,12 +1685,7 @@ function addEvent(event) {
     state.stalled = false;
     renderStatus();
   }
-  renderTimeline();
-  renderLiveMap();
-  updateProgress();
-  renderActivityTrace();
-  renderResearchResponseMeta();
-  window.AthenaContext?.refresh("research", state.runId);
+  scheduleResearchRender();
   logEvent(event);
 }
 
@@ -1739,12 +1828,19 @@ function reconnectRun() {
   renderStatus();
 }
 
+let logScrollFrame = 0;
 function addLog(kind, message, cssClass) {
   const item = document.createElement("li");
   item.className = cssClass || "";
   text(item, kind + " \u00b7 " + message);
-  $("event-log").appendChild(item);
-  $("event-log").scrollTop = $("event-log").scrollHeight;
+  const log = $("event-log");
+  log.appendChild(item);
+  if (!logScrollFrame) {
+    logScrollFrame = requestAnimationFrame(() => {
+      logScrollFrame = 0;
+      log.scrollTop = log.scrollHeight;
+    });
+  }
 }
 
 /* Every recorded kind gets a row. The formatting is a pure function in
@@ -1811,6 +1907,7 @@ async function openReplay(name, options) {
     setPattern((bundle.summary && bundle.summary.pattern) || state.pattern, false);
     beginRun(bundle.run_id, true);
     state.summary = bundle.summary || null;
+    state.replayHeatmap = bundle.heatmap_png || null;
     state.snapshot = bundle.blackboard
       ? { ...bundle.blackboard, evidence: bundle.evidence || [] }
       : null;
@@ -1845,13 +1942,6 @@ async function openReplay(name, options) {
       if (final) renderReport(final.value, bundle.blackboard.critique);
     }
     if (!state.hasReport && at >= 1) resetReport("No report is available for this recording.");
-    /* A replay bundle is a recorded run, so its real metrics, heat grids and
-     * waterfall are served by the same endpoints as any other run. Loading
-     * them keeps the Metrics tab truthful for recordings instead of showing
-     * only the archived PNG. The archived blob is then a fallback for
-     * recordings whose event log yields no per-agent table. */
-    const metricRows = await loadMetrics(bundle.run_id);
-    if (!metricRows && bundle.heatmap_png) showRecordedHeatmap(bundle.heatmap_png);
     if (at < 1) {
       addLog("replay", "paused at " + Math.round(at * 100) + "% of the recording");
       if (opts.keepRunning !== false) setRunning(true);
@@ -1908,16 +1998,13 @@ async function openRun(runId) {
     try { history.replaceState(null, "", "#run"); } catch (_) { /* ignore */ }
     const question = snapshot.task && snapshot.task.value ? snapshot.task.value.question : "";
     showExchange(question);
-    resetReport("Loading run\u2026");
+    if (snapshot.final_report) renderReport(snapshot.final_report.value, snapshot.critique);
+    if (!state.hasReport) resetReport("No report is available for this run.");
     renderDetailsHeader(question);
     renderBlackboard(snapshot);
     renderToolReport(snapshot.tool_report, state.summary);
     renderResearchResponseMeta();
     await loadRunEvents(runId);
-    if (token !== state.navToken) return;
-    if (snapshot.final_report) renderReport(snapshot.final_report.value, snapshot.critique);
-    if (!state.hasReport) resetReport("No report is available for this run.");
-    await loadMetrics(runId);
     if (token !== state.navToken) return;
     renderLiveMap();
     renderStatus();
@@ -1969,12 +2056,7 @@ async function loadRunEvents(runId) {
     log.replaceChildren();
     state.events.forEach((event) => logEvent(event));
   }
-  renderTimeline();
-  renderLiveMap();
-  updateProgress();
-  renderActivityTrace();
-  renderResearchResponseMeta();
-  window.AthenaContext?.refresh("research", state.runId);
+  renderResearchUpdates();
 }
 
 function renderToolReport(report, summary) {
@@ -2188,7 +2270,8 @@ async function loadSnapshot(runId) {
   if (snapshot.final_report) renderReport(snapshot.final_report.value, snapshot.critique);
   renderResearchResponseMeta();
   window.AthenaContext?.refresh("research", runId);
-  await loadMetrics(runId);
+  state.metricsRunId = null;
+  if (state.view === "details" && state.tab.tab === "metrics") loadSelectedMetrics();
 }
 
 function renderEvidenceTable(box, evidence) {
@@ -2428,6 +2511,17 @@ function showRecordedHeatmap(payload) {
   text(note, "");
   text($("metrics-note"), "recorded replay heatmap; per-agent table is not stored in this recording");
   return true;
+}
+
+async function loadSelectedMetrics() {
+  const runId = state.runId;
+  if (!runId || state.loadingRunId || state.metricsRunId === runId) return;
+  state.metricsRunId = runId;
+  const token = state.navToken;
+  const rows = await loadMetrics(runId);
+  if (state.navToken === token && state.runId === runId && !rows && state.replayHeatmap) {
+    showRecordedHeatmap(state.replayHeatmap);
+  }
 }
 
 async function loadMetrics(runId) {
@@ -3186,7 +3280,7 @@ async function loadDocuments() {
       empty.className = "empty-state";
       text(empty, rag.chunks
         ? "The index has chunks but no readable document metadata."
-        : "No documents are indexed yet. Add files to data/corpus and rebuild in Settings \u2192 Library.");
+        : "No documents are indexed yet. Upload a document to get started.");
       host.appendChild(empty);
     } else {
       const list = document.createElement("ul");
@@ -3222,6 +3316,41 @@ async function loadDocuments() {
     }
   } catch (error) {
     if (status) text(status, "documents unavailable: " + error.message);
+  }
+}
+
+async function uploadDocument(event) {
+  const picker = event.currentTarget;
+  const file = picker.files[0];
+  if (!file) return;
+  picker.value = "";
+  const buttons = [$("documents-upload"), $("chat-upload-document")];
+  buttons.forEach((button) => { button.disabled = true; });
+  text($("documents-upload"), "Indexing…");
+  $("chat-upload-document").setAttribute("aria-label", "Indexing document");
+  toast("Indexing " + file.name + "…");
+  try {
+    const result = await api("/api/library/documents?filename=" + encodeURIComponent(file.name), {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,
+    });
+    if (state.view === "documents") await loadDocuments();
+    await window.AthenaChat?.reloadCapabilities();
+    loadResearchTools().catch(() => {});
+    const ragToggle = $("cap-rag");
+    if (state.view === "chat" && ragToggle.getAttribute("aria-pressed") === "false") {
+      ragToggle.click();
+    }
+    toast(result.added ? "Indexed " + file.name : "This document is already indexed.");
+  } catch (error) {
+    const message = "Document upload failed: " + error.message;
+    if (state.view === "documents") text($("documents-status"), message);
+    toast(message);
+  } finally {
+    buttons.forEach((button) => { button.disabled = false; });
+    text($("documents-upload"), "Upload document");
+    $("chat-upload-document").setAttribute("aria-label", "Upload document");
   }
 }
 
@@ -3390,6 +3519,9 @@ $("report-details").addEventListener("click", () => showView("details"));
 $("details-back").addEventListener("click", () => showView("run"));
 $("activity-toggle").addEventListener("click", toggleActivityTrace);
 $("documents-refresh").addEventListener("click", loadDocuments);
+$("documents-upload").addEventListener("click", () => $("document-file").click());
+$("chat-upload-document").addEventListener("click", () => $("document-file").click());
+$("document-file").addEventListener("change", uploadDocument);
 $("previous-run-dismiss").addEventListener("click", () => {
   state.previousRun = null;
   renderStatus();
@@ -3488,6 +3620,7 @@ $("replay-toggle").addEventListener("click", () => {
   const panel = $("replay-panel");
   const hidden = panel.classList.toggle("hidden");
   $("replay-toggle").setAttribute("aria-expanded", hidden ? "false" : "true");
+  if (!hidden && !recordingsRequested) loadReplays();
 });
 document.querySelectorAll("#replay-speed-row .chip").forEach((chip) => {
   chip.addEventListener("click", () => {
@@ -3550,7 +3683,6 @@ window.AthenaUi = {
   $,
   showView,
   applyTheme,
-  applySize,
   openRun,
   activityRow,
   refreshHealth,
@@ -3558,13 +3690,11 @@ window.AthenaUi = {
   currentView: () => state.view,
 };
 
-/* boot: theme, size, deep links */
+/* boot: theme and deep links */
 try {
   applyTheme(localStorage.getItem("athena.theme") || "dark");
-  applySize(localStorage.getItem("athena.presentation") === "1");
 } catch (_) {
   applyTheme("dark");
-  applySize(false);
 }
 try {
   let storedSidebar = localStorage.getItem("athena.sidebar");
@@ -3587,7 +3717,7 @@ window.addEventListener("resize", () => {
 function parseHash() {
   const raw = (window.location.hash || "").replace(/^#/, "");
   const parts = raw.split("&");
-  const view = parts[0] || "run";
+  const view = parts[0] || (parts.length > 1 ? "run" : "chat");
   const params = {};
   parts.slice(1).forEach((pair) => {
     const [key, value] = pair.split("=");
@@ -3599,17 +3729,13 @@ function parseHash() {
 const boot = parseHash();
 const bootTab = ["answer", "activity", "blackboard", "metrics"].includes(boot.params.tab)
   ? boot.params.tab : "answer";
-setTab(bootTab);
-renderTabs();
-renderLiveMap();
-autoGrow();
 refreshHealth();
-loadQuestions().catch(() => {});
-loadHistory();
-loadReplays().catch(() => {});
-loadResearchTools().catch(() => {});
-/* The Evaluation nav item only exists once the harness has written results. */
-refreshEvalNav().catch(() => {});
+/* Discover optional evaluation outputs without competing with Chat startup. */
+if (typeof window.requestIdleCallback === "function") {
+  window.requestIdleCallback(refreshEvalNav, { timeout: 1500 });
+} else {
+  setTimeout(refreshEvalNav, 200);
+}
 
 if (boot.view.startsWith("replay=")) {
   const name = boot.view.slice(7);
@@ -3619,7 +3745,7 @@ if (boot.view.startsWith("replay=")) {
   showView("chat");
 } else if (["settings", "how", "documents", "eval"].includes(boot.view)) {
   if (boot.view === "settings") {
-    showView("run");
+    showView("chat");
     setTimeout(() => window.AthenaSettings?.open(), 0);
   } else {
     showView(boot.view);

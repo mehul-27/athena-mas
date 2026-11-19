@@ -136,16 +136,11 @@ def availability(name: str, target=None) -> tuple[bool, str]:
             return False, "No documents are indexed. Rebuild the index in Settings → Library."
         return True, ""
     if name == "web_search":
-        provider = (getattr(target, "search_provider", "") or "").lower()
-        if not provider:
-            from athena.tools import settings as tool_settings
+        from athena.tools import settings as tool_settings
 
-            provider = tool_settings.search_provider()
-        if provider == "disabled":
-            return False, "Web search is disabled (SEARCH_PROVIDER=disabled)."
-        if provider not in {"duckduckgo", "searxng"}:
-            return False, f"Unsupported search provider {provider!r}."
-        return True, ""
+        provider = (getattr(target, "search_provider", "") or tool_settings.search_provider()).lower()
+        reason = tool_settings.search_unavailable_reason(provider)
+        return not reason, reason
     return True, ""
 
 

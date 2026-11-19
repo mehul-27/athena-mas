@@ -64,6 +64,18 @@ def _reserve_tokens(
         raise
 
 
+async def _reserve_tokens_async(
+    limiter, output, input_tokens: int, output_tokens: int, agent: str
+) -> None:
+    """Release an unsent input reservation if the output budget is unavailable."""
+    await limiter.acquire_async(input_tokens, agent=agent)
+    try:
+        await output.acquire_async(output_tokens, agent=agent)
+    except BaseException:
+        limiter.record(0)
+        raise
+
+
 def _settle_estimates(limiter, output, input_tokens: int, output_tokens: int) -> None:
     """Settle conservative usage when a provider attempt fails without usage data."""
     limiter.record(input_tokens)
@@ -93,13 +105,13 @@ class RateLimitedLiteLlm(LiteLlm):
             self.llm_client = UsageCapturingClient()
 
     async def generate_content_async(self, llm_request, stream: bool = False):
-        limiter = get_limiter()
+        limiter = get_limiter().for_request()
         self._capture_usage()
         set_last_reasoning(None)
-        output = get_output_limiter()
+        output = get_output_limiter().for_request()
         reserve = int(self._additional_args.get("max_tokens") or 0)
         estimate = estimate_tokens(_request_text(llm_request))
-        _reserve_tokens(limiter, output, estimate, reserve, current_agent())
+        await _reserve_tokens_async(limiter, output, estimate, reserve, current_agent())
         reserved_output = reserve
         reservation_active = True
 
@@ -132,7 +144,7 @@ class RateLimitedLiteLlm(LiteLlm):
             # This is a second provider request, so reserve its full output cap.
             retried_budget = doubled(reserve)
             retry_reserve = retried_budget
-            _reserve_tokens(limiter, output, estimate, retry_reserve, current_agent())
+            await _reserve_tokens_async(limiter, output, estimate, retry_reserve, current_agent())
             reserved_output = retry_reserve
             reservation_active = True
             # One retry happens below, so exactly one ``retry`` event is written
@@ -207,7 +219,7 @@ class RateLimitedLiteLlm(LiteLlm):
         # The retry is a real model call: reserve its budget like any other, so
         # the shared limiter and the per-run caps still see it.
         try:
-            _reserve_tokens(limiter, output, retry_estimate, reserve, agent)
+            await _reserve_tokens_async(limiter, output, retry_estimate, reserve, agent)
         except BaseException:
             tool_call_guard.record_rejection(error, agent, will_retry=False, attempt=2)
             raise
@@ -276,8 +288,8 @@ def make_crewai_llm_class():
 
         def call(self, messages, tools=None, callbacks=None, available_functions=None,
                  from_task=None, from_agent=None, response_model=None):
-            limiter = get_limiter()
-            output = get_output_limiter()
+            limiter = get_limiter().for_request()
+            output = get_output_limiter().for_request()
             reserve = int(self.max_tokens or 0)
             estimate = estimate_tokens(_messages_text(messages))
             _reserve_tokens(limiter, output, estimate, reserve, current_agent())
@@ -313,11 +325,11 @@ def make_crewai_llm_class():
 
         async def acall(self, messages, tools=None, callbacks=None, available_functions=None,
                         from_task=None, from_agent=None, response_model=None):
-            limiter = get_limiter()
-            output = get_output_limiter()
+            limiter = get_limiter().for_request()
+            output = get_output_limiter().for_request()
             reserve = int(self.max_tokens or 0)
             estimate = estimate_tokens(_messages_text(messages))
-            _reserve_tokens(limiter, output, estimate, reserve, current_agent())
+            await _reserve_tokens_async(limiter, output, estimate, reserve, current_agent())
             kwargs = self._kwargs(messages, tools, callbacks, available_functions,
                                   from_task, from_agent, response_model)
             reserved_output = reserve
@@ -330,7 +342,7 @@ def make_crewai_llm_class():
                     reservation_active = False
                     retried_budget = doubled(reserve)
                     retry_reserve = retried_budget
-                    _reserve_tokens(limiter, output, estimate, retry_reserve, current_agent())
+                    await _reserve_tokens_async(limiter, output, estimate, retry_reserve, current_agent())
                     reserved_output = retry_reserve
                     reservation_active = True
                     # The retry below is real, so report it (once) here.

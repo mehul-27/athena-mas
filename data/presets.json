@@ -28,6 +28,48 @@
     "notes": "Direct OpenAI."
   },
   {
+    "id": "gemini",
+    "name": "Google Gemini",
+    "api_base": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "model": "openai/gemini-4-hydrogen"
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "api_base": "https://api.deepseek.com",
+    "model": "openai/deepseek-flash"
+  },
+  {
+    "id": "xai",
+    "name": "xAI Grok",
+    "api_base": "https://api.x.ai/v1",
+    "model": "openai/grok-4.7"
+  },
+  {
+    "id": "mistral",
+    "name": "Mistral AI",
+    "api_base": "https://api.mistral.ai/v1",
+    "model": "openai/mistral-small-latest"
+  },
+  {
+    "id": "together",
+    "name": "Together AI",
+    "api_base": "https://api.together.ai/v1",
+    "model": "openai/MiniMaxAI/MiniMax-M3.1-Flash"
+  },
+  {
+    "id": "ollama",
+    "name": "Ollama (local)",
+    "api_base": "http://localhost:11434/v1",
+    "model": "openai/gpt-oss:20b"
+  },
+  {
+    "id": "lmstudio",
+    "name": "LM Studio (local)",
+    "api_base": "http://localhost:1234/v1",
+    "model": ""
+  },
+  {
     "id": "custom",
     "name": "Custom OpenAI-compatible",
     "api_base": "",

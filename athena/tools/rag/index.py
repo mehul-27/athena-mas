@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from threading import Lock
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -20,6 +21,15 @@ from athena.tools.rag.embeddings import EmbeddingProvider, build_embedding_provi
 logger = logging.getLogger(__name__)
 
 ID_PREFIX = "doc_"
+_CLIENT_LOCK = Lock()
+
+
+def open_client(path: Path) -> Any:
+    import chromadb
+
+    # Chroma registers its shared Rust system before completing startup.
+    with _CLIENT_LOCK:
+        return chromadb.PersistentClient(path=str(path.resolve()))
 
 
 def chunk_id(document_id: str, text: str) -> str:
@@ -47,8 +57,6 @@ class RagIndex:
         name: str | None = None,
     ) -> "RagIndex":
         """Open (or create) the index named by CHROMA_PATH / RAG_COLLECTION."""
-        import chromadb
-
         embeddings = embeddings or build_embedding_provider()
         dimension = embeddings.dimension()
         target = Path(path or settings.chroma_path())
@@ -61,7 +69,7 @@ class RagIndex:
             "embedding_fingerprint": _fingerprint(embeddings.model, dimension),
         }
         collection_name = name or settings.collection_name()
-        client = chromadb.PersistentClient(path=str(target))
+        client = open_client(target)
         try:
             collection = client.get_collection(collection_name)
         except Exception:
@@ -111,7 +119,11 @@ class RagIndex:
         except Exception:
             existing = set()
 
-        keep = [i for i, cid in enumerate(ids) if cid not in existing]
+        keep = []
+        for i, cid in enumerate(ids):
+            if cid not in existing:
+                keep.append(i)
+                existing.add(cid)
         if not keep:
             return {"added": 0, "skipped": len(ids)}
 

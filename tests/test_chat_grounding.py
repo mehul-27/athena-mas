@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from threading import Barrier
 
 from athena.chat import grounding
 from athena.chat.models import ChatTarget
@@ -49,8 +50,18 @@ def _web(*_args, **_kwargs) -> WebResult:
 
 
 def test_both_capabilities_are_numbered_in_one_context(monkeypatch) -> None:
-    monkeypatch.setattr("athena.tools.rag.search.rag_search", _rag)
-    monkeypatch.setattr("athena.tools.web.search.web_search", _web)
+    started = Barrier(2)
+
+    def documents(*args, **kwargs):
+        started.wait(timeout=5)
+        return _rag(*args, **kwargs)
+
+    def web(*args, **kwargs):
+        started.wait(timeout=5)
+        return _web(*args, **kwargs)
+
+    monkeypatch.setattr("athena.tools.rag.search.rag_search", documents)
+    monkeypatch.setattr("athena.tools.web.search.web_search", web)
 
     result = asyncio.run(grounding.collect("q", ["rag", "web_search"], _target()))
 

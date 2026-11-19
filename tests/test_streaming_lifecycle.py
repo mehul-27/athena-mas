@@ -19,8 +19,12 @@ class FakeStore:
     def __init__(self, events=None):
         self._events = events or []
 
-    def events(self, _run_id):
-        return list(self._events)
+    def events(self, _run_id, *, after_seq=0):
+        return [event for event in self._events if event.seq > after_seq]
+
+    def latest_summary(self, _run_id):
+        return next((event for event in reversed(self._events)
+                     if (event.payload_summary or "").startswith("run_summary")), None)
 
 
 class FakeRegistry:
@@ -87,13 +91,13 @@ def test_stream_waits_for_a_starting_run_then_completes(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "_store", lambda: store)
     calls = {"count": 0}
 
-    def snapshot(_run_id, _runs=None):
+    def snapshot(_run_id):
         calls["count"] += 1
         if calls["count"] == 1:
             raise HTTPException(status_code=404, detail="no run")
-        return {"history": []}
+        return []
 
-    monkeypatch.setattr(app_module, "_snapshot", snapshot)
+    monkeypatch.setattr(app_module, "_stream_history", snapshot)
     monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
 
     async def collect():
@@ -109,7 +113,7 @@ def test_stream_waits_for_a_starting_run_then_completes(monkeypatch) -> None:
 
 def test_stream_reconnects_to_a_completed_run_without_false_failure(monkeypatch) -> None:
     client = _client(monkeypatch, FakeRegistry(_active(finished=True)), [_summary_event()])
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_stream_history", lambda _run_id: [])
     monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
 
     first = client.get("/api/runs/r1/stream")
@@ -127,7 +131,7 @@ def test_stream_preserves_a_failed_terminal_summary(monkeypatch) -> None:
         FakeRegistry(_active(finished=True)),
         [_summary_event(failed=True, approved=False)],
     )
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_stream_history", lambda _run_id: [])
     monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"failed": True, "outcome": "failed"})
 
     response = client.get("/api/runs/r1/stream")
@@ -140,7 +144,7 @@ def test_stream_preserves_a_failed_terminal_summary(monkeypatch) -> None:
 
 def test_stream_store_failure_is_terminal_without_asgi_exception(monkeypatch) -> None:
     class BrokenStore:
-        def events(self, _run_id):
+        def events(self, _run_id, *, after_seq=0):
             raise RuntimeError("event store unavailable")
 
     monkeypatch.setattr(app_module, "_store", lambda: BrokenStore())
@@ -161,7 +165,7 @@ def test_run_summary_with_nonzero_exit_is_not_reported_successful(monkeypatch) -
         FakeRegistry(_active(finished=True, exit_code=1)),
         [_summary_event()],
     )
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_stream_history", lambda _run_id: [])
 
     response = client.get("/api/runs/r1/stream")
 
@@ -227,7 +231,7 @@ def test_last_event_id_header_is_honored_by_the_stream_route(monkeypatch) -> Non
         FakeRegistry(_active(finished=True)),
         [first, second],
     )
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_stream_history", lambda _run_id: [])
     monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
 
     response = client.get("/api/runs/r1/stream", headers={"Last-Event-ID": "1"})
@@ -273,7 +277,7 @@ def test_last_event_id_resumes_without_duplicate_events(monkeypatch) -> None:
     )
     registry = FakeRegistry(_active(finished=True))
     monkeypatch.setattr(app_module, "_store", lambda: FakeStore([first, second]))
-    monkeypatch.setattr(app_module, "_snapshot", lambda _run_id, _runs=None: {"history": []})
+    monkeypatch.setattr(app_module, "_stream_history", lambda _run_id: [])
     monkeypatch.setattr(app_module, "_summary", lambda _run_id, _runs=None: {"approved": True})
 
     async def collect():

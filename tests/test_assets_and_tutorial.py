@@ -219,15 +219,13 @@ def test_settings_modal_contract() -> None:
     assert ".tutorial" in css and "z-index: 80" in css
 
 
-def test_presentation_size_is_removed_from_the_header() -> None:
+def test_presentation_size_is_removed() -> None:
     html = _read("index.html")
     assert 'id="presentation-toggle"' not in html
-    appbar = html[html.index('class="appbar"'):html.index("</header>")]
-    assert "Presentation size" not in appbar
-    # The display-size preference still exists in Settings, where it belongs.
-    assert 'id="size-choice-presentation"' in html
+    assert "Presentation size" not in html
+    assert 'id="size-choice-presentation"' not in html
     source = _read("app.js")
-    assert 'getElementById("presentation-toggle")' not in source
+    assert "athena.presentation" not in source
 
 
 def test_sidebar_is_collapsible_and_contextual() -> None:

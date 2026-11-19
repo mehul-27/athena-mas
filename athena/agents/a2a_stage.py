@@ -18,7 +18,7 @@ from google.genai import types
 import json
 
 from athena.agents import a2a_client
-from athena.agents.a2a_client import build_payload, send_role_request
+from athena.agents.a2a_client import build_payload, send_role_request, trace_role_call
 from athena.observability.recorder import get_recorder
 
 DEFAULT_CARD_URL = "http://127.0.0.1:9001/.well-known/agent-card.json"
@@ -43,20 +43,9 @@ class A2AStageAgent(BaseAgent):
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
         payload = build_payload(self.run_id, self.role, self.instruction)
-        started = time.perf_counter()
-        try:
+        with trace_role_call(self.role) as started:
             ack = await send_role_request(self.card_url, payload)
-        except Exception as exc:
-            recorder = get_recorder()
-            if recorder is not None:
-                recorder.emit(
-                    "error", self.role, "adk", ok=False,
-                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
-                    error_type=type(exc).__name__, error_message=str(exc),
-                    payload_summary=f"a2a {self.role}",
-                )
-            raise
-        self._record_call(ack, started)
+            self._record_call(ack, started)
         yield Event(
             author=self.name,
             content=types.Content(parts=[types.Part(text=ack)]),

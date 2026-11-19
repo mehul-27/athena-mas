@@ -267,6 +267,7 @@ test("history groups by day and collapses consecutive duplicates", () => {
   assert.deepEqual(grouped.groups.map((g) => g.label), ["Today", "Yesterday", "Earlier"]);
   assert.equal(grouped.groups[0].items.length, 1, "consecutive duplicates collapse");
   assert.equal(grouped.groups[0].items[0].count, 3);
+  assert.equal(grouped.groups[0].items[0].previous_run_id, "b");
   assert.equal(grouped.groups[1].items[0].count, 1);
   assert.equal(grouped.hidden, 0);
 });

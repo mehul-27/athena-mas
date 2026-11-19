@@ -1,25 +1,26 @@
-"""Library status, a safe single-flight RAG rebuild, and a read-only document
-preview for the Documents view."""
+"""Library status, RAG ingestion, and indexed document previews."""
 
 from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from starlette.concurrency import run_in_threadpool
 
 from athena.api.guards import guard
 from athena.tools import settings as tool_settings
+from athena.tools.rag.ingest import ingest_pdf, ingest_text, max_file_bytes, max_text_chars
+from athena.tools.rag.search import clear_index_cache, get_index
 from athena.tools.rag.status import chunk_count, document_preview, document_rows, index_exists
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-# The preview lives under /api/library so its URL names what it returns; it is
-# read-only and capped, and shares this module's guarded, model-free reads.
 documents_router = APIRouter(prefix="/api/library", tags=["library"])
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,7 @@ PREVIEW_MAX_CHARS = 12000
 PREVIEW_MAX_ID_LENGTH = 300
 
 _LOCK = threading.Lock()
+_INDEX_WRITE_LOCK = threading.Lock()
 _JOB: dict[str, Any] = {
     "state": "idle",
     "started_at": "",
@@ -93,8 +95,6 @@ def _run_reindex() -> None:
         output = ((result.stdout or "") + (result.stderr or "")).strip()
         tail = "\n".join(output.splitlines()[-40:])[-4000:]
         if result.returncode == 0:
-            from athena.tools.rag.search import clear_index_cache
-
             clear_index_cache()
         with _LOCK:
             _JOB = {
@@ -122,6 +122,8 @@ def _run_reindex() -> None:
                 "exit_code": None,
                 "tail": f"{type(exc).__name__}: {exc}",
             }
+    finally:
+        _INDEX_WRITE_LOCK.release()
 
 
 @router.get("/library")
@@ -134,9 +136,9 @@ def library(request: Request) -> dict:
 def reindex(request: Request) -> dict:
     guard(request)
     global _JOB
+    if not _INDEX_WRITE_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="the document index is busy")
     with _LOCK:
-        if _JOB.get("state") == "running":
-            raise HTTPException(status_code=409, detail="an index rebuild is already running")
         _JOB = {
             "state": "running",
             "started_at": _now(),
@@ -147,6 +149,49 @@ def reindex(request: Request) -> dict:
     thread = threading.Thread(target=_run_reindex, daemon=True)
     thread.start()
     return {"started": True, "state": "running"}
+
+
+def _index_upload(filename: str, suffix: str, contents: bytearray) -> dict:
+    if not _INDEX_WRITE_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="The document index is busy. Try again shortly.")
+    try:
+        if suffix == ".pdf":
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "upload.pdf"
+                path.write_bytes(contents)
+                result = ingest_pdf(get_index(), path, filename=filename)
+        else:
+            result = ingest_text(get_index(), filename, contents.decode("utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=422, detail="Text uploads must use UTF-8.") from exc
+    finally:
+        _INDEX_WRITE_LOCK.release()
+    if result.get("refused"):
+        raise HTTPException(status_code=422, detail=result["refused"])
+    if not result["chunks"]:
+        raise HTTPException(status_code=422, detail="No readable text was found in the document.")
+    return result
+
+
+@documents_router.post("/documents")
+async def upload_document(request: Request, filename: str = Query(min_length=1, max_length=255)) -> dict:
+    guard(request)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".pdf", ".txt", ".md"} or any(
+        char in "/\\:" or ord(char) < 32 for char in filename
+    ):
+        raise HTTPException(status_code=415, detail="Choose a PDF, TXT, or Markdown file.")
+    if request.headers.get("content-type") != "application/octet-stream":
+        raise HTTPException(status_code=415, detail="Expected a binary document upload.")
+    limit = max_file_bytes()
+    if suffix != ".pdf":
+        limit = min(limit, 4 * max_text_chars() + 3)
+    contents = bytearray()
+    async for chunk in request.stream():
+        if len(contents) + len(chunk) > limit:
+            raise HTTPException(status_code=413, detail="The document exceeds the upload size limit.")
+        contents.extend(chunk)
+    return await run_in_threadpool(_index_upload, filename, suffix, contents)
 
 
 @documents_router.get("/documents/{doc_id}")

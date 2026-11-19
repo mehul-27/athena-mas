@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages ON messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_message_order ON messages(conversation_id);
+"""
+
+_SUMMARY_FIELDS = """
+    (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) AS message_count,
+    (SELECT COALESCE(SUM(
+        COALESCE(CAST(json_extract(usage, '$.tokens_in') AS INTEGER), 0) +
+        COALESCE(CAST(json_extract(usage, '$.tokens_out') AS INTEGER), 0)
+    ), 0) FROM messages
+       WHERE conversation_id = c.id AND role = 'assistant' AND json_valid(usage)
+    ) AS total_tokens
 """
 
 
@@ -96,6 +107,18 @@ def derive_title(message: str) -> str:
     if len(words) > 6:
         title += "…"
     return title
+
+
+def _summary(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "profile_id": row.get("profile_id") or "",
+        "message_count": row["message_count"],
+        "total_tokens": row["total_tokens"],
+        "created_at": row.get("created_at") or "",
+        "updated_at": row.get("updated_at") or "",
+    }
 
 
 class ChatStore:
@@ -143,10 +166,10 @@ class ChatStore:
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ?",
+                f"SELECT c.*, {_SUMMARY_FIELDS} FROM conversations c ORDER BY updated_at DESC LIMIT ?",
                 (max(1, min(int(limit or 50), 200)),),
             ).fetchall()
-        return [self.summary(dict(row)) for row in rows]
+        return [_summary(dict(row)) for row in rows]
 
     def rename(self, conversation_id: str, title: str) -> bool:
         clean = _safe_text(title).strip()[:200]
@@ -283,56 +306,43 @@ class ChatStore:
         limit: int = HISTORY_FALLBACK_TURNS,
         max_chars: int = HISTORY_FALLBACK_CHARS,
     ) -> list[dict[str, str]]:
-        turns: list[dict[str, str]] = []
-        for message in self.messages(conversation_id):
-            if message["role"] not in {"user", "assistant"}:
-                continue
-            if message["status"] == "streaming":
-                continue
-            content = (message.get("content") or "").strip()
-            if not content:
-                continue
-            turns.append({"role": message["role"], "content": content[:MESSAGE_CHARS]})
-        turns = turns[-max(1, int(limit)) :]
+        limit = max(1, int(limit))
         total = 0
         kept: list[dict[str, str]] = []
-        for turn in reversed(turns):
-            size = len(turn["content"])
-            if kept and total + size > max_chars:
-                break
-            kept.append(turn)
-            total += size
+        with self._connect() as conn:
+            recent = conn.execute(
+                "SELECT role, content FROM messages WHERE conversation_id = ?"
+                " AND role IN ('user', 'assistant') AND status != 'streaming' ORDER BY rowid DESC",
+                (conversation_id,),
+            )
+            for row in recent:
+                content = _safe_text(row["content"]).strip()[:MESSAGE_CHARS]
+                if not content:
+                    continue
+                if kept and total + len(content) > max_chars:
+                    break
+                kept.append({"role": row["role"], "content": content})
+                total += len(content)
+                if len(kept) >= limit:
+                    break
         kept.reverse()
         return kept
 
     def summary(self, conversation: dict[str, Any]) -> dict[str, Any]:
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT usage FROM messages WHERE conversation_id = ? AND role = 'assistant'",
+            stats = conn.execute(
+                f"SELECT {_SUMMARY_FIELDS} FROM (SELECT ? AS id) c",
                 (conversation["id"],),
-            ).fetchall()
-            count = conn.execute(
-                "SELECT COUNT(*) FROM messages WHERE conversation_id = ?",
-                (conversation["id"],),
-            ).fetchone()[0]
-        tokens = 0
-        for row in rows:
-            usage = _loads(row["usage"], {})
-            if isinstance(usage, dict):
-                tokens += int(usage.get("tokens_in") or 0) + int(usage.get("tokens_out") or 0)
-        return {
-            "id": conversation["id"],
-            "title": conversation["title"],
-            "profile_id": conversation.get("profile_id") or "",
-            "message_count": int(count),
-            "total_tokens": tokens,
-            "created_at": conversation.get("created_at") or "",
-            "updated_at": conversation.get("updated_at") or "",
-        }
+            ).fetchone()
+        return _summary({**conversation, **dict(stats)})
 
     def summary_by_id(self, conversation_id: str) -> dict[str, Any] | None:
-        conversation = self.get(conversation_id)
-        return self.summary(conversation) if conversation else None
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT c.*, {_SUMMARY_FIELDS} FROM conversations c WHERE c.id = ?",
+                (conversation_id,),
+            ).fetchone()
+        return _summary(dict(row)) if row else None
 
     @staticmethod
     def _message(row: sqlite3.Row) -> dict[str, Any]:

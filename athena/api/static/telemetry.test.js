@@ -7,6 +7,9 @@ const test = require("node:test");
 const assert = require("node:assert");
 const T = require("./telemetry.js");
 
+const trace = { trace_id: "1".repeat(32), span_id: "2".repeat(16),
+  parent_span_id: "3".repeat(16), span_kind: "server" };
+
 const payload = {
   run_id: "run-1",
   exists: true,
@@ -32,7 +35,7 @@ const payload = {
   spans: [
     { span_id: "s1", agent: "planner", kind: "stage", label: "planner stage", start_offset_ms: 0, end_offset_ms: 1600, duration_ms: 1600, ok: true },
     { span_id: "s2", agent: "planner", kind: "tool_call", label: "tool: fetch_page", start_offset_ms: 600, end_offset_ms: 900, duration_ms: 300, ok: false },
-    { span_id: "s3", agent: "writer", kind: "a2a_call", label: "a2a: writer", start_offset_ms: 2000, end_offset_ms: 2400, duration_ms: 400, ok: true },
+    { span_id: "s3", agent: "writer", kind: "a2a_call", label: "a2a: writer", start_offset_ms: 2000, end_offset_ms: 2400, duration_ms: 400, ok: true, trace },
     { span_id: "s4", agent: "writer", kind: "stage", label: "writer stage (open)", start_offset_ms: 2500, end_offset_ms: null, duration_ms: null, open: true },
   ],
   totals: {
@@ -248,6 +251,8 @@ test("waterfall geometry lays spans out per agent row", () => {
   const writerBar = geometry.bars.find((bar) => bar.agent === "writer" && bar.kind === "a2a_call");
   assert.equal(writerBar.row, 1);
   assert.ok(writerBar.x > stage.x);
+  assert.ok(writerBar.title.includes("Trace " + trace.trace_id));
+  assert.ok(writerBar.title.includes("Parent " + trace.parent_span_id));
 
   const open = geometry.bars.find((bar) => bar.open);
   assert.equal(open.durationLabel, "open");
@@ -279,7 +284,7 @@ test("cell drill-down rows keep the real event identity", () => {
   const rows = T.eventRows({
     events: [
       { event_id: "e1", seq: 3, ts: "2026-01-01T10:00:01+00:00", kind: "model_call", agent: "planner", duration_ms: 1200, tokens_in: 1000, tokens_out: 200, payload_summary: "p" },
-      { event_id: "e2", seq: 4, kind: "error", agent: "writer", ok: false, error_message: "no visible text" },
+      { event_id: "e2", seq: 4, kind: "error", agent: "writer", ok: false, error_message: "no visible text", extra: trace },
       { kind: "evidence_item", id: "ev-1", source_ref: "https://x/y", retrieved_by: "web_researcher", snippet: "water ice" },
     ],
   });
@@ -291,6 +296,7 @@ test("cell drill-down rows keep the real event identity", () => {
   assert.match(rows[0].detail, /1.0k in \/ 200 out/);
   assert.equal(rows[1].ok, false);
   assert.match(rows[1].detail, /no visible text/);
+  assert.ok(rows[1].detail.includes("server span " + trace.span_id));
   assert.equal(rows[2].kind, "evidence");
   assert.equal(rows[2].text, "https://x/y");
   assert.deepEqual(T.eventRows(null), []);

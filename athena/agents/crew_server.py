@@ -4,10 +4,9 @@ The whole contract is the message body: ``{"run_id", "role", "instruction"}``.
 The server reads inputs from the blackboard and replies with a short JSON
 acknowledgement (section + version). No content ever travels back over A2A.
 
-When the deployment sets ``ATHENA_A2A_SHARED_TOKEN``, a body carrying an HMAC is
-verified before any role runs: a forged or cross-run message is refused with an
-acknowledgement instead of being dispatched. With no token configured the
-single-host flow is unchanged (see :func:`peer_auth_error`).
+Signed bodies must verify against the configured ``ATHENA_A2A_SHARED_TOKEN``
+before dispatch. Unsigned local requests work unless strict signature mode is
+enabled (see :func:`peer_auth_error`).
 
 Run with ``python -m athena.agents.crew_server`` or via ``scripts/dev_up.py``.
 """
@@ -35,6 +34,7 @@ from a2a.server.routes import (
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
 from fastapi import FastAPI
+from opentelemetry.trace import SpanKind
 
 if __package__ in (None, ""):  # allow `python athena/agents/crew_server.py`
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -52,9 +52,11 @@ from athena.guardrails.interagent import (
     emit_rejection,
     validate_message,
 )
+from athena.observability.a2a_trace import a2a_span
+from athena.observability.ambient import UNATTRIBUTED_RUN_ID
 from athena.observability.guardrail_events import record_decision
 from athena.observability.usage_hook import callback_count, install_usage_logger
-from athena.observability.recorder import Recorder, set_recorder
+from athena.observability.recorder import Recorder, get_recorder, recorder_scope
 from athena.observability.redact import redact
 
 HOST, PORT = "127.0.0.1", 9001
@@ -71,22 +73,12 @@ def _ack(**fields) -> str:
 
 
 def peer_auth_error(body: dict) -> str | None:
-    """Why this body's signature is unacceptable, or None to accept it.
-
-    Three cases, in order:
-
-    * no shared token configured — nothing to verify against, so an unsigned
-      local-dev flow behaves exactly as it did before;
-    * a signature is present — it must verify against this process's token,
-      otherwise the body was forged or signed for a different deployment;
-    * no signature but a token is configured — allowed (a warning-only
-      downgrade) unless ``ATHENA_A2A_REQUIRE_SIG=1`` turns it into an error.
-    """
-    if not (os.getenv(TOKEN_ENV) or "").strip():
-        return None
-    auth = PeerAuth()
-    signature = body.get(SIG_FIELD)
-    if signature:
+    """Why this body's signature is unacceptable, or None to accept it."""
+    token = (os.getenv(TOKEN_ENV) or "").strip()
+    auth = PeerAuth(token)
+    if SIG_FIELD in body:
+        if not token:
+            return "signature cannot be verified: shared token is not configured"
         if auth.verify_message(body):
             return None
         return "signature mismatch: forged body or a different shared token"
@@ -98,12 +90,9 @@ def peer_auth_error(body: dict) -> str | None:
 def _rejection_run(claimed: str, store) -> tuple[str | None, str]:
     """``(run_id, source)`` an A2A rejection may be attributed to.
 
-    The message's own ``run_id`` is attacker-controlled, so it is used **only
-    when the blackboard confirms that run exists** (p2p requests have no
-    blackboard, so they are never attributed from the message). Otherwise the
-    row goes to whoever is recording this process — which, in the server, is the
-    turn's own recorder if there is one — and ``source`` says which of the two
-    happened so a reader can tell.
+    After the signature policy has accepted the request, use its run ID only
+    when the blackboard confirms the run exists. Otherwise the active recorder
+    supplies the attribution, when available.
     """
     if claimed:
         try:
@@ -114,26 +103,21 @@ def _rejection_run(claimed: str, store) -> tuple[str | None, str]:
     return None, "refused_no_verified_run"
 
 
-def _record_rejection(
-    *,
-    rule: str,
-    action: str,
-    detail: str,
-    audit_run_id: str | None,
-    run_id_source: str,
-) -> None:
-    """One ``interagent`` guardrail row for an A2A refusal. Never raises."""
+def _record_rejection(detail: str) -> None:
+    """Audit a signature refusal under the active recorder or the unattributed bucket."""
+    recorder = get_recorder()
     record_decision(
         stage="interagent",
-        rule=rule,
-        action=action,
+        rule="interagent.signature",
+        action="blocked",
         detail=detail,
         screen="crew_server.peer_auth_error",
         pipeline_stage="interagent",
-        run_id=audit_run_id,
+        recorder=recorder,
+        run_id=None if recorder else UNATTRIBUTED_RUN_ID,
         agent="guardrails",
         framework="crewai",
-        extra={"run_id_source": run_id_source},
+        extra={"run_id_source": "refused_no_verified_run" if recorder else "unattributed"},
     )
 
 
@@ -164,10 +148,9 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
       was already decided above; everything else applies.
 
     A refusal from either one is returned as an acknowledgement and written as
-    ``interagent`` ``guardrail`` rows. Attribution never uses the ``run_id`` the
-    message claims: rows go to the run this process is recording, or to the
-    message's run id only after the blackboard confirms that run exists. A
-    message naming a run that does not exist is attributed to nobody.
+    ``interagent`` ``guardrail`` rows. A signature refusal uses the active
+    recorder or the unattributed bucket. Shape decisions can use an existing
+    blackboard run after the signature policy accepts the request.
     """
     try:
         body = json.loads(text)
@@ -180,16 +163,12 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
     p2p = "context" in body
     mode = "p2p" if p2p else "blackboard"
     roles = roles if roles is not None else (P2P_ROLES if p2p else ROLES)
-    audit_run, audit_source = _rejection_run(claimed, store)
-
     forged = peer_auth_error(body)
     if forged is not None:
-        _record_rejection(
-            rule="interagent.signature", action="blocked", detail=forged,
-            audit_run_id=audit_run, run_id_source=audit_source,
-        )
+        _record_rejection(forged)
         return _ack(ok=False, error=forged)
 
+    audit_run, audit_source = _rejection_run(claimed, store)
     # The HMAC was decided above, so only the shape half runs here: mode, role
     # allowlist, field allowlist and the instruction/context size bounds.
     verdict = validate_message(
@@ -220,13 +199,13 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         "crewai",
         extra={"stage_scope": "crewai-remote", "handoff": "a2a"},
     )
-    previous = set_recorder(recorder)
     started = time.perf_counter()
     try:
-        if p2p:
-            result = handler(run_id, instruction, store=None, context=context)
-        else:
-            result = handler(run_id, instruction, store=store)
+        with recorder_scope(recorder):
+            if p2p:
+                result = handler(run_id, instruction, store=None, context=context)
+            else:
+                result = handler(run_id, instruction, store=store)
     except Exception as exc:  # noqa: BLE001 - a bad generation is an ack, not a crash
         error_type = type(exc).__name__
         message = (redact(str(exc)) or "")[:200]
@@ -247,8 +226,6 @@ def run_role_request(text: str, roles: dict | None = None, store=None) -> str:
         )
         # The ADK side decides what to tell the user from these two fields.
         return _ack(ok=False, role=role, error_type=error_type, error=message)
-    finally:
-        set_recorder(previous)
     recorder.emit(
         "stage_end", role, "crewai",
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
@@ -289,9 +266,10 @@ class CrewA2AExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         # CrewAI is blocking; keep it off the event loop.
-        ack = await asyncio.to_thread(
-            run_role_request, context.get_user_input(), self.roles, self.store
-        )
+        with a2a_span(SpanKind.SERVER, context.call_context.state.get("headers")):
+            ack = await asyncio.to_thread(
+                run_role_request, context.get_user_input(), self.roles, self.store
+            )
         await event_queue.enqueue_event(
             new_text_message(ack, context_id=context.context_id, task_id=context.task_id)
         )
