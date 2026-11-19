@@ -1,860 +1,206 @@
 # Athena
 
-Athena is a local-first, multi-agent research assistant built with **Google ADK**,
-**CrewAI**, **A2A**, **MCP**, and a persistent **Blackboard**. Ask a research
-question, watch the agents work, inspect the evidence and critique, and compare
-four orchestration patterns on the same question.
+Athena is a local-first AI workspace for everyday chat and multi-agent
+research. **Chat** streams replies from the model you choose and can optionally
+search the web or use your documents. **Research** coordinates Google ADK and
+CrewAI agents to produce a structured report with sources, a critic review,
+and an inspectable run trace.
 
-The UI is a chat-style research console: it shows the run timeline, A2A traffic,
-MCP tool calls, the shared Blackboard, per-agent metrics, the structured final
-report, and the critic's verdict. If no provider key is configured, it still
-runs from recorded demo bundles.
-
-Repository: <https://github.com/mehul-27/athena-mas>
-
-> **Local use only.** Athena has no authentication or tenant isolation. Do not
-> expose the demo API to the public internet.
-
----
-
-## What it does
-
-- Decomposes a question into a plan.
-- Researches through MCP tools: local RAG, web search, page fetching, and
-  calculation/forecasting.
-- Records every piece of evidence with provenance and authorship on the
-  Blackboard.
-- Produces an analysis, a structured `FinalReport`, and a critic review.
-- Rejects unsupported answers instead of inventing findings or citations.
-- Shows evidence gaps explicitly when the retrieved sources cannot support the
-  requested claims.
-- Supports `sequential`, `parallel`, `hierarchical`, and `p2p` orchestration.
-- Streams progress over Server-Sent Events (SSE), including safe reconnection.
-- Persists run history, event metrics, heatmaps, logs, and final summaries.
-- Selects research tools beside the Pattern pill (All tools, multiple tools, or
-  an explicit no-tools state) and enforces that selection in every pattern.
-- Shows a compact, expandable execution trace above Chat and Research answers,
-  then keeps the completed trace visible in a muted state.
-- Opens per-run diagnostics from the Research response header (**Run details**),
-  always bound to the selected conversation's run id. There is no global Run
-  details navigation item.
-- Lists the indexed documents in the **Documents** view and uses the same corpus
-  for Chat's explicit **Documents** capability.
-- Adds a separate **Chat** surface with persisted conversations, token streaming,
-  stop, model selection, opt-in RAG/web grounding, selected tools, sources and
-  usage — without starting a research run.
-- Opens **Settings** as a floating modal with provider profiles, the encrypted
-  vault, chat defaults, appearance, RAG/library status and read-only MCP status.
-- Draws a local **Capillary** background behind Chat and Research, uses the
-  supplied **Circum** icon pack, and offers a first-run guided tour.
-
----
-
-## Chat and Settings
-
-Chat and Research are deliberately separate:
-
-- **Chat** sends one message to the selected LLM profile and streams the answer.
-  It does not launch CrewAI/ADK, create a run, or write to the Blackboard.
-- **Documents** and **Web search** are explicit opt-in capabilities. When on,
-  Chat retrieves through the same MAS tools and shows numbered sources. When
-  off, no retrieval happens.
-- **Tools** are selected per message from the server catalogue. The model may
-  call only those tools, in bounded rounds, and each call appears in the
-  transcript. Unknown or unselected tool names never execute.
-- Conversations persist in `data/chat.db`; the research event store and
-  Blackboard are untouched.
-
-Settings is a modal over whichever view is active. It covers Add model, Models,
-AI Defaults, Appearance, Library, MCP, Personalisation and About. MCP status is
-read-only because MAS ships three fixed local stdio servers; arbitrary server
-management is not supported (it would execute arbitrary commands). Library shows
-the real RAG index, corpus, rebuild control and recent research; saved chat
-documents are not part of MAS.
-
-The Capillary background is loaded from the vendored official
-`asciify-engine@4.32.8` kit after first paint. Its host is the `.main` surface, so
-the simulation receives pointer coordinates and the lantern lights the veins,
-while the generated canvas stays behind the controls with `pointer-events:none`.
-It is one renderer, pauses when Settings covers it and when the tab is hidden,
-follows the system reduced-motion setting, and fails safely if the module or
-WebGL2 is unavailable. Its exact requested configuration, the text-line clear
-map and the few values with no public API equivalent are documented in
-[docs/SINGLE_CHAT_SETTINGS_INTEGRATION.md](docs/SINGLE_CHAT_SETTINGS_INTEGRATION.md).
-
-The interface uses a neutral black/white token system (with a light theme), Geist
-for interface and prose and Geist Mono only for technical values. The appbar
-wordmark and the new-chat heading use a mono-editorial treatment — lowercase
-Geist Mono with wide tracking and a 1px dotted baseline; the logo image is
-removed and the heading emphasizes `athena` over the muted surrounding words. The
-new-chat subtitle stays in Geist for readability. Visible UI copy uses lowercase
-`athena`. The left sidebar collapses and persists its state; on Chat it shows
-Chats, while Research shows Research history and Recordings. On narrow screens it
-is an overlay drawer. The header keeps only help and theme; Settings is the
-sidebar item. The display-size preference is in Settings → Appearance. Research
-uses a grouped, scrollable example popover, a Geist listbox pattern picker, and
-per-pattern SVG architecture diagrams that scroll inside their panel at narrow
-widths instead of shrinking labels or widening the page.
-
----
-
-## Architecture
-
-```text
-Browser
-  │
-  ▼
-FastAPI demo API  ────────────────►  Blackboard (SQLite)
-  │                                  task / plan / evidence / draft /
-  │                                  critique / final_report + history
-  │
-  ├── ADK supervisor + planner + researchers
-  │       │
-  │       └── MCP stdio servers
-  │             ├── rag_search
-  │             ├── web_search
-  │             ├── fetch_page
-  │             └── calculate / forecast
-  │
-  └── A2A (127.0.0.1:9001)
-          └── CrewAI roles: analyst, writer, critic
-                    │
-                    └── read/write the same Blackboard
-```
-
-- **ADK** owns the supervisor, planner, and researchers.
-- **CrewAI** owns the analyst, writer, and critic behind the A2A server.
-- **A2A** carries the run ID and stage instructions between processes.
-- **MCP** exposes the research tools as stdio servers.
-- **Blackboard** is the durable, append-only-history state store. The `p2p`
-  pattern carries context in messages and writes audit records afterwards.
-
-Only the two required agent frameworks are used; there is no third agent
-framework or separate orchestration library.
-
----
-
-## Requirements
-
-- **Python 3.11+** (developed and tested on Python 3.13).
-- Windows, macOS, or Linux.
-- Internet access for live web search, page fetching, and hosted LLM calls.
-- No GPU required. RAG can use a local/fastembed model or the offline `hashing`
-  embedding provider.
-
-The demo is a single-user local application. All state is stored under the
-repository directory.
-
----
+[Quick start](#quick-start) · [Use your own model](#use-your-own-model) ·
+[Documents and web search](#documents-and-web-search) ·
+[How research works](#how-research-works) · [Troubleshooting](#troubleshooting)
 
 ## Quick start
 
-### 1. Clone
+Use **Python 3.13** to match CI and the pinned dependencies. Git is needed to
+clone the repository. The app serves its own frontend, so only the frontend
+tests need Node.js.
 
 ```bash
 git clone https://github.com/mehul-27/athena-mas.git
 cd athena-mas
 ```
 
-### 2. Create a virtual environment
-
 **Windows PowerShell**
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r requirements.txt
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts/demo.py --replay-only
 ```
 
-**macOS / Linux**
+**macOS or Linux**
 
 ```bash
-python3 -m venv .venv
+python3.13 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-```
-
-All commands below assume the repository root as the working directory. On
-Windows, prefix commands with `.venv\Scripts\`; on macOS/Linux, activate the
-virtual environment once and use `python`.
-
-### 3. Configure a provider
-
-Copy the example file:
-
-```powershell
-copy .env.example .env
-```
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and set at least:
-
-```dotenv
-LLM_MODEL=groq/qwen/qwen3.8-27b
-LLM_API_KEY=your-key-here
-```
-
-Do **not** commit `.env`. It is already ignored by `.gitignore`.
-
-### 4. Start Athena
-
-```powershell
-.\.venv\Scripts\python scripts\demo.py
-```
-
-```bash
-python scripts/demo.py
-```
-
-This starts:
-
-- the CrewAI A2A server on `127.0.0.1:9001`,
-- the demo API and UI on `http://127.0.0.1:8000`,
-- your default browser.
-
-Press `Ctrl+C` to stop everything the launcher started.
-
-### 5. No key? Use replay mode
-
-```powershell
-.\.venv\Scripts\python scripts\demo.py --replay-only
-```
-
-```bash
 python scripts/demo.py --replay-only
 ```
 
-Replay mode needs no provider, network, or API key. It plays the recorded
-bundles in `data/demo/replay/`. Other options:
-
-```text
---port 8001       use a different API port
---no-browser      print the URL instead of opening a browser
-```
-
----
-
-## Provider configuration
-
-### Model string format
-
-Athena uses LiteLLM-style model strings:
-
-```text
-<provider>/<model-id>
-```
-
-Examples:
-
-```dotenv
-LLM_MODEL=groq/qwen/qwen3.8-27b
-LLM_MODEL=deepseek/deepseek-chat
-LLM_MODEL=openai/gpt-4o-mini
-LLM_MODEL=openrouter/anthropic/claude-3.5-sonnet
-```
-
-For an OpenAI-compatible gateway:
-
-```dotenv
-LLM_MODEL=openai/your-model-name
-LLM_API_BASE=http://127.0.0.1:8080/v1
-LLM_API_KEY=your-gateway-key
-```
-
-`LLM_API_BASE` must be the API root, not a `/chat/completions` URL.
-
-### Environment variables
-
-The most important settings:
-
-| Variable | Purpose |
-|---|---|
-| `LLM_MODEL` | LiteLLM-style provider/model string. |
-| `LLM_API_KEY` | Provider API key. Never commit it. |
-| `LLM_API_BASE` | Optional OpenAI-compatible API root. |
-| `LLM_REASONING_EFFORT` | Optional `low`, `medium`, or `high`. |
-| `LLM_MAX_TOKENS_<ROLE>` | Per-role output caps. |
-| `ATHENA_MAX_REVISIONS` | Bounded revision/recovery cycles after a high rejection or evidence gap. |
-| `ATHENA_RESEARCHER_MAX_TOOL_CALLS` | Researcher tool-call budget (default 8). |
-| `ATHENA_RESEARCHER_MAX_MODEL_CALLS` | Researcher model-call budget (default 10). |
-| `ATHENA_CALC_MAX_TOOL_CALLS` | Calculation-worker tool-call budget (default 4). |
-| `ATHENA_CALC_MAX_MODEL_CALLS` | Calculation-worker model-call budget (default 4). |
-| `SEARCH_PROVIDER` | `duckduckgo`, `searxng`, `firecrawl`, or `disabled`. |
-| `FIRECRAWL_API_KEY` | Server-side key for optional hosted Firecrawl search. |
-| `SEARXNG_INSTANCE` | Base URL for self-hosted SearXNG. |
-| `SEARCH_FALLBACK_PROVIDER` | Optional fallback provider (`searxng`) when the primary throttles. |
-| `SEARCH_FALLBACK_ENDPOINT` | Fallback SearXNG base URL; falls back to `SEARXNG_INSTANCE`. |
-| `SEARCH_THROTTLE_COOLDOWN` | Seconds to skip a provider after repeated throttling (default 60). |
-| `RAG_ADJACENT_CHUNKS` | Adjacent chunks added around top RAG hits (default 1; 0 disables). |
-| `EMBEDDING_PROVIDER` | `fastembed` (default) or `hashing`. |
-| `CORPUS_DIR` | Local PDF corpus directory. |
-| `CHROMA_PATH` | Local Chroma index directory. |
-| `BLACKBOARD_DB` | Blackboard SQLite path. |
-| `EVENTS_DB` | Event log SQLite path. |
-
-See [.env.example](.env.example) for the complete list and defaults.
-
-### Settings UI alternative
-
-After starting the app, open **Settings** from the sidebar Settings item. It
-floats over the current view and has internal categories:
-
-- **Add model** — profile name, preset, model string, API base URL, API key,
-  reasoning effort, search provider, model discovery, save & test.
-- **Models** — profile cards with key status, Test, Edit, Activate for research,
-  and Delete.
-- **AI Defaults** — the default profile Chat uses when a conversation has no
-  explicit model.
-- **Appearance** — theme and the Capillary background toggle.
-- **Library** — real RAG index/corpus status, rebuild, and recent research.
-- **MCP** — read-only status for the three built-in servers and their tools.
-- **Personalisation** — the 800-character About Me instruction.
-- **About** — architecture, limitations, and a button to restart the tour.
-
-Keys saved through Settings are stored in the local encrypted vault under
-`data/settings/`, which is ignored by Git. The app checks only whether a key is
-present; it never prints the value. **Save & test** validates the profile without
-displaying the secret.
-
-The active profile can override `.env` values for research runs. Chat uses the
-profile selected in its header, falling back to AI Defaults and then the active
-profile. If you are unsure which configuration is in use, check the header/status
-strip in the UI.
-
----
-
-## Running the pipeline directly
-
-The demo API is convenient, but the CLI is useful for scripts and debugging.
-
-### 1. Start the A2A server
-
-```powershell
-.\.venv\Scripts\python scripts\dev_up.py
-```
-
-```bash
-python scripts/dev_up.py
-```
-
-This writes `.run/crew_a2a.pid` and `.run/crew_a2a.log` and waits for the Agent
-Card on port 9001.
-
-### 2. Run a question
-
-```powershell
-.\.venv\Scripts\python -m athena.run "Explain three key changes in Python 3.13 with official sources." --pattern hierarchical
-```
-
-```bash
-python -m athena.run "Explain three key changes in Python 3.13 with official sources." --pattern hierarchical
-```
-
-Options:
-
-```text
---pattern sequential|parallel|hierarchical|p2p
---compare                 run every pattern on the same question
---eval-id N               use a question from data/eval/nasa_rag_40_questions.csv
---run-id <id>             use a supplied run id
---json-summary <path>     write the RunSummary as JSON
-```
-
-### 3. Stop the A2A server
-
-```powershell
-.\.venv\Scripts\python scripts\dev_down.py
-```
-
-```bash
-python scripts/dev_down.py
-```
-
-The `demo.py` launcher does this automatically on exit.
-
----
-
-## Orchestration patterns
-
-Choose a pattern in the UI or with `--pattern`.
-
-| Pattern | How it works | Research workers | Recovery |
-|---|---|---|---|
-| `sequential` | planner → researcher → analyst → writer → critic | one researcher with the selected tools | evidence gate; no research revision loop |
-| `parallel` | planner → role-specific researchers concurrently → analyst → writer → critic | RAG, web, calc workers named by the plan | evidence gate; no research revision loop |
-| `hierarchical` | planner dispatches plan steps by `assigned_to`; writer/critic run as a loop | role-specific researchers | high-severity critic rejection can trigger one targeted research recovery plus a writer revision |
-| `p2p` | stages exchange context in A2A messages; supervisor audits to Blackboard afterwards | one researcher with the selected tools | evidence gate; no research revision loop |
-
-All four produce the same Blackboard sections and comparable final reports.
-
-### Tool selection
-
-The composer's **Tools** pill sends a `tools` value with the run:
-
-- omitted or `null` — **All tools**;
-- `[]` — explicitly **No tools** (the UI requires at least one tool before
-  starting, but the API accepts the explicit empty state);
-- `["web_search", "fetch_page"]` — only those tools.
-
-The API validates every id against `athena/tools/registry.py` and returns HTTP
-422 for an unknown id. The selection is stored on the run's `Task` and enforced
-in every pattern: MCP servers are filtered before ADK sees a tool schema, a
-second guard refuses calls outside the selection, disabled workers are skipped,
-and planner steps that require disabled tools are recorded as blocked rather
-than silently dropped. Retries and hierarchical recovery never re-enable a
-disabled tool.
-
-The planner receives the enabled/disabled list. Planned, enabled, invoked,
-successful, failed and skipped tools are recorded separately in the run summary
-and the Run details **Tools** section. An enabled tool is never presented as
-used unless the event log contains a real `tool_call`.
-
-The `hierarchical` loop is bounded by `ATHENA_MAX_REVISIONS` (default `1`). A
-missing critique is never treated as approval. If recovery budget is exhausted,
-the result remains rejected/incomplete instead of being marked successful.
-
----
-
-## How research and evidence work
-
-Athena does not simply ask the writer to “be accurate.” The pipeline has several
-independent checks:
-
-1. **Source routing** chooses local RAG for supplied-document questions and
-   web/official documentation for software, API, release, and current-fact
-   questions.
-2. **Search snippets are hints, not evidence.** The researcher must fetch
-   relevant pages before claims can rely on them.
-3. **Evidence is recorded with provenance**: source type, source reference,
-   retrieved-by role, and content. Failed or empty fetches are kept for audit
-   but excluded from citable evidence.
-4. **The sufficiency gate** checks requested finding counts, distinct sources,
-   official/primary-source requirements, relevance, and whether content was
-   actually fetched.
-5. **The writer is blocked** from producing an unsupported “complete” answer.
-   It writes a gap report with no citations and confidence `0.0` when the
-   evidence is insufficient.
-6. **The critic reviews** the report, evidence, citations, and gaps. In
-   `hierarchical`, an evidence-related high rejection can request new research.
-
-The gate is intentionally conservative but heuristic. It cannot prove that a
-particular sentence is semantically supported by a page; the critic and the
-writer prompts still matter. See [Limitations](#limitations).
-
----
-
-## RAG setup
-
-RAG is optional. Web research works without it.
-
-1. Put one or more PDFs in `data/corpus/` (the NASA systems-engineering handbook
-   is the example corpus; the PDF is not committed).
-2. Build the local index:
-
-```powershell
-.\.venv\Scripts\python scripts\ingest_nasa.py
-```
-
-```bash
-python scripts/ingest_nasa.py
-```
-
-For a fully offline index with no embedding-model download:
-
-```powershell
-.\.venv\Scripts\python scripts\ingest_nasa.py hashing
-```
-
-```bash
-python scripts/ingest_nasa.py hashing
-```
-
-The index is written to `data/chroma/`. Re-running is safe: unchanged chunks are
-skipped. If the corpus is unrelated to the question, the researcher should not
-treat its chunks as evidence.
-
-RAG-related environment variables:
-
-```dotenv
-EMBEDDING_PROVIDER=fastembed
-CORPUS_DIR=data/corpus
-CHROMA_PATH=data/chroma
-```
-
----
-
-## Web search and page fetching
-
-The default search provider is keyless DuckDuckGo HTML search:
-
-```dotenv
-SEARCH_PROVIDER=duckduckgo
-```
-
-It can be throttled. For steadier local use, run SearXNG:
-
-```bash
-docker run -d --name searxng -p 8888:8080 searxng/searxng
-```
-
-```dotenv
-SEARCH_PROVIDER=searxng
-SEARXNG_INSTANCE=http://127.0.0.1:8888
-```
-
-To use hosted Firecrawl, set `FIRECRAWL_API_KEY` in the server environment and
-select **Firecrawl** in a model profile's **Search provider** field. Chat uses
-its selected profile and Research uses its active profile. Environment-based
-runs can use `SEARCH_PROVIDER=firecrawl`. Firecrawl receives search queries and
-returns source URLs and snippets. Athena reads pages through its own fetch tool.
-
-`SEARCH_PROVIDER=disabled` turns web search off without breaking local RAG or
-calculation questions.
-
-Page fetching is performed by the existing `fetch_page` MCP tool. It applies
-SSRF protections, redirect validation, a total deadline, response-size limits,
-and untrusted-content boundaries. Fetched page text is treated as data, not
-instructions.
-
-Useful limits:
-
-```dotenv
-WEB_FETCH_TIMEOUT=12
-WEB_FETCH_TOTAL_TIMEOUT=20
-WEB_FETCH_MAX_BYTES=1000000
-WEB_FETCH_MAX_CHARS=8000
-```
-
----
-
-## Web API
-
-The demo server listens on `127.0.0.1:8000` by default.
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/health` | App, provider, and crew-server status. |
-| `GET /api/questions` | Curated demo questions. |
-| `POST /api/runs` | Start a run (`{"question": "...", "pattern": "sequential", "tools": ["web_search"]}`; `tools` is optional, `null`/omitted means All tools, `[]` means no tools). |
-| `GET /api/research/tools` | Canonical research tool catalogue and availability. |
-| `GET /api/runs` | Run history and summaries. |
-| `GET /api/runs/{run_id}` | Blackboard snapshot for a run, including planned/actual tool status. |
-| `GET /api/runs/{run_id}/events` | Persisted event log, used to restore a completed activity trace. |
-| `GET /api/runs/{run_id}/stream` | SSE progress stream. |
-| `GET /api/runs/{run_id}/log` | Process log and termination watchdog state. |
-| `GET /api/runs/{run_id}/metrics` | Per-agent metrics. |
-| `GET /api/runs/{run_id}/heatmap.png` | Rendered metrics heatmap. |
-| `GET /api/compare?run=id1,id2` | Comparison rows. |
-| `GET /api/replay` | Recorded demo bundles. |
-| `/api/settings/*` | Provider profiles, activation, connection test, About Me, defaults, model discovery, library/RAG status, and read-only MCP status. |
-| `GET /api/chat/models` | Usable chat profiles and the resolved default. |
-| `GET /api/chat/capabilities` | RAG/web availability for the selected profile. |
-| `GET /api/chat/tools` | The server-side chat tool catalogue. |
-| `GET/POST /api/chat/conversations` | List or create conversations. |
-| `GET/PATCH/DELETE /api/chat/conversations/{id}` | Reopen, rename or delete a conversation. |
-| `PUT /api/chat/conversations/{id}/model` | Select the profile for a conversation. |
-| `POST /api/chat/messages` | Send a message; returns an SSE stream (`meta`, `trace`, `delta`, `tool`, `sources`, `usage`, `note`, `done`). The `trace` events are persisted on the assistant message's `meta.trace`. |
-| `POST /api/chat/conversations/{id}/stop` | Cancel the active reply. |
-| `GET /api/chat/conversations/{id}/transcript` | Plain-text transcript for copy. |
-
-SSE clients receive:
-
-- unnamed `data:` events for timeline/event records;
-- `event: blackboard` for Blackboard updates;
-- `event: done` with a terminal `summary`;
-- `event: error` if the stream times out.
-
-Events carry sequence IDs and the stream honors `Last-Event-ID`, so a client can
-resume without replaying already-seen events. If a run cannot be recovered after
-the stream has started, Athena emits a terminal **failed** summary rather than
-raising an HTTP error into an already-open response.
-
-Only one live run is allowed at a time. A second start returns HTTP 409 while the
-active run is still working. Chat uses its own stream and storage, so a chat reply
-does not occupy the research run slot and a research run does not block chat.
-
----
-
-## Completed AMD evaluation
-
-The 14–15 November 2026 batch contains **30 hierarchical runs on AMD
-DeepSeek-V4-Flash**: 24 distinct prompts across 12 categories plus 6 repeats.
-All 30 completed execution; 23 passed the deterministic rubric and 17 were
-approved by the critic. Costs are unknown because the AMD endpoint is unpriced.
-This is a single-pattern evaluation, not a comparison of the four architectures.
+Athena opens [http://127.0.0.1:8000](http://127.0.0.1:8000). From the sidebar,
+open **Research → Recordings**, pick a recorded run, and open **Run details** to
+inspect its sources and agent activity. Playback makes no model calls and needs
+no API key. Press **Ctrl+C** in the terminal to stop Athena.
+
+Run the commands below from the repository root. On Windows, use
+`.\.venv\Scripts\python.exe` in
+place of `python`. The launcher accepts `--no-browser` and `--port 8001`.
+
+## Use your own model
+
+### Chat
+
+Open **Settings → Add model**. Pick a provider preset, enter the model ID and
+provider key, then use **Save & test**. For a custom OpenAI-compatible gateway,
+enter its API root (for example, `http://127.0.0.1:8080/v1`). The provider's
+model list is the source of truth for the model ID.
+
+Choose the profile in the Chat header. Under **Settings → Models** you can edit
+or replace its key, reorder profiles, and choose **Make Chat default**. Use
+**Reasoning** beside the composer to override the model's default when the
+provider supports it. The launcher can open without a model in `.env`. A profile
+saved through Settings can still power Chat.
+
+### Live Research
+
+1. Copy [.env.example](.env.example) to `.env` using
+   `Copy-Item .env.example .env` in PowerShell or `cp .env.example .env` on
+   macOS/Linux.
+2. Set `LLM_MODEL` to a model your provider makes available and `LLM_API_KEY`
+   to its key. Use a LiteLLM model string such as `openai/gpt-4o-mini`.
+   Set `LLM_API_BASE` if your gateway requires a custom API root.
+3. Stop the current launcher and run `python scripts/demo.py` without
+   `--replay-only`. The launcher checks both variables before starting the
+   local CrewAI server on port **9001**. The browser can open while it starts.
+4. Open **Research**, choose a pattern and the tools you need, then submit
+   a question. To use a saved profile for live runs, choose **Activate for
+   Research** in **Settings → Models**. Activation also starts CrewAI after
+   a keyless launch, so this is an alternative to configuring `.env`. If you
+   started CrewAI through Settings after a keyless launch, stop it separately
+   with `python scripts/dev_down.py` when you are done.
+
+Chat sends the conversation to the selected provider. Research sends the
+question and relevant tool output to its active provider. Live runs may make
+multiple model calls and incur provider charges.
+
+Keep Athena on loopback for local use. Keep `.env`, provider keys and the
+local Settings vault out of Git. See [Security](docs/SECURITY.md) and
+[Deployment](docs/DEPLOYMENT.md) for the project's deployment boundaries.
+
+## Documents and web search
+
+### Local documents (RAG)
+
+Open **Documents → Upload document**, or use the upload button beside
+Chat's **Documents** control. Athena accepts PDFs with selectable text,
+UTF-8 text files, and Markdown. Wait for indexing to finish, then enable
+**Documents** in Chat or select the document search tool in Research. Retrieved
+excerpts can be sent to the model as context.
+
+For a batch of PDFs, place them in `data/corpus/` and run
+`python scripts/ingest_nasa.py`. The default FastEmbed model may download on
+first use. To skip that download, set the shell environment variable
+`EMBEDDING_PROVIDER=hashing` before running both
+the ingestion script and the launcher. In PowerShell use
+`$env:EMBEDDING_PROVIDER = "hashing"`. On macOS/Linux use
+`export EMBEDDING_PROVIDER=hashing`. The local index uses `data/chroma/` by default.
+
+### Web search
+
+Turn on **Web search** in Chat, or enable web search and page fetching in
+Research. The default DuckDuckGo provider needs no key. A self-hosted SearXNG
+instance must have JSON output enabled. Set `SEARCH_PROVIDER=searxng` and
+`ATHENA_SEARXNG_URL` in `.env`, or select SearXNG in a model profile and enter
+the instance URL.
+
+For hosted Firecrawl search:
+
+1. Set `FIRECRAWL_API_KEY` in `.env` or the server environment and restart
+   Athena.
+2. Select **Firecrawl** in the model profile's **Search provider** field.
+   For runs using environment configuration, set `SEARCH_PROVIDER=firecrawl`.
+3. Use web search in Chat or Research. Firecrawl receives the search query
+   and returns source URLs and snippets. Athena fetches pages with its own
+   tool when needed. Chat uses the selected profile and Research uses the
+   active profile. The Firecrawl key is separate from the model provider key.
+
+See [.env.example](.env.example) for search, embedding and model settings.
+
+## How research works
+
+Google ADK handles supervision, planning and research. CrewAI runs the
+analyst, writer and critic behind an A2A endpoint. Three local MCP servers
+provide document search, web search and page fetching, and calculation and
+forecasting tools. The persisted SQLite Blackboard holds the plan, evidence,
+draft, critique and final report. The peer-to-peer pattern passes context
+directly between stages and records an audit trail on the Blackboard.
+
+- **Sequential** runs the stages in order with one researcher.
+- **Parallel** runs role-specific research workers concurrently.
+- **Hierarchical** assigns work to specialist agents and can retry research
+  within a bounded recovery budget.
+- **Peer to peer** passes context in A2A stage messages.
+
+Research streams activity as it runs. **Run details** shows the event log,
+tool calls, source provenance, and metrics such as agent timing and heatmaps
+when available. Chat streams answer text and uses separate conversation storage.
+Athena can report evidence gaps, and the critic can reject a report. Review
+the cited sources before relying on the result.
+
+For implementation details, see [run flow](docs/FLOW.md),
+[Blackboard](docs/BLACKBOARD.md), [patterns](docs/PATTERNS.md), and
+[observability](docs/OBSERVABILITY.md). While the live launcher is running,
+open the API reference at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+### Evaluation and recordings
+
+The published AMD DeepSeek-V4-Flash batch contains 30 hierarchical runs over
+24 distinct prompts and six repeats. All 30 completed, 23 passed the
+deterministic rubric, and 17 were approved by the critic. The endpoint was
+unpriced, so costs are unknown. These results cover the hierarchical pattern.
 
 - [Evaluation overview](evaluation/REPORT.md)
-- [Full batch report](evaluation/results/20261114T174056Z_amd_hierarchical_30/BATCH_REPORT.md)
-- [All 30 prompts and answers](evaluation/results/20261114T174056Z_amd_hierarchical_30/ALL_RUN_OUTPUTS.md)
-- [Per-run metrics CSV](evaluation/results/20261114T174056Z_amd_hierarchical_30/runs.csv)
+- [Batch report](evaluation/results/20261114T174056Z_amd_hierarchical_30/BATCH_REPORT.md)
+- [Prompts and answers](evaluation/results/20261114T174056Z_amd_hierarchical_30/ALL_RUN_OUTPUTS.md)
+- [Per-run metrics](evaluation/results/20261114T174056Z_amd_hierarchical_30/runs.csv)
 - [Latency boxplots](evaluation/results/20261114T174056Z_amd_hierarchical_30/charts/latency_by_tier_all_attempts.png)
 
-To inspect these runs in the UI, open **Research → Recordings** and select an
-`amd-eval-…` entry. All 30 outcomes are included, including critic rejections.
-The committed recordings contain the saved answers, sources, Blackboard
-sections, events and archived heatmaps; opening a recording makes no model
-calls and needs no provider key. Start the existing recording viewer with:
-
-```powershell
-.venv\Scripts\python.exe scripts/demo.py --replay-only
-```
-
-On the evaluation machine, the original databases also provide the runs in
-**Research history** with full telemetry. Those local SQLite databases and
-provider credentials are not included in Git. On a fresh clone, use Recordings;
-live telemetry endpoints still require the original event database.
-
-## Testing
-
-Offline tests are the default and make no live network/provider calls:
-
-```powershell
-.\.venv\Scripts\python -m pytest -q
-```
-
-```bash
-python -m pytest -q
-```
-
-The FastAPI tests, pipeline tests, event-store tests, Blackboard tests, MCP tool
-tests, and streaming regressions are included. The chat/settings work adds tests
-for conversation persistence, SSE chat contracts, the bounded tool loop,
-grounding/source numbering, settings defaults/library/MCP, the vendored Asciify
-closure, the Circum sprite, and the tutorial/UI contracts.
-
-Frontend logic tests need Node.js:
-
-```bash
-node athena/api/static/logic.test.js
-node athena/api/static/app.composer.test.js
-```
-
-The Circum sprite is reproducible from the supplied pack:
-
-```powershell
-.\.venv\Scripts\python scripts\build_circum_icons.py --check
-```
-
-If the local Chroma build cannot open a temporary index directory, the four
-`tests/test_tools_rag.py` tests error during setup; that is an environment issue
-unrelated to the chat path. The rest of the suite is offline.
-
-Opt-in end-to-end tests require a live provider and/or running A2A server:
-
-```bash
-python -m pytest -m e2e
-```
-
-Do not run e2e tests without provider credentials and explicit intent; they make
-real provider calls.
-
-Useful environment checks:
-
-```powershell
-.\.venv\Scripts\python scripts\check_env.py
-.\.venv\Scripts\python scripts\preflight.py
-```
-
-`check_env.py` reports whether variables are present, never their values.
-
----
-
-## Local data and storage
-
-Everything is local by default:
-
-| Path | Contents |
-|---|---|
-| `data/blackboard.db` | Blackboard sections and append-only history. |
-| `data/events.db` | Append-only observability event log. |
-| `data/chat.db` | Chat conversations, messages, tool activity, sources and usage. |
-| `.run/runs/` | Per-run logs and `.summary.json` files. |
-| `.run/crew_a2a.pid` / `.log` | CrewAI A2A server process and log. |
-| `data/chroma/` | Local RAG vector index. |
-| `data/corpus/` | Local source PDFs (not committed). |
-| `data/settings/` | Encrypted profile vault; ignored by Git. |
-| `data/settings/defaults.json` | Default chat profile (non-secret). |
-| `data/settings/preferences.json` | About Me / personalisation (non-secret). |
-| `data/presets.json` | Provider presets (committed). |
-| `data/demo/replay/` | Recorded demo bundles (committed). |
-
-These paths are ignored by `.gitignore` where appropriate. The event log and
-Blackboard history are append-only by design; there is no automatic retention
-policy. Delete the local databases only when you intentionally want to reset
-history.
-
----
+In the app, open **Research → Recordings** and select an `amd-eval-…` entry
+to inspect a saved run without a provider key.
 
 ## Troubleshooting
 
-### The browser opens, but the run immediately uses replay mode
+- **Live Research is unavailable.** Check that both `LLM_MODEL` and
+  `LLM_API_KEY` are set before starting the launcher. Run
+  `python scripts/check_env.py` to check their presence. If CrewAI fails to
+  start, check port 9001 and `.run/crew_a2a.log`.
+- **The model rejects the request.** Use **Test** in Settings, check the
+  provider prefix and model ID, and verify that the API base is the service
+  root. For an OpenAI-compatible API, omit the `/chat/completions` suffix.
+- **Document search is empty.** Check the indexed files under **Documents**.
+  Upload a readable file and make sure document search is enabled for the
+  request. Scanned PDFs need OCR before upload.
+- **Search is empty or throttled.** Retry or change the search provider.
+  Research may report an evidence gap when it cannot retrieve usable sources.
+- **Port 8000 is busy.** Start with `python scripts/demo.py --port 8001`.
+- **Research returns HTTP 409.** Wait for the current live run to finish.
+  The local launcher supports one live Research run at a time.
 
-No provider key was found. Check `.env` or the Settings profile. Confirm the
-presence (not the value) with:
+## Development
 
-```powershell
-.\.venv\Scripts\python scripts\check_env.py
-```
-
-### “CrewAI A2A server is not answering on 127.0.0.1:9001”
-
-Start it manually:
-
-```powershell
-.\.venv\Scripts\python scripts\dev_up.py
-```
-
-Inspect `.run/crew_a2a.log`. Port 9001 must be free. Stop it with
-`python scripts\dev_down.py`.
-
-### HTTP 409 when starting a run
-
-Athena allows one live run at a time. Wait for the current run to finish, or
-stop the previous server process. Do not start a second live run concurrently.
-
-### Provider `401`, `403`, `404`, or “model not found”
-
-- Check the model string provider prefix.
-- Check that `LLM_API_BASE` is the API root, not a full completion URL.
-- Some gateways require an `openai/` prefix for OpenAI-compatible models.
-- Re-test the profile in Settings.
-
-### RAG returns no useful chunks
-
-- Confirm PDFs exist in `data/corpus/`.
-- Re-run `python scripts/ingest_nasa.py`.
-- For a corpus unrelated to the question, Athena should ignore it rather than
-  force it into the answer.
-- Try `EMBEDDING_PROVIDER=hashing` only for offline debugging; quality is lower.
-
-### Web search is throttled or empty
-
-DuckDuckGo can rate-limit. Switch to a self-hosted SearXNG instance, retry later,
-or use local RAG/calculation tools. An empty search or failed fetch is not
-treated as evidence.
-
-### SSE reconnects
-
-A freshly accepted run may not have written its Blackboard task for a few
-seconds. The stream waits for a valid task instead of returning a 404 into an
-open SSE response. If the run is genuinely gone, the UI receives a terminal
-failed summary. If the stream simply times out, the server emits an `error`
-event; reconnect or check `/log`.
-
-### Port 8000 is already in use
-
-```powershell
-.\.venv\Scripts\python scripts\demo.py --port 8001
-```
-
-```bash
-python scripts/demo.py --port 8001
-```
-
----
-
-## Security notes
-
-- `.env` and `data/settings/` are ignored. Never commit API keys.
-- The Settings vault encrypts stored provider keys; the local master key is also
-  ignored.
-- The app checks key presence without printing values.
-- Fetched web content is untrusted external data and is wrapped with explicit
-  boundaries for the model prompts.
-- `fetch_page` validates URLs, blocks private/internal targets, follows redirects
-  safely, and enforces time and size limits.
-- Chat validates every tool name against the server catalogue; unselected,
-  unknown, or disabled tools never execute, and tool rounds/calls are bounded.
-- Chat never returns stored keys; provider errors pass through redaction.
-- The Capillary and Circum assets are local. `asciify-engine` is MIT; Circum is
-  MPL-2.0 with its license and selected sources under `assets/circum/`.
-- The demo API has **no authentication**. Keep it bound to `127.0.0.1`.
-- Do not paste real keys into issues, logs, screenshots, or recorded bundles.
-
----
-
-## Repository map
-
-```text
-athena/
-  agents/          ADK/CrewAI roles, A2A stage, evidence, routing, sufficiency
-  api/             FastAPI app, run registry, SSE, replay, settings and chat routes
-  blackboard/      Pydantic schemas, SQLite store, validation
-  chat/            chat store, target resolution, prompts, grounding, tools, LLM loop
-  config/          LLM factories, caps, rate limiting, endpoint guard
-  observability/   events, metrics, heatmap, redaction, recording
-  patterns/        sequential, parallel, hierarchical, p2p
-  settings/        provider profiles, encrypted vault, defaults, preferences
-  tools/           MCP servers, tool implementations and RAG status
-  api/static/      browser UI (HTML/CSS/vanilla JS)
-    assets/circum/ selected Circum sprite, sources and MPL-2.0 license
-    vendor/asciify/ official Capillary module closure, MIT license and hashes
-scripts/           demo launcher, A2A lifecycle, ingestion, diagnostics, icon build
-tests/             offline pytest suite, chat/settings/assets contracts, node tests
-data/
-  corpus/          local PDFs (not committed)
-  eval/            small evaluation CSVs (committed)
-  demo/replay/     recorded demo runs (committed)
-  chat.db          chat conversations (local, ignored)
-docs/              architecture, integration note and verification screenshots
-```
-
----
-
-## Design notes
-
-- [End-to-end run flow](docs/FLOW.md)
-- [Blackboard](docs/BLACKBOARD.md)
-- [Patterns](docs/PATTERNS.md)
-- [Demo walkthrough](docs/DEMO.md)
-- [Observability](docs/OBSERVABILITY.md)
-- [Agent roles](docs/AGENTS.md)
-- [Single Chat, Settings, Capillary, Circum and onboarding](docs/SINGLE_CHAT_SETTINGS_INTEGRATION.md)
-- Verification screenshots: `docs/screenshots/`
-
-Some documents describe earlier stages of the build; the README above reflects
-the current runnable system.
-
----
-
-## Limitations
-
-- **Single-user / local-first.** There is no authentication, authorization, or
-  tenant isolation. SQLite is single-host.
-- **One live run at a time** in the demo registry.
-- **Recovery is pattern-dependent.** `hierarchical` supports bounded research
-  recovery; `sequential`, `parallel`, and `p2p` stop with a gap/rejected result
-  when evidence is insufficient.
-- **Evidence sufficiency is heuristic.** It checks fetched sources, relevance,
-  distinctness, official-source policy, and content length, but cannot fully
-  prove claim-level semantic support. The critic remains the final semantic
-  check.
-- **Search quality is provider-dependent.** Keyless DuckDuckGo can throttle;
-  SearXNG is more reliable if you run one.
-- **RAG quality depends on the corpus.** An unrelated corpus is rejected as
-  evidence rather than forced into the answer.
-- **Research does not stream partial model output.** It streams pipeline events
-  and status. Chat does stream model tokens over its own SSE contract.
-- **Chat is intentionally plain text.** There is no Markdown renderer, saved
-  document store, Compact, PDF export, LLM judge or visual report in Chat; those
-  old Athena features were not ported.
-- **MCP management is read-only.** MAS ships three fixed local stdio servers and
-  does not accept arbitrary server commands.
-- **Capillary needs WebGL2.** Without it (or if the vendored module fails) the app
-  runs on its normal surface. The GPU preset has no public `bayer4` field; the
-  requested value and the preset-inert fields are documented rather than faked.
-- **No cloud deployment, multi-user mode, cost accounting, or OpenTelemetry
-  tracing** yet.
-- **The UI is intentionally lightweight vanilla HTML/CSS/JS**, not a separate
-  frontend application.
-
----
+- Python tests: `python -m pytest -q`. The default excludes live end-to-end
+  tests that require credentials.
+- Frontend tests: with Node.js, run the `*.test.js` files in
+  `athena/api/static/`. The exact CI commands are in the
+  [workflow](.github/workflows/ci.yml).
+- Local state: Chat and Research use SQLite files under `data/`. The RAG
+  index is under `data/chroma/`. Saved model profiles and their encrypted
+  vault are under `data/settings/`, and run logs are under `.run/`.
 
 ## License
 
-No license file is included in this repository. Add one before distributing or
-reusing the code outside its intended coursework/demo context.
+This repository currently has no project-wide license. Vendored assets carry
+their own licenses in their respective directories.
