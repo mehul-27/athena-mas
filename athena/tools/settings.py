@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,13 +74,34 @@ def firecrawl_key() -> str:
     return (os.getenv("FIRECRAWL_API_KEY") or "").strip()
 
 
+def firecrawl_local_url() -> str:
+    value = (os.getenv("FIRECRAWL_API_URL") or "").strip()
+    if not value:
+        return ""
+    try:
+        url = urlsplit(value)
+        if (url.scheme in {"http", "https"} and url.hostname in {"127.0.0.1", "::1", "localhost"}
+                and url.username is None and url.path in {"", "/"}
+                and not url.query and not url.fragment):
+            host = {"localhost": "127.0.0.1", "::1": "[::1]"}.get(url.hostname, url.hostname)
+            port = f":{url.port}" if url.port is not None else ""
+            return f"{url.scheme}://{host}{port}"
+    except ValueError:
+        pass
+    raise ValueError("FIRECRAWL_API_URL must be a loopback API root, such as http://127.0.0.1:3002.")
+
+
 def search_unavailable_reason(provider: str) -> str:
     if provider == "disabled":
         return "Web search is disabled."
     if provider not in SEARCH_PROVIDERS:
         return f"Unsupported search provider {provider!r}."
-    if provider == "firecrawl" and not firecrawl_key():
-        return "Firecrawl needs FIRECRAWL_API_KEY on the Athena server."
+    if provider == "firecrawl":
+        try:
+            if not (firecrawl_local_url() or firecrawl_key()):
+                return "Firecrawl needs FIRECRAWL_API_KEY or a local FIRECRAWL_API_URL on the Athena server."
+        except ValueError as exc:
+            return str(exc)
     return ""
 
 

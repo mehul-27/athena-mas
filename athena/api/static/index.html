@@ -179,16 +179,14 @@
                     <div id="tools-popover-list"></div>
                   </div>
                 </div>
-                <label class="chip chat-reasoning" for="chat-reasoning">
-                  <span>Reasoning</span>
-                  <select id="chat-reasoning">
-                    <option value="">Model default</option>
-                    <option value="off" disabled>Off</option>
-                    <option value="low" disabled>Low</option>
-                    <option value="medium" disabled>Medium</option>
-                    <option value="high" disabled>High</option>
-                  </select>
-                </label>
+                <div class="pattern-picker" id="chat-reasoning-picker">
+                  <button class="chip chat-toggle chat-reasoning" id="chat-reasoning" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="chat-reasoning-menu" aria-labelledby="chat-reasoning-label chat-reasoning-current">
+                    <span id="chat-reasoning-label">Reasoning</span>
+                    <span id="chat-reasoning-current">Model default</span>
+                    <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-chevron-down"></use></svg>
+                  </button>
+                  <ul class="pattern-menu chat-reasoning-menu hidden" id="chat-reasoning-menu" role="listbox" aria-labelledby="chat-reasoning-label"></ul>
+                </div>
                 <span class="chat-toolbar-status" id="chat-toolbar-status"></span>
               </div>
               <div class="chat-composer-row">
@@ -690,7 +688,7 @@
                 <select id="profile-search">
                   <option value="duckduckgo" selected>DuckDuckGo (keyless)</option>
                   <option value="searxng">SearXNG (self-hosted)</option>
-                  <option value="firecrawl">Firecrawl (server API key)</option>
+                  <option value="firecrawl">Firecrawl (hosted or local)</option>
                 </select>
               </label>
               <label for="profile-search-endpoint" class="wide hidden">SearXNG endpoint<input id="profile-search-endpoint" type="text" placeholder="http://localhost:8888" disabled /></label>
@@ -818,6 +816,22 @@
       </div>
     </div>
   </div>
+
+  <dialog class="delete-dialog" id="delete-dialog" aria-labelledby="delete-dialog-title"
+          aria-describedby="delete-dialog-target delete-dialog-detail">
+    <form method="dialog">
+      <div class="delete-dialog-heading">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-delete"></use></svg>
+        <h2 id="delete-dialog-title"></h2>
+      </div>
+      <p class="delete-dialog-target" id="delete-dialog-target"></p>
+      <p class="delete-dialog-detail" id="delete-dialog-detail"></p>
+      <div class="delete-dialog-actions">
+        <button class="ghost" type="submit" value="cancel" autofocus>Cancel</button>
+        <button class="danger" id="delete-dialog-confirm" type="submit" value="confirm">Delete</button>
+      </div>
+    </form>
+  </dialog>
 
   <div class="tutorial hidden" id="tutorial" aria-hidden="true">
     <div class="tutorial-spotlight" id="tutorial-spotlight" aria-hidden="true"></div>

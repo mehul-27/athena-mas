@@ -396,8 +396,12 @@ async def stream_turn(ctx: TurnContext) -> AsyncIterator[tuple[str, dict[str, An
             yield ("done", {"message": message, "conversation": conversation})
             return
 
+    web_grounded = grounded is not None and any(source.get("kind") == "web" for source in grounded.sources)
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": prompts.system_message(ctx.target, bool(ctx.capabilities))}
+        {"role": "system", "content": prompts.system_message(
+            ctx.target, bool(ctx.capabilities),
+            web_grounded=web_grounded,
+        )}
     ]
     if grounded and grounded.context:
         messages.append({"role": "system", "content": prompts.context_block(grounded)})

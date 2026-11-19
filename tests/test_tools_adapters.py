@@ -364,7 +364,8 @@ def test_provider_status_report_lists_providers_and_never_leaks(monkeypatch) -> 
     report = diagnostics.status_report()
 
     providers = {row["provider"]: row for row in report["search"]["providers"]}
-    assert set(providers) == {"duckduckgo", "searxng"}
+    assert set(providers) == {"duckduckgo", "searxng", "firecrawl"}
+    assert not providers["firecrawl"]["configured"]
     assert providers["duckduckgo"]["roles"] == ["primary"]
     assert providers["searxng"]["roles"] == ["fallback"]
     assert providers["searxng"]["configured"] is True

@@ -158,11 +158,22 @@ def search_providers(probe: bool = False) -> list[dict]:
             # reachable provider: say so instead of probing an empty string.
             configured = False
             note = "endpoint missing (set ATHENA_SEARXNG_URL)"
+        if name == "firecrawl" and roles:
+            note = settings.search_unavailable_reason(name)
+            configured = not note
+            if configured:
+                endpoint = settings.firecrawl_local_url() or "https://api.firecrawl.dev"
         reachable: bool | None = None
         probe_error = ""
         if probe and configured:
             if name == "searxng":
                 reachable, probe_error = _probe_searxng(endpoint)
+            elif name == "firecrawl":
+                try:
+                    search_adapter.firecrawl("athena", 1, timeout=_PROBE_TIMEOUT_S)
+                    reachable = True
+                except Exception as exc:  # noqa: BLE001 - a probe failure is data
+                    reachable, probe_error = False, search_adapter.classify_error(exc)
             else:
                 reachable, probe_error = _probe_duckduckgo()
         rows.append(
@@ -170,7 +181,7 @@ def search_providers(probe: bool = False) -> list[dict]:
                 "provider": name,
                 "roles": roles,
                 "configured": configured,
-                "endpoint": redact_url(endpoint) if name == "searxng" else "",
+                "endpoint": redact_url(endpoint),
                 "reachable": reachable,
                 "last_error_class": probe_error
                 or search_adapter.last_error_class(name),
@@ -284,6 +295,9 @@ def main(argv: list[str] | None = None) -> int:
     """``python -m athena.tools.diagnostics [--probe]`` -> JSON on stdout."""
     import sys
 
+    from dotenv import load_dotenv
+
+    load_dotenv()
     args = list(sys.argv[1:] if argv is None else argv)
     report = status_report(probe="--probe" in args)
     print(json.dumps(report, indent=2, sort_keys=True))

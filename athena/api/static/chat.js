@@ -494,19 +494,106 @@
     renderReasoning();
   }
 
-  function renderReasoning() {
-    const select = UI().$("chat-reasoning");
-    if (!select) return;
+  function supportedReasoning() {
     const model = state.profileId
       ? state.models.find((profile) => profile.id === state.profileId)
       : state.defaultModel;
-    const supported = model?.reasoning_options || [];
-    for (const option of select.options) {
-      option.disabled = option.value !== "" && !supported.includes(option.value);
+    return model?.reasoning_options || [];
+  }
+
+  function renderReasoning() {
+    const trigger = UI().$("chat-reasoning");
+    const menu = UI().$("chat-reasoning-menu");
+    if (!trigger || !menu) return;
+    const supported = supportedReasoning();
+    const value = supported.includes(state.reasoningEffort) ? state.reasoningEffort : "";
+    for (const option of menu.children) {
+      const choice = option.dataset.effort;
+      const selected = choice === value;
+      option.setAttribute("aria-disabled", String(choice !== "" && !supported.includes(choice)));
+      option.setAttribute("aria-selected", String(selected));
+      if (selected) UI().text(UI().$("chat-reasoning-current"), option.firstElementChild.textContent);
     }
-    select.value = supported.includes(state.reasoningEffort) ? state.reasoningEffort : "";
-    select.title = supported.length ? "Reasoning effort for Chat" : "Only model default is available for this model.";
-    select.disabled = state.streaming || state.modelSaving || (!state.loaded && Boolean(savedChat.conversationId));
+    trigger.title = supported.length ? "Reasoning effort for Chat" : "Only model default is available for this model.";
+    trigger.disabled = state.streaming || state.modelSaving || (!state.loaded && Boolean(savedChat.conversationId));
+    if (trigger.disabled) closeReasoningMenu();
+  }
+
+  function closeReasoningMenu(restoreFocus = false) {
+    const menu = UI().$("chat-reasoning-menu");
+    if (!menu || menu.classList.contains("hidden")) return;
+    const trigger = UI().$("chat-reasoning");
+    menu.classList.add("hidden");
+    trigger.setAttribute("aria-expanded", "false");
+    if (restoreFocus) trigger.focus({ preventScroll: true });
+  }
+
+  function wireReasoning() {
+    const picker = UI().$("chat-reasoning-picker");
+    if (!picker) return;
+    const trigger = UI().$("chat-reasoning");
+    const menu = UI().$("chat-reasoning-menu");
+    for (const effort of ["", ...REASONING_OPTIONS]) {
+      const option = el("li", "pattern-option");
+      option.dataset.effort = effort;
+      option.setAttribute("role", "option");
+      option.tabIndex = -1;
+      const label = effort ? effort[0].toUpperCase() + effort.slice(1) : "Model default";
+      option.append(el("span", "", label), icon("check"));
+      menu.appendChild(option);
+    }
+
+    const open = () => {
+      if (trigger.disabled) return;
+      menu.classList.remove("hidden");
+      trigger.setAttribute("aria-expanded", "true");
+      menu.querySelector('[aria-selected="true"]')?.focus();
+    };
+    const choose = (option) => {
+      if (!option || option.getAttribute("aria-disabled") === "true") return;
+      state.reasoningEffort = option.dataset.effort;
+      rememberChat();
+      renderReasoning();
+      closeReasoningMenu(true);
+    };
+    trigger.addEventListener("click", () => {
+      if (menu.classList.contains("hidden")) open();
+      else closeReasoningMenu();
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") return closeReasoningMenu();
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      open();
+    });
+    menu.addEventListener("click", (event) => choose(event.target.closest("[data-effort]")));
+    menu.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") return closeReasoningMenu(true);
+      const keys = ["ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", "Escape"];
+      if (!keys.includes(event.key)) return;
+      event.preventDefault();
+      if (event.key === "Escape") return closeReasoningMenu(true);
+      if (event.key === "Enter" || event.key === " ") return choose(event.target);
+
+      const options = [...menu.querySelectorAll('[aria-disabled="false"]')];
+      const index = options.indexOf(event.target);
+      if (event.key === "Home") options[0]?.focus();
+      else if (event.key === "End") options.at(-1)?.focus();
+      else {
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        const next = index < 0
+          ? (step > 0 ? 0 : options.length - 1)
+          : (index + step + options.length) % options.length;
+        options[next]?.focus();
+      }
+    });
+    picker.addEventListener("focusout", (event) => {
+      if (!picker.contains(event.relatedTarget)) closeReasoningMenu();
+    });
+    document.addEventListener("click", (event) => {
+      if (!picker.contains(event.target)) closeReasoningMenu();
+    }, true);
+    renderReasoning();
   }
 
   function renderEmptyHint() {
@@ -567,7 +654,7 @@
         remove.title = "Delete chat";
         remove.setAttribute("aria-label", "Delete chat: " + title);
         remove.appendChild(icon("delete"));
-        remove.addEventListener("click", () => deleteConversation(conversation.id, remove));
+        remove.addEventListener("click", () => deleteConversation(conversation.id, remove, title));
         item.append(button, remove);
         host.appendChild(item);
       });
@@ -1014,8 +1101,7 @@
     };
     if (state.conversationId) body.conversation_id = state.conversationId;
     if (state.profileId) body.profile_id = state.profileId;
-    const reasoning = UI().$("chat-reasoning")?.value;
-    if (reasoning) body.reasoning_effort = reasoning;
+    if (supportedReasoning().includes(state.reasoningEffort)) body.reasoning_effort = state.reasoningEffort;
 
     try {
       const response = await fetch("/api/chat/messages", {
@@ -1141,10 +1227,16 @@
     }
   }
 
-  async function deleteConversation(id = state.conversationId, button) {
+  async function deleteConversation(id = state.conversationId, button, title = state.conversation?.title || "New chat") {
     if (!id) { UI().toast("No chat to delete."); return; }
     if (id === state.conversationId && state.streaming) { UI().toast("Stop the current reply first."); return; }
-    if (!root.confirm("Delete this chat? Its messages are removed.")) return;
+    if (!await UI().confirmDelete({
+      title: "Delete this chat?",
+      target: title,
+      detail: "Its messages will be permanently deleted.",
+      trigger: button || UI().$("chat-title-btn"),
+    })) return;
+    if (id === state.conversationId && state.streaming) { UI().toast("Stop the current reply first."); return; }
     if (button) button.disabled = true;
     try {
       await UI().api("/api/chat/conversations/" + encodeURIComponent(id), { method: "DELETE" });
@@ -1260,11 +1352,7 @@
     }
     const model = UI().$("chat-model");
     if (model) model.addEventListener("change", () => changeModel(model.value));
-    const reasoning = UI().$("chat-reasoning");
-    if (reasoning) reasoning.addEventListener("change", () => {
-      state.reasoningEffort = reasoning.value;
-      rememberChat();
-    });
+    wireReasoning();
     syncTools();
     const contextToggle = UI().$("context-toggle");
     if (contextToggle) {

@@ -52,6 +52,15 @@ def profile() -> Profile:
     return profile
 
 
+def test_explicit_environment_uses_environment_search_provider(client, profile, monkeypatch) -> None:
+    monkeypatch.setenv("SEARCH_PROVIDER", "disabled")
+    monkeypatch.setattr("athena.api.chat_routes.chunk_count", lambda: 0)
+    response = client.get("/api/chat/capabilities", params={"profile_id": "__env__"})
+    assert response.status_code == 200
+    search = next(row for row in response.json()["capabilities"] if row["id"] == "web_search")
+    assert not search["available"]
+
+
 def _fake_stream(text: str = "Hello", *, usage: bool = True, seen: dict | None = None):
     async def stream(target, messages, *, tools=None, max_tokens=3000):
         if seen is not None:
@@ -213,6 +222,36 @@ def test_rag_sources_are_emitted_and_used_in_the_prompt(
         "handbook.pdf"
     ]
     assert "Evidence text" in json.dumps(seen["messages"])
+    assert "current flagship" not in seen["messages"][0]["content"]
+
+
+def test_web_prompt_resolves_catalog_and_release_sources_before_answering(
+    client: TestClient, profile, monkeypatch
+) -> None:
+    from athena.agents.untrusted import UNTRUSTED_BEGIN, UNTRUSTED_END
+    from athena.tools.schemas import WebHit, WebResult
+    from athena.tools.web import search
+
+    seen: dict = {}
+    results = [
+        WebHit(title="Earlier launch", url="https://vendor.example/earlier",
+               snippet="Model 1 is our most advanced frontier model."),
+        WebHit(title="Current models", url="https://vendor.example/models",
+               snippet="Model 2 is our flagship.")
+    ]
+    monkeypatch.setattr(search, "web_search", lambda *args, **kwargs: WebResult(
+        query=args[0], provider="duckduckgo", max_results=5, elapsed_ms=1.0, results=results,
+    ))
+    monkeypatch.setattr(service.tools, "availability", lambda *a, **k: (True, ""))
+    monkeypatch.setattr(service, "stream_completion", _fake_stream("Model 2 [2]", seen=seen))
+
+    _events(client, {"message": "What is the latest frontier model?", "capabilities": ["web_search"]})
+
+    rules, references = [message["content"] for message in seen["messages"][:2]]
+    assert "first-party current catalog" in rules and "dated first-party release note" in rules
+    assert "state the uncertainty before naming a candidate" in rules
+    assert references.count(UNTRUSTED_BEGIN) == references.count(UNTRUSTED_END) == 2
+    assert "[1] Web: Earlier launch" in references and "[2] Web: Current models" in references
 
 
 def test_unavailable_capability_is_409(client: TestClient, profile, monkeypatch) -> None:

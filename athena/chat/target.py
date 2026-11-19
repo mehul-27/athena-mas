@@ -102,7 +102,9 @@ def search_settings(
     chosen = (profile_id or conversation_profile or "").strip()
     if not chosen:
         chosen = defaults.chat_profile_id()
-    if chosen and chosen != defaults.ENV_PROFILE:
+    if chosen == defaults.ENV_PROFILE:
+        return tool_settings.search_provider(), tool_settings.searxng_instance()
+    if chosen:
         profile = profile_store.find(chosen)
         if profile is not None:
             return (

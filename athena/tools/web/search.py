@@ -5,7 +5,7 @@ with its ``//duckduckgo.com/l/?uddg=`` redirects unwrapped. SearXNG (a local,
 self-hosted JSON API) is an *optional* fallback: DuckDuckGo stays primary, and
 SearXNG is only consulted when the primary is throttled, unavailable or returns
 nothing. Setting ``ATHENA_SEARXNG_URL`` is the whole opt-in; ``SEARCH_PROVIDER``
-may also select SearXNG directly. Firecrawl uses a server-side API key.
+may also select SearXNG directly. Firecrawl can use its hosted API or a local server.
 
 Three invariants hold for every result this module returns:
 
@@ -376,16 +376,18 @@ def searxng(query: str, count: int, endpoint: str | None = None) -> list[WebHit]
     return _searxng_hits(payload, count)
 
 
-def firecrawl(query: str, count: int) -> list[WebHit]:
+def firecrawl(query: str, count: int, *, timeout: float | None = None) -> list[WebHit]:
     """Return search citations with the original source URLs."""
-    key = settings.firecrawl_key()
-    if not key:
-        raise ValueError("Firecrawl needs FIRECRAWL_API_KEY on the Athena server.")
+    local_url = settings.firecrawl_local_url()
+    key = "" if local_url else settings.firecrawl_key()
+    if not (local_url or key):
+        raise ValueError(settings.search_unavailable_reason("firecrawl"))
     response = httpx.post(
-        "https://api.firecrawl.dev/v2/search",
+        f"{local_url or 'https://api.firecrawl.dev'}/v2/search",
         json={"query": query, "limit": count},
-        headers={"Authorization": f"Bearer {key}"},
-        timeout=settings.search_timeout(),
+        headers={"Authorization": f"Bearer {key}"} if key else {},
+        timeout=settings.search_timeout() if timeout is None else timeout,
+        trust_env=not local_url,
     )
     if response.status_code == 429:
         raise SearchThrottled("Firecrawl rate limit reached")
@@ -395,7 +397,7 @@ def firecrawl(query: str, count: int) -> list[WebHit]:
     except ValueError as exc:
         raise SearchMalformed("Firecrawl returned malformed JSON") from exc
     data = payload.get("data") if isinstance(payload, dict) and payload.get("success") is True else None
-    results = data.get("web") if isinstance(data, dict) else None
+    results = data.get("web", []) if isinstance(data, dict) else None
     if not isinstance(results, list):
         raise SearchMalformed("Firecrawl returned no web results list")
 

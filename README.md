@@ -127,6 +127,14 @@ For hosted Firecrawl search:
    tool when needed. Chat uses the selected profile and Research uses the
    active profile. The Firecrawl key is separate from the model provider key.
 
+For **self-hosted search**, follow the [Firecrawl Docker Compose guide](https://docs.firecrawl.dev/contributing/self-host)
+and publish the unauthenticated API on loopback only. Set
+`FIRECRAWL_API_URL=http://127.0.0.1:3002` in Athena's `.env`, restart Athena and
+select Firecrawl as above. Athena sends no Cloud key to a local endpoint.
+Your Firecrawl server can use a JSON-enabled SearXNG instance via
+`SEARXNG_ENDPOINT`. The standalone `firecrawl-local serve` binary forwards
+search to Firecrawl Cloud. Use the Compose stack for self-hosted search.
+
 See [.env.example](.env.example) for search, embedding and model settings.
 
 ## How research works

@@ -26,15 +26,30 @@ GROUNDED_RULE = (
     "plainly instead of guessing. Do not invent citations."
 )
 
+WEB_RULE = (
+    "Web results contain search excerpts. For questions about what is current, "
+    "weigh source authority, relevance, and any stated dates before writing your "
+    "first sentence. Prefer a first-party current catalog for the current lineup "
+    "or flagship, and a dated first-party release note for release order. "
+    "An announcement calling something 'latest' or 'most advanced' describes its "
+    "status at publication. An undated excerpt, search rank, or exact keyword match "
+    "cannot establish recency. Lead with the strongest supported answer and cite it. If the sources "
+    "only establish the current flagship, say that up front and qualify release "
+    "order separately. If the sources are inconclusive, state the uncertainty "
+    "before naming a candidate."
+)
+
 PLAIN_RULE = (
     "Answer from general knowledge. Do not claim to have searched documents or "
     "the web when no grounding source was supplied."
 )
 
 
-def system_message(target: ChatTarget, grounded: bool) -> str:
+def system_message(target: ChatTarget, grounded: bool, *, web_grounded: bool = False) -> str:
     identity = f"{target.provider} ({target.model})" if target.provider else target.model
     rules = GROUNDED_RULE if grounded else PLAIN_RULE
+    if web_grounded:
+        rules += "\n" + WEB_RULE
     instruction = (
         f"You are Athena, a helpful assistant running on {identity}.\n"
         "Answer the user's question directly and concisely. The interface renders "

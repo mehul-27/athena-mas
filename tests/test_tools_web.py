@@ -48,11 +48,13 @@ class _FakeResponse:
 def test_firecrawl_returns_attributed_sources_without_scraping(monkeypatch) -> None:
     monkeypatch.setenv("FIRECRAWL_API_KEY", "offline-firecrawl-fixture")
     monkeypatch.setenv("SEARCH_PROVIDER", "firecrawl")
+    monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
 
-    def post(url, *, json, headers, timeout):
+    def post(url, *, json, headers, timeout, trust_env):
         assert url == "https://api.firecrawl.dev/v2/search"
         assert json == {"query": "NASA handbook", "limit": 3}
         assert headers["Authorization"] == "Bearer offline-firecrawl-fixture"
+        assert trust_env is True
         assert timeout > 0
         return httpx.Response(200, request=httpx.Request("POST", url), json={
             "success": True,
@@ -71,16 +73,44 @@ def test_firecrawl_returns_attributed_sources_without_scraping(monkeypatch) -> N
     ]
 
 
-def test_firecrawl_requires_a_key_for_both_surfaces(monkeypatch) -> None:
+def test_firecrawl_configuration_for_both_surfaces(monkeypatch) -> None:
     from athena.chat.tools import availability
     from athena.tools.registry import catalog
 
     monkeypatch.setenv("SEARCH_PROVIDER", "firecrawl")
     monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
 
     assert availability("web_search")[0] is False
     research = next(row for row in catalog() if row["id"] == "web_search")
     assert not research["available"] and "FIRECRAWL_API_KEY" in research["reason"]
+    monkeypatch.setenv("FIRECRAWL_API_URL", "http://127.0.0.1:3002")
+    assert availability("web_search")[0]
+    assert next(row for row in catalog() if row["id"] == "web_search")["available"]
+
+
+def test_local_firecrawl_never_sends_hosted_credentials_or_uses_a_proxy(monkeypatch) -> None:
+    from athena.tools.diagnostics import search_providers
+
+    monkeypatch.setenv("SEARCH_PROVIDER", "firecrawl")
+    monkeypatch.setenv("SEARCH_FALLBACK_PROVIDER", "none")
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "offline-firecrawl-fixture")
+    monkeypatch.setenv("FIRECRAWL_API_URL", "http://localhost:3002/")
+
+    def post(url, *, json, headers, timeout, trust_env):
+        assert url == "http://127.0.0.1:3002/v2/search"
+        assert headers == {} and trust_env is False
+        return httpx.Response(200, request=httpx.Request("POST", url), json={
+            "success": True, "data": {},
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+    result = web_search("NASA handbook")
+    assert result.ok and not result.results
+    row = next(row for row in search_providers(probe=True) if row["provider"] == "firecrawl")
+    assert row["configured"] and row["reachable"]
+    monkeypatch.setenv("FIRECRAWL_API_URL", "https://example.com")
+    assert not web_search("NASA handbook").ok
 
 
 def test_web_search_parses_a_canned_response(monkeypatch) -> None:

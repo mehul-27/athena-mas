@@ -415,7 +415,11 @@
 
   async function deleteProfile(id) {
     if (!id) { setRequest({ type: "error", message: "nothing selected" }); return; }
-    if (!root.confirm("Delete this provider and its stored key?")) return;
+    if (!await UI().confirmDelete({
+      title: "Delete this model profile?",
+      target: state.profiles.find((profile) => profile.id === id)?.name,
+      detail: "The profile and its stored API key will be deleted.",
+    })) return;
     setRequest({ type: "start", message: "deleting..." });
     try {
       await UI().api("/api/settings/profiles/" + encodeURIComponent(id), { method: "DELETE" });

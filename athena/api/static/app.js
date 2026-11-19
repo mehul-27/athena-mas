@@ -155,6 +155,28 @@ function toast(message) {
   toastTimer = setTimeout(() => node.classList.add("hidden"), TOAST_MS);
 }
 
+let deleteConfirmationPending = false;
+async function confirmDelete({ title, target, detail, action = "Delete", trigger = document.activeElement }) {
+  if (deleteConfirmationPending) return false;
+  const dialog = $("delete-dialog");
+  const targetNode = $("delete-dialog-target");
+  text($("delete-dialog-title"), title);
+  text(targetNode, target);
+  targetNode.hidden = !target;
+  text($("delete-dialog-detail"), detail);
+  text($("delete-dialog-confirm"), action);
+  dialog.returnValue = "";
+  dialog.showModal();
+  deleteConfirmationPending = true;
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      deleteConfirmationPending = false;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+      resolve(dialog.returnValue === "confirm");
+    }, { once: true });
+  });
+}
+
 function banner(message, show) {
   const node = $("banner");
   text(node, message);
@@ -978,8 +1000,14 @@ function historyRow(row) {
 
 async function deleteHistoryRun(row, button) {
   if (isLocked()) { toast(lockedReason()); return; }
-  const label = row.count > 1 ? "Remove the latest run for this question from history?" : "Remove this run from history?";
-  if (!window.confirm(label)) return;
+  if (!await confirmDelete({
+    title: row.count > 1 ? "Remove latest run?" : "Remove this run?",
+    target: row.question,
+    detail: "This run will be removed from Research history.",
+    action: "Remove",
+    trigger: button,
+  })) return;
+  if (isLocked()) { toast(lockedReason()); return; }
   button.dataset.deleting = "true";
   button.disabled = true;
   try {
@@ -3601,6 +3629,9 @@ document.addEventListener("keydown", (event) => {
     closePatternMenu(true);
   }
 });
+$("delete-dialog").addEventListener("keydown", (event) => {
+  if (event.key === "Escape" || event.key === "Tab") event.stopPropagation();
+});
 document.addEventListener("athena:view", () => {
   closeExamples(false);
   closePatternMenu(false);
@@ -3679,6 +3710,7 @@ $("banner").addEventListener("click", () => {
 window.AthenaUi = {
   api,
   toast,
+  confirmDelete,
   text,
   $,
   showView,

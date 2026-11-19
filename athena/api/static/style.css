@@ -945,15 +945,15 @@ html[data-theme="light"] .icon-theme-dark { display: none; }
 .chat-toggle { min-height: 30px; padding: 4px 10px; }
 .chat-toggle.is-on { background: var(--accent-2); color: var(--on-accent); font-weight: 700; }
 .chat-toggle[disabled] { opacity: .45; cursor: not-allowed; }
-.chat-reasoning { display: inline-flex; align-items: center; gap: 5px; padding: 0 6px 0 10px; }
-.chat-reasoning select {
-  width: auto; min-height: 30px; padding: 3px 2px; border: 0; color: var(--fg);
-  background: transparent; color-scheme: dark; cursor: pointer;
-}
-.chat-reasoning select option { background: var(--panel-2); }
-html[data-theme="light"] .chat-reasoning select { color-scheme: light; }
-.chat-reasoning:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
-.chat-reasoning select:disabled { opacity: .45; cursor: not-allowed; }
+.chat-reasoning { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+#chat-reasoning-current { color: var(--fg); }
+.chat-reasoning .icon { color: var(--muted); }
+.chat-reasoning[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.chat-reasoning[aria-expanded="true"] .icon { transform: rotate(180deg); }
+.chat-reasoning-menu { width: max-content; min-width: 100%; }
+.chat-reasoning-menu .pattern-option { gap: 8px; min-height: 30px; padding: 5px 8px; white-space: nowrap; }
+.chat-reasoning-menu .pattern-option[aria-disabled="true"] { color: var(--muted); opacity: .55; cursor: not-allowed; }
+.chat-reasoning-menu .pattern-option[aria-disabled="true"]:hover { background: transparent; }
 .chat-toolbar-status { color: var(--muted); font-size: .78em; margin-left: auto; }
 .chat-composer-row {
   display: flex; align-items: flex-end; gap: 8px; flex-wrap: nowrap;
@@ -989,6 +989,28 @@ html[data-theme="light"] .chat-reasoning select { color-scheme: light; }
 .sidebar-list .chat-row.is-active { background: var(--panel-2); color: var(--fg); }
 .chat-row-title { font-size: .88em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
 .chat-row-meta { color: var(--muted); font-size: .76em; }
+
+/* ---------------- dialogs ---------------- */
+
+.delete-dialog {
+  width: min(420px, calc(100% - 32px)); max-height: calc(100% - 32px);
+  margin: auto; padding: 20px; background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border-strong); border-radius: 12px;
+  box-shadow: 0 24px 70px var(--shadow);
+}
+.delete-dialog::backdrop { background: rgba(0, 0, 0, .6); }
+.delete-dialog-heading { display: flex; align-items: center; gap: 9px; }
+.delete-dialog-heading .icon { color: var(--red); }
+.delete-dialog-heading h2 { margin: 0; font-size: 1.1em; font-weight: 650; }
+.delete-dialog-target {
+  overflow: hidden; overflow-wrap: anywhere; display: -webkit-box;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 3; margin: 12px 0 0;
+  font-weight: 600; color: var(--fg);
+}
+.delete-dialog-detail { color: var(--fg-dim); font-size: .9em; margin: 8px 0 0; }
+.delete-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.delete-dialog-actions .danger { background: color-mix(in srgb, var(--red) 12%, var(--panel)); font-weight: 650; }
+.delete-dialog-actions .danger:hover { background: color-mix(in srgb, var(--red) 21%, var(--panel)); }
 
 /* ---------------- settings modal ---------------- */
 

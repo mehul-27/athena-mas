@@ -59,6 +59,7 @@ function makeHarness() {
   const script = source.slice(0, end) + `
     globalThis.__composer = {
       startRun,
+      confirmDelete,
       openRun,
       loadRunEvents,
       addEvent,
@@ -120,6 +121,32 @@ function makeHarness() {
   vm.runInContext(script, context);
   return { app: context.__composer, document, frames };
 }
+
+test("delete confirmation resets the result and restores focus on dismissal", async () => {
+  const { app, document } = makeHarness();
+  const dialog = document.getElementById("delete-dialog");
+  const trigger = document.getElementById("invoking-button");
+  const options = { title: "Delete this chat?", target: "Example chat", detail: "Its messages will be permanently deleted.", trigger };
+  let close = null;
+  let focusRestored = false;
+  trigger.isConnected = true;
+  trigger.focus = () => { focusRestored = true; };
+  dialog.addEventListener = (type, handler) => { if (type === "close") close = handler; };
+  dialog.showModal = () => {};
+
+  const accepted = app.confirmDelete(options);
+  assert.equal(document.getElementById("delete-dialog-target").textContent, "Example chat");
+  assert.equal(await app.confirmDelete(options), false);
+  dialog.returnValue = "confirm";
+  close();
+  assert.equal(await accepted, true);
+
+  focusRestored = false;
+  const dismissed = app.confirmDelete(options);
+  close();
+  assert.equal(await dismissed, false);
+  assert.equal(focusRestored, true);
+});
 
 function install(app, document, reply) {
   const calls = { bodies: [], shown: [], begun: [], toasts: [] };

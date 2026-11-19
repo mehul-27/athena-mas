@@ -122,11 +122,15 @@ _MCP_ENV_EXACT = {
 
 def mcp_environment(*, web: bool = False) -> dict[str, str]:
     """Environment for local MCP tool servers: settings, never model secrets."""
+    firecrawl = web and os.getenv("SEARCH_PROVIDER", "").strip().lower() == "firecrawl"
+    firecrawl_name = (
+        "FIRECRAWL_API_URL" if os.getenv("FIRECRAWL_API_URL", "").strip() else "FIRECRAWL_API_KEY"
+    )
     return {
         key: value
         for key, value in os.environ.items()
         if key in _MCP_ENV_EXACT or key.startswith(_MCP_ENV_PREFIXES)
-        or (web and key == "FIRECRAWL_API_KEY" and os.getenv("SEARCH_PROVIDER", "").lower() == "firecrawl")
+        or (firecrawl and key == firecrawl_name)
     }
 
 

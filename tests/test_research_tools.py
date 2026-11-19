@@ -218,7 +218,8 @@ def test_required_web_step_is_not_inserted_when_web_is_disabled() -> None:
     assert not any(step.startswith("web_researcher:") for step in steps)
 
 
-def test_planner_prompt_lists_enabled_and_disabled_tools(tmp_path) -> None:
+def test_planner_prompt_lists_enabled_and_disabled_tools(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "offline-fixture-key")
     store = SQLiteStore(tmp_path / "bb.db")
     board = Blackboard.create(Task(question="q", tools=["rag_search"]), store=store)
     from athena.agents.planner import build_planner
@@ -644,6 +645,7 @@ def test_calc_worker_receives_only_calc_tools(monkeypatch, tmp_path) -> None:
         return module
 
     monkeypatch.setattr(researcher_module, "build_toolset", fake_build)
+    monkeypatch.setattr(researcher_module, "get_adk_model", lambda _role: None)
     monkeypatch.setattr(
         researcher_module,
         "LlmAgent",
@@ -778,6 +780,7 @@ def test_mcp_tool_environment_carries_search_fallback_without_model_secrets(
     monkeypatch.setenv("LLM_API_KEY", "sk-must-not-cross-the-mcp-boundary")
     monkeypatch.setenv("FIRECRAWL_API_KEY", "offline-search-key")
     monkeypatch.setenv("SEARCH_PROVIDER", "firecrawl")
+    monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
 
     env = researcher.mcp_environment()
 
@@ -786,6 +789,11 @@ def test_mcp_tool_environment_carries_search_fallback_without_model_secrets(
     assert "LLM_API_KEY" not in env
     assert "FIRECRAWL_API_KEY" not in env
     assert researcher.mcp_environment(web=True)["FIRECRAWL_API_KEY"] == "offline-search-key"
+    monkeypatch.setenv("FIRECRAWL_API_URL", "http://127.0.0.1:3002")
+    web_env = researcher.mcp_environment(web=True)
+    assert web_env["FIRECRAWL_API_URL"] == "http://127.0.0.1:3002"
+    assert "FIRECRAWL_API_KEY" not in web_env
+    assert "FIRECRAWL_API_URL" not in researcher.mcp_environment()
     monkeypatch.setenv("SEARCH_PROVIDER", "duckduckgo")
     assert "FIRECRAWL_API_KEY" not in researcher.mcp_environment(web=True)
 
