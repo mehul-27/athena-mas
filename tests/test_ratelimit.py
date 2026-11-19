@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import multiprocessing
 import sqlite3
 
@@ -86,6 +87,27 @@ def test_record_replaces_the_estimate(tmp_path) -> None:
     limiter.record(10)
 
     assert _used(tmp_path / "rl.db") == 10
+
+
+def test_async_wait_lets_an_in_flight_request_release_capacity(tmp_path) -> None:
+    limiter = TokenLimiter(tmp_path / "rl.db", limit=100, max_wait_s=2)
+    first = limiter.for_request()
+    second = limiter.for_request()
+
+    async def run() -> None:
+        await first.acquire_async(80)
+        waiting = asyncio.create_task(second.acquire_async(40))
+        await asyncio.sleep(0)
+        assert not waiting.done()
+        first.record(10)
+        await asyncio.wait_for(waiting, timeout=1.5)
+        second.record(30)
+
+    asyncio.run(run())
+    with sqlite3.connect(limiter.path) as conn:
+        assert conn.execute("SELECT tokens, settled FROM calls ORDER BY id").fetchall() == [
+            (10, 1), (30, 1)
+        ]
 
 
 def test_disabled_limit_never_waits(tmp_path) -> None:

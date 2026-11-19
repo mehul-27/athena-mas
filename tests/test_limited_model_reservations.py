@@ -259,12 +259,13 @@ def test_corrective_retry_wait_failure_is_not_reported_as_a_retry(
         lambda error, agent, will_retry, attempt: rejections.append(will_retry),
     )
     monkeypatch.setattr(limited_models, "note_retry", lambda *args, **kwargs: retries.append(args))
+    async def refuse_reservation(*args, **kwargs):
+        raise RateLimitWaitError("offline fake reservation refusal")
+
     monkeypatch.setattr(
         limited_models,
-        "_reserve_tokens",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            RateLimitWaitError("offline fake reservation refusal")
-        ),
+        "_reserve_tokens_async",
+        refuse_reservation,
     )
     monkeypatch.setattr(
         RateLimitedLiteLlm,

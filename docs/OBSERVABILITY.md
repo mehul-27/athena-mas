@@ -83,7 +83,6 @@ aggregate.
 
 ## Not covered yet
 
-- **Distributed tracing** (OpenTelemetry spans across the A2A hop) is Step 8.
 - No live tail/TUI, no retention policy, no alerting: the event log grows.
 - CrewAI's token numbers are per crew call, not per provider request: a crew
   that retries internally still reports one number.
@@ -381,6 +380,22 @@ and `retry_breakdown` names the `retry_type` behind each.
 Tested by `test_telemetry_routes.py::test_explicit_and_inferred_retries_are_counted_separately`
 and `...::test_an_error_with_no_retry_event_is_reported_as_inferred`.
 
+## A2A distributed traces
+
+The ADK client sends W3C `traceparent` and any `tracestate` as HTTP headers on
+the CrewAI role request. The CrewAI server creates a child span from that
+context. The ADK `a2a_call` event and the CrewAI role events share `extra.trace_id`.
+The CrewAI `extra.parent_span_id` matches the ADK `extra.span_id`, and
+`extra.span_kind` identifies the `client` or `server` span. Both blackboard and
+P2P calls use this path. A missing or invalid trace header starts a new server
+trace. Trace headers do not determine run attribution or authentication.
+
+SQLite stores the IDs locally without an external collector. The raw run events
+expose them in `extra`, and the run telemetry API returns them in `spans[].trace`
+when available. In Metrics, the waterfall tooltip and the cell details show the
+trace and span IDs. Older events are still available with their original fields.
+`OTEL_SDK_DISABLED=true` disables span creation.
+
 ## Known gaps
 
 Things that are still not wired, stated plainly rather than implied by silence.
@@ -389,8 +404,7 @@ Things that are still not wired, stated plainly rather than implied by silence.
 |---|---|---|
 | `observability/hooks.py::emit_guardrail` | **No production caller.** Only `tests/test_observability_hooks.py` calls it. | Not a hole in the audit trail: every real guardrail module calls `guardrail_events.record_decision`/`record_flags` directly. It is a convenience wrapper kept for future call sites, and it is *not* how the rows in the table above are written. |
 | `POST /api/runs` guardrail rows | **Attributed but labelled `input`**, not by the endpoint path. | Screening happens before the run id exists, so `screen_input(emit=False)` is used and `_record_guardrails` writes the rows afterwards. `extra.screen == "POST /api/runs"` is the field that names the endpoint. |
-| A2A rejection attribution | **Mostly `unattributed`.** A rejected message's own `run_id` is used only when the blackboard confirms that run exists (`crew_server.py::_rejection_run:98-118`); p2p requests have no blackboard, so they never attribute from the message. | By design — the alternative is letting a forged `run_id` choose whose audit log it writes into. The cost is that most A2A rejection rows are visible under `unattributed` rather than beside the run they concern. `extra.run_id_source` says which case applied. |
-| Distributed tracing (OpenTelemetry across the A2A hop) | **Not implemented.** | The A2A hop is visible as `a2a_call` + `handoff` events, not as a trace span with a shared trace id. |
+| A2A rejection attribution | A refused signature uses the active recorder or falls back to `unattributed`. After signature acceptance, a shape decision can use the request's `run_id` when the blackboard confirms that run exists. P2P requests have no blackboard. | `extra.run_id_source` records the attribution. |
 | Event retention / live tail / alerting | **Not implemented.** | The event log grows without bound; there is no TUI tail and no threshold alert. |
 | CrewAI token numbers | **Per crew call, not per provider request.** | A crew that retries internally still reports one number, so cost for CrewAI roles is coarser than for ADK. |
 | Telemetry for a run that only exists in the chat/API process | **Works, but only for rows written while a `run_scope` was active.** | `GET /api/runs/unattributed/telemetry` shows the unattributable rows; there is no per-conversation telemetry endpoint yet. |

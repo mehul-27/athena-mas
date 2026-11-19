@@ -91,9 +91,9 @@ control below is invoked on the real path, and each has a test in
 | `chat/store.py` | `redact_text`, `redact_tree` | message content, title, sources, tool events and meta are redacted on write *and* on read |
 | `chat/service.py` (final answer) | `screen_output` | flags stored on the assistant message |
 | `agents/report_sanitize.py` | removal counts, `screen_output`, `redact_final_report` | flags are derived, then report text, citations, tools and flags are redacted before draft/final writes; secret-shaped citation refs are dropped. Redaction is shape-based, not a guarantee for every possible secret |
-| `agents/crew_server.py` | `peer_auth_error` | with `ATHENA_A2A_SHARED_TOKEN` set, a signed body must verify or the role is never dispatched; unsigned bodies are allowed unless `ATHENA_A2A_REQUIRE_SIG=1`; with no token the single-host flow is unchanged |
+| `agents/crew_server.py` | `peer_auth_error` | signed bodies must verify against the configured token before role dispatch. Strict mode requires a signature even if the shared token is missing. Unsigned local requests remain allowed by default |
 | `agents/a2a_client.py` | `sign_message` | the outgoing payload is signed only when a token is configured (a client never invents one, so it cannot sign itself out of a working deployment) |
-| `agents/evidence_recorder.py` / `tools/adapters.py` | `validate_tool_output` → `screen_items` | an item that is invalid as data (over the byte cap, undecodable, uninspectable) is dropped and reported back to the model as `dropped_by_guardrails` + `guardrail_flags`; an item that merely *contains* an instruction is recorded and flagged, because evidence must not be silently lost |
+| `agents/evidence_recorder.py` / `tools/adapters.py` | `validate_tool_output` → `screen_items` | invalid items are dropped and reported as `dropped_by_guardrails` and `guardrail_flags`. Malformed responses, transport errors, and discarded fetch previews are withheld from the researcher model. Retained fetch previews wrap titles, page text and error prose inside a single bounded, redacted data block. Preview URLs undergo bounded HTTP(S) validation and redaction |
 | `api/app.py` | `screen_input` on `POST /api/runs` | the question is screened before a run starts; flags use `screen="POST /api/runs"` and are returned in the response; only `verdict.blocking` produces a 422 |
 | `run.py::_execute` | `screen_input` | direct CLI execution re-screens before task creation/model input; flags use `screen="athena.run"`; blocked input gets a failed terminal summary without an A2A health probe or model run |
 | `api/app.py::_snapshot` | `redact_tree` | every blackboard section (`final_report`, `draft`, `analysis`, `plan`, `critique`, `task`) is redacted field by field before it is returned |
@@ -138,19 +138,18 @@ new rows cannot.
 
 ### Partial / known gaps
 
-1. **A2A rejection attribution is usually `unattributed`.** The HMAC and the shape
-   checks both run, but the row's run id may only come from the message when the
-   blackboard confirms that run exists (`crew_server.py::_rejection_run:98-118`).
-   A p2p message has no blackboard, so it never attributes from its own content —
-   which is the point, since a forged `run_id` must not choose its audit log.
-   `extra.run_id_source` records which case applied, so the gap is visible rather
-   than silently absorbed.
+1. **A2A rejection attribution depends on the recorder.** A refused signature uses
+   the active recorder, falling back to the `unattributed` event bucket. After
+   the signature policy accepts a request, a
+   shape decision may use the request's run ID if the blackboard confirms that
+   the run exists. The event records the decision's attribution in
+   `extra.run_id_source`.
 2. **API and execution input rows describe separate screenings.** The API checks
    before run creation; the CLI execution boundary checks again before model input.
    Their `extra.screen` values distinguish those decisions (`POST /api/runs` and
    `athena.run`).
-3. **No distributed tracing across the A2A hop**, no event retention, no
-   alerting. See `docs/OBSERVABILITY.md` ("Known gaps").
+3. **Event retention and alerting are pending.** A2A trace linkage is stored
+   in the local event log. See `docs/OBSERVABILITY.md`.
 4. **Toxicity and harm lexicons are small by design** (see the limits section at
    the end of this document).
 
@@ -170,8 +169,9 @@ new rows cannot.
   remainder and records the flags.
 - `tests/test_security_integration.py` — the call sites in the table above:
   report flags, A2A signing/verification (including the unsigned dev flow),
-  tool-output validation in the evidence path, `POST /api/runs` screening and
-  recording, snapshot redaction, and the ingest caps.
+  malformed response and fetch preview variations at the researcher callback,
+  `POST /api/runs` screening and recording, snapshot redaction, and the ingest
+  caps.
 - `tests/test_observability_guardrail_events.py` — the audit rows themselves:
   one redacted row per decision for each stage, a real secret planted in the
   payload and asserted absent from the row, a forged inter-agent `run_id` that

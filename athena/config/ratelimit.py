@@ -10,15 +10,19 @@ Clock and sleep are injectable so the tests do not wait.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 import time
+from contextlib import closing
+from copy import copy
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 WINDOW_SECONDS = 60.0
 BUSY_TIMEOUT_MS = 30_000
 WAIT_EVENT_THRESHOLD_MS = 50
+SETTLEMENT_POLL_S = 0.5
 
 _WAIT_LISTENER = None
 
@@ -140,14 +144,46 @@ class TokenLimiter:
         finally:
             conn.close()
 
+    def for_request(self) -> TokenLimiter:
+        """Share the SQLite budget while keeping each request's reservation separate."""
+        limiter = copy(self)
+        limiter._last_id = None
+        return limiter
+
     def acquire(self, estimated_tokens: int, agent: str = "") -> None:
         """Reserve budget, waiting for the window to free space if needed."""
+        with closing(self._acquire(estimated_tokens, agent)) as waits:
+            for wait in waits:
+                self._sleep(wait)
+
+    async def acquire_async(self, estimated_tokens: int, agent: str = "") -> None:
+        """Wait for tokens without blocking sibling model calls on the event loop."""
+        with closing(self._acquire(estimated_tokens, agent)) as waits:
+            for wait in waits:
+                await asyncio.sleep(wait)
+
+    def _acquire(self, estimated_tokens: int, agent: str) -> Iterator[float]:
         estimate = max(0, int(estimated_tokens))
         if self.limit <= 0:
             self._last_id = self._insert(estimate, self._clock())
             return
 
         deadline = self._clock() + self.max_wait_s
+        started = None
+        try:
+            for wait in self._reserve_when_available(estimate, deadline):
+                if started is None:
+                    started = self._clock()
+                yield wait
+        finally:
+            if started is not None:
+                waited_ms = round((self._clock() - started) * 1000, 1)
+                if waited_ms > WAIT_EVENT_THRESHOLD_MS:
+                    self._on_wait(waited_ms, estimate, agent)
+
+    def _reserve_when_available(
+        self, estimate: int, deadline: float
+    ) -> Iterator[float]:
         while True:
             now = self._clock()
             conn = self._connect()
@@ -156,12 +192,14 @@ class TokenLimiter:
                 # not both see room that only exists for one of them.
                 conn.execute("BEGIN IMMEDIATE")
                 row = conn.execute(
-                    "SELECT COALESCE(SUM(tokens), 0) AS total, MIN(ts) AS first"
+                    "SELECT COALESCE(SUM(tokens), 0) AS total, MIN(ts) AS first,"
+                    " COALESCE(SUM(CASE WHEN settled THEN tokens ELSE 0 END), 0) AS settled"
                     " FROM calls WHERE ts > ?",
                     (now - self.window,),
                 ).fetchone()
                 used = int(row["total"])
                 oldest = row["first"]
+                settled = int(row["settled"])
                 # An oversized request is allowed once the window is otherwise
                 # empty, so a single large prompt can never deadlock.
                 if (used == 0 and estimate > self.limit) or used + estimate <= self.limit:
@@ -180,19 +218,20 @@ class TokenLimiter:
                 conn.close()
 
             wait = max(0.05, (oldest + self.window - now) if oldest else 0.05)
+            # An in-flight estimate can shrink as soon as the provider replies.
+            # Recheck only when settlement alone could free enough room.
+            if settled < used and (settled == 0 or settled + estimate <= self.limit):
+                wait = min(wait, SETTLEMENT_POLL_S, max(0.05, deadline - now))
             if now + wait > deadline:
                 raise RateLimitWaitError(
                     f"would wait {wait:.1f}s for {estimate} tokens "
                     f"(limit {self.limit}/min, used {used}); "
                     f"max wait is {self.max_wait_s:.0f}s"
                 )
-            waited_ms = round(wait * 1000, 1)
-            if waited_ms > WAIT_EVENT_THRESHOLD_MS:
-                self._on_wait(waited_ms, estimate, agent)
-            self._sleep(wait)
+            yield wait
 
     def record(self, actual_tokens: int) -> None:
-        """Replace this process's last estimate with the real usage."""
+        """Replace this limiter's current reservation with the real usage."""
         if self._last_id is None:
             return
         conn = self._connect()

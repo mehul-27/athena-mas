@@ -1,7 +1,7 @@
 """The demo API: one FastAPI app the showcase page talks to.
 
-Read-only apart from ``POST /api/runs``. Everything it returns comes from the
-event store or the blackboard; nothing is recomputed from provider data.
+Research results come from the event store and the blackboard. Research writes
+start a run or change which completed runs appear in history.
 """
 
 from __future__ import annotations
@@ -18,13 +18,12 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from athena.agents.a2a_stage import DEFAULT_CARD_URL
 from athena.agents.tool_report import build_tool_report
 from athena.api import replay
 from athena.api.auth import AccessTokenMiddleware
 from athena.api.auth import router as auth_router
 from athena.api.guards import guard
-from athena.api.health_routes import build_lifespan, configure_logging
+from athena.api.health_routes import CARD_TIMEOUT_S, build_lifespan, configure_logging, crew_state
 from athena.api.health_routes import router as health_router
 from athena.api.runs import BusyError, RunRegistry
 from athena.blackboard import Blackboard
@@ -106,13 +105,8 @@ def _evidence_attribution(run_id: str) -> dict[str, list[str]]:
     }
 
 
-def _crew_server_up(timeout: float = 1.0) -> bool:
-    import httpx
-
-    try:
-        return httpx.get(DEFAULT_CARD_URL, timeout=timeout).status_code == 200
-    except Exception:  # noqa: BLE001 - unreachable means "down"
-        return False
+def _crew_server_up(timeout: float = CARD_TIMEOUT_S) -> bool:
+    return crew_state(timeout)["ok"]
 
 
 def _event_payload(event) -> dict:
@@ -158,58 +152,71 @@ def _snapshot(run_id: str, runs: RunRegistry | None = None) -> dict:
             for item in (evidence[0] if evidence else [])
         ],
         "tool_report": build_tool_report(run_id, blackboard.store),
-        "history": [
-            {"seq": entry["seq"], "author": entry["author"],
-             "section": entry["section"], "version": entry["version"]}
-            for entry in blackboard.history()
-        ],
+        "history": _history_rows(blackboard),
     }
 
 
-def _summary(run_id: str, runs: RunRegistry | None = None) -> dict:
-    for event in reversed(_store().events(run_id)):
-        if event.payload_summary and event.payload_summary.startswith("run_summary"):
-            summary = dict(event.extra)
-            if not summary.get("critic_status"):
-                from athena.summary import critique_details
+def _history_rows(blackboard: Blackboard) -> list[dict]:
+    return [
+        {"seq": entry["seq"], "author": entry["author"],
+         "section": entry["section"], "version": entry["version"]}
+        for entry in blackboard.history()
+    ]
 
-                critique = Blackboard.open(run_id).read("critique")
-                status, reason = critique_details(
-                    critique[0] if critique else None,
-                    summary.get("stage_errors") or [],
-                )
-                summary["critic_status"] = status
-                summary["critique_reason"] = reason
-            if "evidence_sufficient" not in summary or "outcome" not in summary:
-                from athena.agents.sufficiency import assess
 
-                blackboard = Blackboard.open(run_id)
-                task = blackboard.read("task")
-                evidence = blackboard.read("evidence")
-                assessment = assess(
-                    task[0].question if task else "",
-                    evidence[0] if evidence else [],
-                    enabled_tools=task[0].tools if task else None,
-                )
-                summary.setdefault("evidence_sufficient", assessment.ok)
-                summary.setdefault("unmet_requirements", list(assessment.issues))
-                summary.setdefault("evidence_limitations", list(assessment.limitations))
-                if "outcome" not in summary:
-                    approved = summary.get("approved")
-                    if summary.get("failed"):
-                        summary["outcome"] = "failed"
-                    elif summary.get("critic_status") in {"failed", "missing"}:
-                        summary["outcome"] = "incomplete"
-                    elif approved is False:
-                        summary["outcome"] = "rejected"
-                    elif approved is True and assessment.ok:
-                        summary["outcome"] = "approved"
-                    else:
-                        summary["outcome"] = "incomplete"
-                    if summary["outcome"] != "approved":
-                        summary["degraded"] = True
-            return _with_process_status(summary, run_id, runs)
-    return {}
+def _stream_history(run_id: str) -> list[dict]:
+    blackboard = Blackboard.open(run_id)
+    if blackboard.read("task") is None:
+        raise HTTPException(status_code=404, detail=f"no run {run_id}")
+    return _history_rows(blackboard)
+
+
+def _summary(
+    run_id: str, runs: RunRegistry | None = None, *, store: SQLiteEventStore | None = None,
+) -> dict:
+    event = (store or _store()).latest_summary(run_id)
+    if event is None:
+        return {}
+    summary = dict(event.extra)
+    if not summary.get("critic_status"):
+        from athena.summary import critique_details
+
+        critique = Blackboard.open(run_id).read("critique")
+        status, reason = critique_details(
+            critique[0] if critique else None,
+            summary.get("stage_errors") or [],
+        )
+        summary["critic_status"] = status
+        summary["critique_reason"] = reason
+    if "evidence_sufficient" not in summary or "outcome" not in summary:
+        from athena.agents.sufficiency import assess
+
+        blackboard = Blackboard.open(run_id)
+        task = blackboard.read("task")
+        evidence = blackboard.read("evidence")
+        assessment = assess(
+            task[0].question if task else "",
+            evidence[0] if evidence else [],
+            enabled_tools=task[0].tools if task else None,
+        )
+        summary.setdefault("evidence_sufficient", assessment.ok)
+        summary.setdefault("unmet_requirements", list(assessment.issues))
+        summary.setdefault("evidence_limitations", list(assessment.limitations))
+        if "outcome" not in summary:
+            approved = summary.get("approved")
+            if summary.get("failed"):
+                summary["outcome"] = "failed"
+            elif summary.get("critic_status") in {"failed", "missing"}:
+                summary["outcome"] = "incomplete"
+            elif approved is False:
+                summary["outcome"] = "rejected"
+            elif approved is True and assessment.ok:
+                summary["outcome"] = "approved"
+            else:
+                summary["outcome"] = "incomplete"
+            if summary["outcome"] != "approved":
+                summary["degraded"] = True
+    return _with_process_status(summary, run_id, runs)
 
 
 def _safe_refresh(runs: RunRegistry | None) -> object | None:
@@ -331,6 +338,17 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     def snapshot(run_id: str) -> dict:
         return _snapshot(run_id, runs)
 
+    @app.delete("/api/runs/{run_id}")
+    def delete_run(run_id: str, request: Request) -> dict:
+        guard(request)
+        active = runs.active
+        if active and active.run_id == run_id and active.process.poll() is None:
+            raise HTTPException(status_code=409, detail="Research run is still active")
+        if not _summary(run_id, runs):
+            raise HTTPException(status_code=404, detail=f"no completed run {run_id}")
+        _store().remove_from_research_history(run_id)
+        return {"run_id": run_id, "removed": True}
+
     @app.get("/api/runs/{run_id}/events")
     def run_events(run_id: str) -> dict:
         """Persisted events, for restoring a completed run's trace."""
@@ -385,14 +403,14 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     @app.get("/api/runs")
     def history() -> dict:
         store = _store()
-        runs = []
-        for run_id in store.runs():
-            summary = _summary(run_id, runs)
+        rows = []
+        for run_id in reversed(store.runs(include_removed=False)):
+            summary = _summary(run_id, runs, store=store)
             if not summary:
                 continue
             task = Blackboard.open(run_id).read("task")
             question = task[0].question if task else ""
-            runs.append({
+            rows.append({
                 "run_id": run_id,
                 "question": question,
                 "pattern": summary.get("pattern"),
@@ -406,7 +424,9 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
                 "outcome": summary.get("outcome"),
                 "degraded": summary.get("degraded"),
             })
-        return {"runs": list(reversed(runs))[:50]}
+            if len(rows) == 50:
+                break
+        return {"runs": rows}
 
     @app.get("/api/tools")
     def tools() -> dict:
@@ -500,15 +520,21 @@ async def _events(run_id: str, runs: RunRegistry | None = None, last_event_id: i
     accepted run is still starting, and emit a terminal failed ``done`` event if
     the run is no longer recoverable.
     """
-    store = _store()
+    store = await asyncio.to_thread(_store)
     registry = runs or REGISTRY
     last_seq = max(0, int(last_event_id or 0))
+    check_previous_summary = last_seq > 0
+    done = False
     history_seen = 0
     deadline = time.monotonic() + STREAM_MAX_S
 
     while time.monotonic() < deadline:
         try:
-            events = store.events(run_id)
+            events = await asyncio.to_thread(store.events, run_id, after_seq=last_seq)
+            if check_previous_summary:
+                previous_summary = await asyncio.to_thread(store.latest_summary, run_id)
+                done = previous_summary is not None and previous_summary.seq <= last_seq
+                check_previous_summary = False
         except Exception as exc:  # noqa: BLE001 - headers are already sent
             detail = f"stream could not read the event log: {type(exc).__name__}"
             try:
@@ -521,10 +547,11 @@ async def _events(run_id: str, runs: RunRegistry | None = None, last_event_id: i
             if event.seq <= last_seq:
                 continue
             last_seq = event.seq
+            done = done or bool(event.payload_summary and event.payload_summary.startswith("run_summary"))
             yield f"id: {event.seq}\ndata: {json.dumps(_event_payload(event))}\n\n"
 
         try:
-            snapshot = _snapshot(run_id, registry)
+            history = await asyncio.to_thread(_stream_history, run_id)
         except HTTPException:
             try:
                 active = registry.refresh()
@@ -549,18 +576,13 @@ async def _events(run_id: str, runs: RunRegistry | None = None, last_event_id: i
             yield f"event: done\ndata: {json.dumps({'summary': _unavailable_summary(run_id, active, detail)})}\n\n"
             return
 
-        if len(snapshot["history"]) > history_seen:
-            history_seen = len(snapshot["history"])
-            yield f"event: blackboard\ndata: {json.dumps({'history': snapshot['history'][-1]})}\n\n"
-
-        done = any(
-            event.payload_summary and event.payload_summary.startswith("run_summary")
-            for event in events
-        )
+        if len(history) > history_seen:
+            history_seen = len(history)
+            yield f"event: blackboard\ndata: {json.dumps({'history': history[-1]})}\n\n"
         if done:
             await _wait_for_exit(registry, run_id, STREAM_EXIT_WAIT_S)
             try:
-                summary = _summary(run_id, registry)
+                summary = await asyncio.to_thread(_summary, run_id, registry)
             except Exception as exc:  # noqa: BLE001 - never raise after headers
                 try:
                     active = registry.refresh()

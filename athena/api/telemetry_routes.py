@@ -581,6 +581,16 @@ def _agent_rows(ctx: Context) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------- spans
+def _span_trace(event: Event) -> dict[str, Any]:
+    extra = event.extra or {}
+    if not extra.get("trace_id") or not extra.get("span_id"):
+        return {}
+    return {"trace": {
+        key: extra[key] for key in ("trace_id", "span_id", "parent_span_id", "span_kind")
+        if key in extra
+    }}
+
+
 def _spans(ctx: Context) -> list[dict[str, Any]]:
     """Waterfall spans: real events, geometry derived from ts and duration_ms."""
     open_starts: dict[tuple[str, str], list[Event]] = {}
@@ -620,6 +630,7 @@ def _spans(ctx: Context) -> list[dict[str, Any]]:
                 "ok": event.ok,
                 "stage_scope": scope,
                 "open": False,
+                **(_span_trace(event) or (_span_trace(started) if started else {})),
             })
             continue
         if event.kind == "model_call" and event.duration_ms is None:
@@ -647,6 +658,7 @@ def _spans(ctx: Context) -> list[dict[str, Any]]:
             "ok": event.ok,
             "stage_scope": scope,
             "open": False,
+            **_span_trace(event),
         })
 
     for (agent, scope), pending in open_starts.items():
@@ -668,6 +680,7 @@ def _spans(ctx: Context) -> list[dict[str, Any]]:
                 "ok": started.ok,
                 "stage_scope": scope,
                 "open": True,
+                **_span_trace(started),
             })
 
     spans.sort(key=lambda span: (span["start_offset_ms"] is None,

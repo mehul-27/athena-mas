@@ -776,12 +776,18 @@ def test_mcp_tool_environment_carries_search_fallback_without_model_secrets(
     monkeypatch.setenv("SEARCH_FALLBACK_PROVIDER", "searxng")
     monkeypatch.setenv("SEARCH_FALLBACK_ENDPOINT", "http://127.0.0.1:8080")
     monkeypatch.setenv("LLM_API_KEY", "sk-must-not-cross-the-mcp-boundary")
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "offline-search-key")
+    monkeypatch.setenv("SEARCH_PROVIDER", "firecrawl")
 
     env = researcher.mcp_environment()
 
     assert env["SEARCH_FALLBACK_PROVIDER"] == "searxng"
     assert env["SEARCH_FALLBACK_ENDPOINT"] == "http://127.0.0.1:8080"
     assert "LLM_API_KEY" not in env
+    assert "FIRECRAWL_API_KEY" not in env
+    assert researcher.mcp_environment(web=True)["FIRECRAWL_API_KEY"] == "offline-search-key"
+    monkeypatch.setenv("SEARCH_PROVIDER", "duckduckgo")
+    assert "FIRECRAWL_API_KEY" not in researcher.mcp_environment(web=True)
 
 
 def test_tool_report_classifies_duplicate_calls_separately_from_budget(

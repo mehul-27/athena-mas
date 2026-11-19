@@ -53,6 +53,8 @@ def test_messages_round_trip_and_totals(tmp_path) -> None:
     summary = store.summary(conversation)
     assert summary["message_count"] == 2
     assert summary["total_tokens"] == 14
+    assert store.list() == [store.summary_by_id(conversation["id"])]
+    assert store.list()[0]["total_tokens"] == 14
 
     updated = store.update_message(assistant["id"], content="Updated", status="ok")
     assert updated["content"] == "Updated"
@@ -69,13 +71,19 @@ def test_delete_removes_messages(tmp_path) -> None:
     assert store.get(conversation["id"]) is None
 
 
-def test_history_is_bounded_and_ignores_streaming_placeholders(tmp_path) -> None:
+def test_history_is_bounded_and_ignores_streaming_placeholders(tmp_path, monkeypatch) -> None:
     store = _store(tmp_path)
     conversation = store.create()
     store.add_message(conversation["id"], "user", "one")
     store.add_message(conversation["id"], "assistant", "two")
     store.add_message(conversation["id"], "assistant", "", status="streaming")
     store.add_message(conversation["id"], "user", "three")
+    store.add_message(conversation["id"], "user", "  \u2003 ")
+
+    def unexpected_messages(_conversation_id):
+        raise AssertionError("model history should not fetch the full transcript")
+
+    monkeypatch.setattr(store, "messages", unexpected_messages)
 
     history = store.history(conversation["id"], limit=2, max_chars=1000)
 

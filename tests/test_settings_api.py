@@ -61,15 +61,25 @@ def test_create_profile_stores_the_key_and_never_echoes_it(client: TestClient) -
 
 def test_update_then_delete_removes_the_secret(client: TestClient) -> None:
     created = client.post("/api/settings/profiles", json=_payload()).json()
+    key_name = profiles_module.key_name(created["id"], "llm")
 
     updated = client.put(f"/api/settings/profiles/{created['id']}",
-                         json=_payload(name="Renamed", llm_key=""))
+                         json=_payload(name="Renamed", model="openai/new-model", llm_key=""))
     assert updated.status_code == 200
     assert updated.json()["name"] == "Renamed"
+    assert updated.json()["model"] == "openai/new-model"
+    assert default_vault().get(key_name) == SENTINEL
+
+    replacement = "sk-test-replacement"
+    update = client.put(f"/api/settings/profiles/{created['id']}",
+                        json=_payload(name="Renamed", model="openai/new-model", llm_key=replacement))
+    assert update.status_code == 200
+    assert replacement not in update.text
+    assert default_vault().get(key_name) == replacement
 
     assert client.delete(f"/api/settings/profiles/{created['id']}").status_code == 200
     assert client.get("/api/settings/profiles").json()["profiles"] == []
-    assert default_vault().has(profiles_module.key_name(created["id"], "llm")) is False
+    assert default_vault().has(key_name) is False
 
 
 def test_invalid_url_is_rejected(client: TestClient) -> None:

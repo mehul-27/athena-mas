@@ -8,6 +8,9 @@
   const CAPS_KEY = "athena.chat.caps";
   const TOOLS_KEY = "athena.chat.tools";
   const SCROLL_KEY = "athena.chat.scroll.v1";
+  const SESSION_KEY = "athena.chat.session.v1";
+  const REASONING_OPTIONS = ["off", "low", "medium", "high"];
+  const savedChat = loadChatSession();
 
   const state = {
     active: false,
@@ -16,13 +19,17 @@
     conversationId: null,
     conversation: null,
     messages: [],
-    profileId: "",
+    profileId: savedChat.conversationId ? "" : savedChat.profileId,
+    reasoningEffort: savedChat.reasoningEffort,
     models: [],
     defaultModel: null,
-    defaultProfileId: "",
+    modelRequest: 0,
+    modelSaving: false,
     capabilities: new Set(loadList(CAPS_KEY)),
     tools: new Set(loadList(TOOLS_KEY)),
     toolCatalog: [],
+    capabilityRequest: 0,
+    toolRequest: 0,
     streaming: false,
     controller: null,
     streamEls: null,
@@ -33,6 +40,7 @@
     restoreScroll: null,
     scrollTimer: null,
     navToken: 0,
+    listRequest: 0,
   };
 
   function emptyNode() {
@@ -48,6 +56,27 @@
 
   function saveList(key, values) {
     try { localStorage.setItem(key, JSON.stringify([...values])); } catch (_) { /* private mode */ }
+  }
+
+  function loadChatSession() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "{}");
+      return {
+        conversationId: typeof saved?.conversationId === "string" ? saved.conversationId : "",
+        profileId: typeof saved?.profileId === "string" ? saved.profileId : "",
+        reasoningEffort: REASONING_OPTIONS.includes(saved?.reasoningEffort) ? saved.reasoningEffort : "",
+      };
+    } catch (_) { return { conversationId: "", profileId: "", reasoningEffort: "" }; }
+  }
+
+  function rememberChat() {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        conversationId: state.conversationId,
+        profileId: state.conversationId ? "" : state.profileId,
+        reasoningEffort: state.reasoningEffort,
+      }));
+    } catch (_) { /* private mode */ }
   }
 
   function loadScrollMap() {
@@ -446,9 +475,8 @@
     const select = UI().$("chat-model");
     if (!select) return;
     select.replaceChildren();
-    const fallback = state.defaultModel && state.defaultModel.model
-      ? state.defaultModel.model
-      : "not configured";
+    const defaultProfile = state.models.find((profile) => profile.id === state.defaultModel?.profile_id);
+    const fallback = [defaultProfile?.name, state.defaultModel?.model].filter(Boolean).join(" · ") || "not configured";
     select.appendChild(new Option("Default · " + fallback, ""));
     state.models.forEach((profile) => {
       const option = new Option(profile.name + " · " + (profile.model || "no model"), profile.id);
@@ -456,23 +484,47 @@
       option.title = profile.usable ? "" : profile.reason;
       select.appendChild(option);
     });
-    const wanted = state.profileId
-      || (state.conversation && state.conversation.profile_id)
-      || "";
-    select.value = wanted;
-    select.disabled = state.streaming;
+    if (state.profileId && !state.models.some((profile) => profile.id === state.profileId)) {
+      const unavailable = new Option("Selected model unavailable", state.profileId);
+      unavailable.disabled = true;
+      select.appendChild(unavailable);
+    }
+    select.value = state.profileId;
+    select.disabled = state.streaming || state.modelSaving || (!state.loaded && Boolean(savedChat.conversationId));
+    renderReasoning();
+  }
+
+  function renderReasoning() {
+    const select = UI().$("chat-reasoning");
+    if (!select) return;
+    const model = state.profileId
+      ? state.models.find((profile) => profile.id === state.profileId)
+      : state.defaultModel;
+    const supported = model?.reasoning_options || [];
+    for (const option of select.options) {
+      option.disabled = option.value !== "" && !supported.includes(option.value);
+    }
+    select.value = supported.includes(state.reasoningEffort) ? state.reasoningEffort : "";
+    select.title = supported.length ? "Reasoning effort for Chat" : "Only model default is available for this model.";
+    select.disabled = state.streaming || state.modelSaving || (!state.loaded && Boolean(savedChat.conversationId));
   }
 
   function renderEmptyHint() {
     const hint = UI().$("chat-empty-hint");
     if (!hint) return;
-    const configured = state.defaultModel && state.defaultModel.configured;
+    const configured = state.profileId
+      ? state.models.some((profile) => profile.id === state.profileId && profile.usable)
+      : state.defaultModel?.configured;
     hint.replaceChildren();
     if (configured) return;
-    UI().text(hint, "No provider is configured. Add a model in Settings to start chatting.");
+    if (state.profileId) {
+      UI().text(hint, "The selected model is unavailable. Choose another model or update the profile.");
+    } else {
+      UI().text(hint, "No provider is configured. Add a model in Settings to start chatting.");
+    }
     const button = el("button", "link-button", "Open Settings");
     button.type = "button";
-    button.addEventListener("click", () => root.AthenaSettings && root.AthenaSettings.open("add-model"));
+    button.addEventListener("click", () => root.AthenaSettings?.open(state.profileId ? "models" : "add-model"));
     hint.appendChild(document.createTextNode(" "));
     hint.appendChild(button);
   }
@@ -487,8 +539,10 @@
   /* ---------------------------------------------------------- conversation */
 
   async function refreshList() {
+    const request = ++state.listRequest;
     try {
-      const data = await UI().api("/api/chat/conversations?limit=12");
+      const data = await UI().api("/api/chat/conversations?limit=12", { cache: "no-store" });
+      if (request !== state.listRequest) return;
       const host = UI().$("chat-list");
       if (!host) return;
       host.replaceChildren();
@@ -499,36 +553,45 @@
       }
       rows.forEach((conversation) => {
         const item = document.createElement("li");
-        item.className = "chat-row" + (conversation.id === state.conversationId ? " is-active" : "");
+        item.className = "chat-row history-entry" + (conversation.id === state.conversationId ? " is-active" : "");
         const button = el("button", "chat-row-btn");
         button.type = "button";
-        button.appendChild(el("span", "chat-row-title", conversation.title || "New chat"));
+        const title = conversation.title || "New chat";
+        button.appendChild(el("span", "chat-row-title", title));
         const meta = [relative(conversation.updated_at), conversation.total_tokens ? conversation.total_tokens.toLocaleString() + " tok" : ""]
           .filter(Boolean).join(" · ");
         if (meta) button.appendChild(el("span", "chat-row-meta", meta));
         button.addEventListener("click", () => openConversation(conversation.id));
-        item.appendChild(button);
+        const remove = el("button", "history-row-delete");
+        remove.type = "button";
+        remove.title = "Delete chat";
+        remove.setAttribute("aria-label", "Delete chat: " + title);
+        remove.appendChild(icon("delete"));
+        remove.addEventListener("click", () => deleteConversation(conversation.id, remove));
+        item.append(button, remove);
         host.appendChild(item);
       });
     } catch (_) {
+      if (request !== state.listRequest) return;
       const host = UI().$("chat-list");
       if (host && !host.childElementCount) host.appendChild(el("li", "sidebar-empty", "chats unavailable"));
     }
   }
 
-  async function openConversation(id) {
+  async function openConversation(id, restoring = false) {
     if (state.streaming) { UI().toast("Stop the current reply first."); return; }
     saveCurrentScroll();
     const token = state.navToken + 1;
     state.navToken = token;
     if (root.AthenaContext) root.AthenaContext.setSurface("chat", null);
     try {
-      const data = await UI().api("/api/chat/conversations/" + encodeURIComponent(id));
+      const data = await UI().api("/api/chat/conversations/" + encodeURIComponent(id), { cache: "no-store" });
       if (token !== state.navToken) return;
       state.conversationId = id;
       state.conversation = data.conversation;
       state.messages = data.messages || [];
       state.profileId = data.conversation.profile_id || "";
+      rememberChat();
       state.restoreScroll = Number.isFinite(state.scrollMap[id]) ? state.scrollMap[id] : null;
       state.traceOpen.clear();
       state.traceClosed.clear();
@@ -536,12 +599,15 @@
       renderTranscript();
       renderEmptyHint();
       syncContextSurface();
-      await refreshList();
-      await loadCapabilities();
-      await loadTools();
+      await Promise.all([!restoring && refreshList(), loadCapabilities(), refreshSelectedTools()]);
+      return true;
     } catch (error) {
       if (token !== state.navToken) return;
       root.AthenaContext?.setSurface("chat", currentMessageId());
+      if (restoring && error.status === 404) {
+        rememberChat();
+        return false;
+      }
       UI().toast("Could not open chat: " + error.message);
     }
   }
@@ -554,6 +620,7 @@
     state.conversation = null;
     state.messages = [];
     state.profileId = "";
+    rememberChat();
     state.streamEls = null;
     state.restoreScroll = null;
     state.traceOpen.clear();
@@ -565,6 +632,8 @@
     renderEmptyHint();
     syncContextSurface();
     if (root.AthenaChat) refreshList();
+    loadCapabilities();
+    refreshSelectedTools();
     const input = UI().$("chat-input");
     if (input) { input.value = ""; input.focus(); }
   }
@@ -585,9 +654,11 @@
   }
 
   async function loadCapabilities() {
+    const request = ++state.capabilityRequest;
     try {
       const query = state.profileId ? "?profile_id=" + encodeURIComponent(state.profileId) : "";
       const data = await UI().api("/api/chat/capabilities" + query);
+      if (request !== state.capabilityRequest) return;
       (data.capabilities || []).forEach((cap) => {
         const id = cap.id === "rag" ? "cap-rag" : "cap-web";
         const button = UI().$(id);
@@ -599,6 +670,7 @@
       saveList(CAPS_KEY, state.capabilities);
       syncCapabilities();
     } catch (_) {
+      if (request !== state.capabilityRequest) return;
       ["cap-rag", "cap-web"].forEach((id) => {
         const button = UI().$(id);
         if (button) { button.dataset.available = "0"; button.title = "Capability status unavailable."; }
@@ -660,9 +732,13 @@
   }
 
   async function loadTools() {
+    const request = ++state.toolRequest;
+    const host = UI().$("tools-popover-list");
+    if (host) host.replaceChildren(el("p", "empty-state", "Loading tools…"));
     try {
       const query = state.profileId ? "?profile_id=" + encodeURIComponent(state.profileId) : "";
       const data = await UI().api("/api/chat/tools" + query);
+      if (request !== state.toolRequest) return;
       state.toolCatalog = data.tools || [];
       const available = new Set(state.toolCatalog.filter(isAvailable).map((tool) => tool.id));
       state.tools.forEach((name) => { if (!available.has(name)) state.tools.delete(name); });
@@ -670,45 +746,77 @@
       renderToolPicker();
       syncTools();
     } catch (_) {
+      if (request !== state.toolRequest) return;
       state.toolCatalog = [];
       renderToolPicker();
       syncTools();
     }
   }
 
+  function refreshSelectedTools() {
+    const picker = UI().$("tools-popover");
+    if (state.tools.size || (picker && !picker.classList.contains("hidden"))) return loadTools();
+    state.toolRequest += 1;
+  }
+
   /* ------------------------------------------------------------------ models */
 
-  async function loadModels() {
+  async function loadModels({ resetDraft = false } = {}) {
+    if (resetDraft && !state.conversationId && (state.loaded || !savedChat.conversationId)) {
+      state.profileId = "";
+      rememberChat();
+    }
+    const request = ++state.modelRequest;
     try {
-      const data = await UI().api("/api/chat/models");
+      const data = await UI().api("/api/chat/models", { cache: "no-store" });
+      if (request !== state.modelRequest) return;
       state.models = data.profiles || [];
       state.defaultModel = data.default || null;
-      state.defaultProfileId = data.default_profile_id || "";
+      if (!state.conversationId && state.profileId
+          && !state.models.some((profile) => profile.id === state.profileId && profile.usable)) {
+        state.profileId = "";
+        rememberChat();
+      }
       renderHeader();
       renderEmptyHint();
+      if (resetDraft && state.loaded) await Promise.all([loadCapabilities(), refreshSelectedTools()]);
     } catch (error) {
-      state.models = [];
-      state.defaultModel = null;
-      renderHeader();
+      if (request !== state.modelRequest) return;
       UI().toast("Could not load models: " + error.message);
     }
   }
 
   async function changeModel(profileId) {
+    const previous = state.profileId;
+    const conversationId = state.conversationId;
     state.profileId = profileId || "";
-    if (state.conversationId) {
+    if (conversationId) {
+      const token = state.navToken;
+      state.modelSaving = true;
+      renderHeader();
       try {
-        await UI().api("/api/chat/conversations/" + encodeURIComponent(state.conversationId) + "/model", {
+        const data = await UI().api("/api/chat/conversations/" + encodeURIComponent(conversationId) + "/model", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ profile_id: state.profileId }),
+          keepalive: true,
         });
+        if (token !== state.navToken) return;
+        state.conversation = data.conversation;
       } catch (error) {
+        if (token !== state.navToken) return;
+        state.profileId = previous;
         UI().toast("Could not change the model: " + error.message);
+      } finally {
+        state.modelSaving = false;
+        renderHeader();
       }
+    } else {
+      rememberChat();
     }
-    await loadCapabilities();
-    await loadTools();
+    renderReasoning();
+    renderEmptyHint();
+    await Promise.all([loadCapabilities(), refreshSelectedTools()]);
   }
 
   /* ------------------------------------------------------------------- send */
@@ -722,7 +830,8 @@
     if (input) input.disabled = on;
     if (send) send.hidden = on;
     if (stop) stop.hidden = !on;
-    if (select) select.disabled = on;
+    if (select) select.disabled = on || state.modelSaving;
+    renderReasoning();
     const status = UI().$("chat-status");
     if (status) {
       status.classList.toggle("hidden", !on);
@@ -737,11 +846,41 @@
     else rows.push(payload);
   }
 
+  let streamFrame = 0;
+  let streamDetailsChanged = false;
+
+  function queueStreamRender(assistant, detailsChanged = false) {
+    if (UI().currentView() !== "chat") return;
+    streamDetailsChanged ||= detailsChanged;
+    if (streamFrame) return;
+    streamFrame = requestAnimationFrame(() => {
+      streamFrame = 0;
+      const refreshDetails = streamDetailsChanged;
+      streamDetailsChanged = false;
+      if (state.messages.at(-1) !== assistant || UI().currentView() !== "chat") return;
+      const main = UI().$("main");
+      const follow = UI().currentView() === "chat" && main
+        && main.scrollHeight - main.scrollTop - main.clientHeight < 160;
+      const node = state.streamEls?.text;
+      if (refreshDetails || !node || node.classList.contains("chat-typing")) {
+        const host = UI().$("chat-transcript");
+        const reply = renderMessage(assistant, state.messages.length - 1);
+        host.lastElementChild?.replaceWith(reply);
+        state.streamEls = { text: reply.querySelector(".chat-text, .chat-typing") };
+      } else {
+        node.textContent = assistant.content;
+      }
+      if (follow) main.scrollTop = main.scrollHeight;
+      if (refreshDetails) root.AthenaContext?.refresh("chat", assistant.id);
+    });
+  }
+
   function applyEvent(assistant, name, payload) {
     if (name === "meta") {
       if (payload.conversation) {
         state.conversationId = payload.conversation.id;
         state.conversation = payload.conversation;
+        rememberChat();
         renderHeader();
       }
       if (payload.user_message) {
@@ -761,6 +900,7 @@
           }
         }
       }
+      queueStreamRender(assistant, true);
       return;
     }
     if (name === "trace") {
@@ -769,53 +909,39 @@
       const index = trace.findIndex((event) => event.id === payload.id);
       if (index >= 0) trace[index] = payload;
       else trace.push(payload);
-      renderTranscript();
-      root.AthenaContext?.refresh("chat", assistant.id);
+      queueStreamRender(assistant, true);
       return;
     }
     if (name === "sources") {
       assistant.sources = payload.sources || [];
-      renderTranscript();
-      root.AthenaContext?.refresh("chat", assistant.id);
+      queueStreamRender(assistant, true);
       return;
     }
     if (name === "tool") {
       upsertToolEvent(assistant, payload);
-      renderTranscript();
-      root.AthenaContext?.refresh("chat", assistant.id);
+      queueStreamRender(assistant, true);
       return;
     }
     if (name === "usage") {
       assistant.usage = payload;
-      renderTranscript();
-      root.AthenaContext?.refresh("chat", assistant.id);
+      queueStreamRender(assistant, true);
       return;
     }
     if (name === "note") {
       assistant.meta = assistant.meta || {};
       const notes = assistant.meta.grounding_notes || (assistant.meta.grounding_notes = []);
       if (payload.text && !notes.includes(payload.text)) notes.push(payload.text);
-      renderTranscript();
-      root.AthenaContext?.refresh("chat", assistant.id);
+      queueStreamRender(assistant, true);
       return;
     }
     if (name === "error") {
       assistant.error = payload.detail || "The reply failed.";
-      renderTranscript();
-      root.AthenaContext?.refresh("chat", assistant.id);
+      queueStreamRender(assistant, true);
       return;
     }
     if (name === "delta") {
       assistant.content = (assistant.content || "") + (payload.text || "");
-      const node = state.streamEls && state.streamEls.text;
-      if (node && node.classList && node.classList.contains("chat-typing")) {
-        renderTranscript();
-      } else if (node && node.nodeType) {
-        node.textContent = assistant.content;
-      } else {
-        renderTranscript();
-      }
-      scrollToBottom();
+      queueStreamRender(assistant);
     }
   }
 
@@ -851,6 +977,10 @@
 
   async function send() {
     if (state.streaming) return;
+    if (state.modelSaving || (!state.loaded && savedChat.conversationId)) {
+      UI().toast("Wait for the chat model to finish loading.");
+      return;
+    }
     state.navToken += 1;
     const input = UI().$("chat-input");
     const message = input ? input.value.trim() : "";
@@ -884,6 +1014,8 @@
     };
     if (state.conversationId) body.conversation_id = state.conversationId;
     if (state.profileId) body.profile_id = state.profileId;
+    const reasoning = UI().$("chat-reasoning")?.value;
+    if (reasoning) body.reasoning_effort = reasoning;
 
     try {
       const response = await fetch("/api/chat/messages", {
@@ -921,12 +1053,16 @@
         }
       }
     } finally {
+      if (streamFrame) cancelAnimationFrame(streamFrame);
+      streamFrame = 0;
+      streamDetailsChanged = false;
       state.streaming = false;
       state.controller = null;
       setStreaming(false);
       if (assistant.status === "streaming") assistant.status = "ok";
       renderHeader();
       renderTranscript();
+      root.AthenaContext?.refresh("chat", assistant.id);
       refreshList();
       if (input) input.focus();
     }
@@ -1005,19 +1141,23 @@
     }
   }
 
-  async function deleteConversation() {
-    if (!state.conversationId) { UI().toast("No chat to delete."); return; }
+  async function deleteConversation(id = state.conversationId, button) {
+    if (!id) { UI().toast("No chat to delete."); return; }
+    if (id === state.conversationId && state.streaming) { UI().toast("Stop the current reply first."); return; }
     if (!root.confirm("Delete this chat? Its messages are removed.")) return;
+    if (button) button.disabled = true;
     try {
-      const removedId = state.conversationId;
-      await UI().api("/api/chat/conversations/" + encodeURIComponent(removedId), { method: "DELETE" });
-      newConversation();
-      delete state.scrollMap[removedId];
+      await UI().api("/api/chat/conversations/" + encodeURIComponent(id), { method: "DELETE" });
+      button?.closest("li")?.remove();
+      if (id === state.conversationId) newConversation();
+      else refreshList();
+      delete state.scrollMap[id];
       saveScrollMap();
-      refreshList();
       UI().toast("Chat deleted.");
     } catch (error) {
       UI().toast("Delete failed: " + error.message);
+    } finally {
+      if (button) button.disabled = false;
     }
   }
 
@@ -1026,18 +1166,32 @@
   async function activate() {
     state.active = true;
     if (!state.loaded) {
-      await Promise.all([loadModels(), loadCapabilities(), loadTools()]);
-      state.loaded = true;
-      renderHeader();
-      renderEmptyHint();
+      state.loading ||= (async () => {
+        const models = loadModels();
+        const list = refreshList();
+        const profileId = state.profileId;
+        if (savedChat.conversationId && state.navToken === 0) {
+          const [, restored] = await Promise.all([models, openConversation(savedChat.conversationId, true)]);
+          if (restored) {
+            await list;
+            return;
+          }
+        }
+        const loadGrounding = () => Promise.all([loadCapabilities(), refreshSelectedTools()]);
+        await Promise.all([list, profileId ? models.then(loadGrounding) : loadGrounding(), models]);
+        renderEmptyHint();
+        renderTranscript();
+        syncContextSurface();
+      })().finally(() => {
+        state.loaded = true;
+        state.loading = null;
+        renderHeader();
+      });
+      return state.loading;
     }
     await refreshList();
-    if (state.conversationId) {
-      renderHeader();
-      renderTranscript();
-    } else {
-      renderTranscript();
-    }
+    renderHeader();
+    renderTranscript();
     syncContextSurface();
   }
 
@@ -1091,8 +1245,9 @@
     if (toolsButton && popover) {
       toolsButton.addEventListener("click", (event) => {
         event.stopPropagation();
-        const open = popover.classList.toggle("hidden");
-        toolsButton.setAttribute("aria-expanded", open ? "false" : "true");
+        const hidden = popover.classList.toggle("hidden");
+        toolsButton.setAttribute("aria-expanded", hidden ? "false" : "true");
+        if (!hidden) loadTools();
       });
       popover.addEventListener("click", (event) => event.stopPropagation());
     }
@@ -1105,6 +1260,12 @@
     }
     const model = UI().$("chat-model");
     if (model) model.addEventListener("change", () => changeModel(model.value));
+    const reasoning = UI().$("chat-reasoning");
+    if (reasoning) reasoning.addEventListener("change", () => {
+      state.reasoningEffort = reasoning.value;
+      rememberChat();
+    });
+    syncTools();
     const contextToggle = UI().$("context-toggle");
     if (contextToggle) {
       contextToggle.addEventListener("click", (event) => {
@@ -1151,9 +1312,11 @@
 
   root.AthenaChat = {
     activate,
+    reloadCapabilities: loadCapabilities,
     newConversation,
     openConversation,
     refresh: refreshList,
+    reloadModels: loadModels,
     stop,
     isStreaming: () => state.streaming,
     currentMessageId,

@@ -232,13 +232,8 @@ def catalog(search_provider: str | None = None) -> list[dict]:
             if not available:
                 reason = "No documents are indexed. Rebuild the index in Settings → Library."
         elif tool.id == "web_search":
-            available = provider in {"duckduckgo", "searxng"}
-            if not available:
-                reason = (
-                    "Web search is disabled."
-                    if provider == "disabled"
-                    else f"Unsupported search provider {provider!r}."
-                )
+            reason = settings.search_unavailable_reason(provider)
+            available = not reason
         rows.append(
             {
                 "id": tool.id,

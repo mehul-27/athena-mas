@@ -283,7 +283,8 @@ The most important settings:
 | `ATHENA_RESEARCHER_MAX_MODEL_CALLS` | Researcher model-call budget (default 10). |
 | `ATHENA_CALC_MAX_TOOL_CALLS` | Calculation-worker tool-call budget (default 4). |
 | `ATHENA_CALC_MAX_MODEL_CALLS` | Calculation-worker model-call budget (default 4). |
-| `SEARCH_PROVIDER` | `duckduckgo`, `searxng`, or `disabled`. |
+| `SEARCH_PROVIDER` | `duckduckgo`, `searxng`, `firecrawl`, or `disabled`. |
+| `FIRECRAWL_API_KEY` | Server-side key for optional hosted Firecrawl search. |
 | `SEARXNG_INSTANCE` | Base URL for self-hosted SearXNG. |
 | `SEARCH_FALLBACK_PROVIDER` | Optional fallback provider (`searxng`) when the primary throttles. |
 | `SEARCH_FALLBACK_ENDPOINT` | Fallback SearXNG base URL; falls back to `SEARXNG_INSTANCE`. |
@@ -308,7 +309,7 @@ floats over the current view and has internal categories:
   and Delete.
 - **AI Defaults** — the default profile Chat uses when a conversation has no
   explicit model.
-- **Appearance** — theme, presentation size, and the Capillary background toggle.
+- **Appearance** — theme and the Capillary background toggle.
 - **Library** — real RAG index/corpus status, rebuild, and recent research.
 - **MCP** — read-only status for the three built-in servers and their tools.
 - **Personalisation** — the 800-character About Me instruction.
@@ -504,6 +505,12 @@ docker run -d --name searxng -p 8888:8080 searxng/searxng
 SEARCH_PROVIDER=searxng
 SEARXNG_INSTANCE=http://127.0.0.1:8888
 ```
+
+To use hosted Firecrawl, set `FIRECRAWL_API_KEY` in the server environment and
+select **Firecrawl** in a model profile's **Search provider** field. Chat uses
+its selected profile and Research uses its active profile. Environment-based
+runs can use `SEARCH_PROVIDER=firecrawl`. Firecrawl receives search queries and
+returns source URLs and snippets. Athena reads pages through its own fetch tool.
 
 `SEARCH_PROVIDER=disabled` turns web search off without breaking local RAG or
 calculation questions.

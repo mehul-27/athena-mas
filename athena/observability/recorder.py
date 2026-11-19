@@ -10,12 +10,15 @@ import os
 import sys
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 
+from athena.observability.a2a_trace import trace_fields
 from athena.observability.context import current_agent
 from athena.observability.events import Event
 from athena.observability.store import EventStore, SQLiteEventStore
 
 _ACTIVE: "Recorder | None" = None
+_SCOPED: ContextVar["Recorder | None"] = ContextVar("athena_recorder", default=None)
 
 
 def monitoring_enabled() -> bool:
@@ -23,7 +26,7 @@ def monitoring_enabled() -> bool:
 
 
 def get_recorder() -> "Recorder | None":
-    return _ACTIVE
+    return _SCOPED.get() or _ACTIVE
 
 
 def set_recorder(recorder: "Recorder | None") -> "Recorder | None":
@@ -31,6 +34,16 @@ def set_recorder(recorder: "Recorder | None") -> "Recorder | None":
     global _ACTIVE
     previous, _ACTIVE = _ACTIVE, recorder
     return previous
+
+
+@contextmanager
+def recorder_scope(recorder: "Recorder"):
+    """Attribute this role's hooks within its own request, even across threads."""
+    token = _SCOPED.set(recorder)
+    try:
+        yield
+    finally:
+        _SCOPED.reset(token)
 
 
 class Recorder:
@@ -57,6 +70,9 @@ class Recorder:
         if not self.enabled:
             return
         try:
+            trace = trace_fields()
+            if trace:
+                fields["extra"] = {**(fields.get("extra") or {}), **trace}
             event = Event(
                 run_id=self.run_id,
                 kind=kind,

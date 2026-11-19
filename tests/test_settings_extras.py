@@ -65,6 +65,24 @@ def test_defaults_round_trip(client: TestClient) -> None:
     assert missing.status_code == 404
 
 
+def test_chat_model_order_keeps_default_and_research_profile_independent(client: TestClient) -> None:
+    amber, birch, cedar = (_profile(name) for name in ("Amber", "Birch", "Cedar"))
+    assert client.put("/api/settings/defaults", json={"chat_profile_id": birch.id}).status_code == 200
+    order = [cedar.id, amber.id, birch.id]
+
+    saved = client.put("/api/settings/profiles/order", json={"profile_ids": order})
+    assert saved.status_code == 200
+    stale = client.put("/api/settings/profiles/order", json={"profile_ids": [cedar.id, amber.id, amber.id]})
+    assert stale.status_code == 409
+
+    settings = client.get("/api/settings/profiles").json()
+    chat_models = client.get("/api/chat/models").json()
+    assert [profile["id"] for profile in settings["profiles"]] == order
+    assert [profile["id"] for profile in chat_models["profiles"]] == order
+    assert chat_models["default"]["profile_id"] == birch.id
+    assert settings["active"] == cedar.id
+
+
 def test_presets_fallback_when_the_file_is_missing(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(profiles_module, "PRESETS_FILE", tmp_path / "missing.json")
     presets = profiles_module.presets()

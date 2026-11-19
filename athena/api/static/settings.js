@@ -8,9 +8,9 @@
 
   const SECTIONS = [
     { id: "add-model", label: "Add model", keywords: ["provider", "preset", "key", "base", "model"] },
-    { id: "models", label: "Models", keywords: ["provider", "active", "test", "delete", "edit"] },
+    { id: "models", label: "Models", keywords: ["provider", "active", "test", "delete", "edit", "order", "default"] },
     { id: "defaults", label: "AI Defaults", keywords: ["chat", "research", "default"] },
-    { id: "appearance", label: "Appearance", keywords: ["theme", "dark", "light", "size", "background", "capillary"] },
+    { id: "appearance", label: "Appearance", keywords: ["theme", "dark", "light", "background", "capillary"] },
     { id: "library", label: "Library", keywords: ["rag", "documents", "index", "corpus", "research", "runs"] },
     { id: "mcp", label: "MCP", keywords: ["servers", "tools", "rag", "web", "calc"] },
     { id: "personalisation", label: "Personalisation", keywords: ["about", "me", "preferences"] },
@@ -140,11 +140,15 @@
   function setRequest(action) {
     state.request = L().requestState(state.request, action);
     const busy = L().isBusy(state.request);
-    ["profile-save", "profile-test", "profile-activate", "profile-delete"].forEach((id) => {
+    ["profile-save", "profile-test", "profile-activate", "profile-delete", "profile-cancel", "default-chat-profile"].forEach((id) => {
       const node = UI().$(id);
       if (node) node.disabled = busy;
     });
+    document.querySelectorAll("#provider-cards button").forEach((node) => {
+      node.disabled = busy || node.dataset.orderBoundary === "true";
+    });
     UI().text(UI().$("profile-status"), state.request.message);
+    UI().text(UI().$("models-status"), state.request.message);
     renderTestResults();
   }
 
@@ -185,29 +189,49 @@
     if (!rows.some((preset) => preset.id === "custom")) {
       select.appendChild(new Option("Custom / OpenAI-compatible", "custom"));
     }
+    if (current && !Array.from(select.options).some((option) => option.value === current)) {
+      select.appendChild(new Option(current, current));
+    }
     select.value = current || "custom";
+    select.dataset.previous = select.value;
   }
 
-  function applyPreset(presetId) {
-    const filled = L().presetFill(state.presets, presetId);
+  function applyPreset(presetId, previousId) {
     const preset = state.presets.find((item) => item.id === presetId);
-    if (preset && presetId !== "custom" && !UI().$("profile-name").value.trim()) {
-      UI().$("profile-name").value = preset.name || preset.id;
+    if (!preset || presetId === "custom") return;
+    const previous = state.presets.find((item) => item.id === previousId);
+    const name = UI().$("profile-name");
+    if (!name.value.trim() || (!state.editing && name.value === previous?.name)) {
+      name.value = preset.name || preset.id;
     }
-    if (filled.api_base) UI().$("profile-api-base").value = filled.api_base;
-    if (filled.model) UI().$("profile-model").value = filled.model;
+    const filled = L().presetFill(state.presets, presetId);
+    UI().$("profile-api-base").value = filled.api_base;
+    UI().$("profile-model").value = filled.model;
+    clearDiscovery();
+  }
+
+  function clearDiscovery() {
+    UI().$("profile-model-options").replaceChildren();
+    UI().text(UI().$("profile-discovery-hint"), "");
+  }
+
+  function updateSearchEndpoint() {
+    const endpoint = UI().$("profile-search-endpoint");
+    endpoint.disabled = UI().$("profile-search").value !== "searxng";
+    endpoint.closest("label").classList.toggle("hidden", endpoint.disabled);
   }
 
   function formPayload() {
+    const searchEndpoint = UI().$("profile-search-endpoint");
     return {
-      name: UI().$("profile-name").value,
+      name: UI().$("profile-name").value.trim(),
       preset: UI().$("profile-preset").value || "custom",
-      model: UI().$("profile-model").value,
-      api_base: UI().$("profile-api-base").value,
+      model: UI().$("profile-model").value.trim(),
+      api_base: UI().$("profile-api-base").value.trim(),
       reasoning_effort: UI().$("profile-reasoning").value,
       search_provider: UI().$("profile-search").value,
-      search_endpoint: UI().$("profile-search-endpoint").value,
-      llm_key: UI().$("profile-key").value,
+      search_endpoint: searchEndpoint.disabled ? "" : searchEndpoint.value.trim(),
+      llm_key: UI().$("profile-key").value.trim(),
     };
   }
 
@@ -215,36 +239,52 @@
     state.editing = "";
     const title = UI().$("profile-form-title");
     if (title) UI().text(title, "Add model");
+    UI().text(UI().$("profile-form-description"), "Choose a provider preset or enter an OpenAI-compatible endpoint.");
     ["profile-name", "profile-api-base", "profile-model", "profile-key", "profile-search-endpoint"].forEach((id) => {
       const node = UI().$(id);
       if (node) node.value = "";
     });
     UI().$("profile-preset").value = "custom";
+    UI().$("profile-preset").dataset.previous = "custom";
     UI().$("profile-reasoning").value = "";
     UI().$("profile-search").value = "duckduckgo";
+    updateSearchEndpoint();
+    UI().text(UI().$("profile-key-hint"), "Your key is stored securely. Local endpoints can leave this blank.");
     UI().text(UI().$("profile-errors"), "");
-    UI().text(UI().$("profile-status"), "");
-    UI().text(UI().$("profile-discovery-hint"), "");
     UI().text(UI().$("profile-save"), "Add model");
     ["profile-activate", "profile-delete", "profile-cancel"].forEach((id) => UI().$(id).classList.add("hidden"));
-    UI().$("profile-model-options").replaceChildren();
+    clearDiscovery();
     setRequest({ type: "reset" });
   }
 
   function editProfile(profile) {
+    resetForm();
     state.editing = profile.id;
     UI().text(UI().$("profile-form-title"), "Edit " + profile.name);
+    UI().text(UI().$("profile-form-description"), profile.id === state.active
+      ? "Reactivate the profile after saving to apply changes to Research."
+      : "Update the model, endpoint, API key or search options for this profile.");
     UI().$("profile-name").value = profile.name || "";
-    UI().$("profile-preset").value = profile.preset || "custom";
+    const preset = UI().$("profile-preset");
+    const presetId = profile.preset || "custom";
+    if (!Array.from(preset.options).some((option) => option.value === presetId)) {
+      preset.appendChild(new Option(presetId, presetId));
+    }
+    preset.value = presetId;
+    preset.dataset.previous = presetId;
     UI().$("profile-api-base").value = profile.api_base || "";
     UI().$("profile-model").value = profile.model || "";
-    UI().$("profile-key").value = "";  // never repopulate a stored key
+    UI().text(UI().$("profile-key-hint"), profile.has_llm_key
+      ? "Key stored. Leave blank to keep it, or enter a new key to replace it."
+      : "No API key is stored for this profile.");
     UI().$("profile-reasoning").value = profile.reasoning_effort || "";
     UI().$("profile-search").value = profile.search_provider || "duckduckgo";
     UI().$("profile-search-endpoint").value = profile.search_endpoint || "";
+    updateSearchEndpoint();
     UI().text(UI().$("profile-save"), "Save changes");
     ["profile-activate", "profile-delete", "profile-cancel"].forEach((id) => UI().$(id).classList.remove("hidden"));
     selectSection("add-model");
+    UI().$("profile-name").focus();
   }
 
   function cancelEdit() {
@@ -253,44 +293,54 @@
   }
 
   async function discoverModels() {
-    const base = UI().$("profile-api-base").value.trim();
+    const payload = formPayload();
+    const base = payload.api_base;
     if (!base) { UI().toast("Set the API base URL first."); return; }
+    const editing = state.editing;
+    const button = UI().$("profile-discover");
+    button.disabled = true;
+    clearDiscovery();
     UI().text(UI().$("profile-discovery-hint"), "discovering...");
     try {
       const data = await UI().api("/api/settings/models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          profile_id: state.editing || "",
+          profile_id: editing,
           api_base: base,
-          llm_key: UI().$("profile-key").value || null,
+          llm_key: payload.llm_key || null,
         }),
       });
+      if (state.editing !== editing || UI().$("profile-api-base").value.trim() !== base) return;
+      const model = L().presetFill(state.presets, payload.preset).model || payload.model;
+      const provider = model.includes("/") ? model.split("/", 1)[0] : "openai";
       const list = UI().$("profile-model-options");
-      list.replaceChildren();
-      (data.models || []).forEach((model) => list.appendChild(new Option(model, model)));
+      (data.models || []).forEach((id) => list.appendChild(new Option(id, provider + "/" + id)));
       UI().text(UI().$("profile-discovery-hint"), data.count
         ? "Found " + data.count + " models — pick one in the Model field."
         : "Model discovery unavailable for this endpoint — type the model id manually.");
       if (data.error) UI().text(UI().$("profile-discovery-hint"), data.error);
     } catch (error) {
-      UI().text(UI().$("profile-discovery-hint"), "Model discovery failed: " + error.message);
+      if (state.editing === editing && UI().$("profile-api-base").value.trim() === base) {
+        UI().text(UI().$("profile-discovery-hint"), "Model discovery failed: " + error.message);
+      }
+    } finally {
+      button.disabled = false;
     }
   }
 
-  async function saveProfile() {
+  async function saveProfile(keepEditing = false) {
+    if (L().isBusy(state.request)) return "";
     const payload = formPayload();
     const existing = state.profiles.find((item) => item.id === state.editing);
-    const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(payload.api_base || "");
     const check = L().validateProfile({
       ...payload,
-      needs_key: !existing && !payload.llm_key && !local,
+      needs_key: !existing?.has_llm_key && !L().isLocalApiBase(payload.api_base),
     });
     UI().text(UI().$("profile-errors"), check.ok ? "" : Object.values(check.errors).join("; "));
-    if (!check.ok) return false;
+    if (!check.ok) return "";
     setRequest({ type: "start", message: "saving..." });
     payload.llm_key = payload.llm_key || null;
-    UI().$("profile-key").value = "";  // cleared before the request returns
     try {
       const saved = state.editing
         ? await UI().api("/api/settings/profiles/" + encodeURIComponent(state.editing), {
@@ -299,22 +349,20 @@
         : await UI().api("/api/settings/profiles", {
             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
           });
-      state.editing = saved.id;
-      setRequest({ type: "ok", message: "saved", rows: [] });
-      await load();
-      selectSection("models");
-      return true;
+      if (keepEditing) editProfile(saved);
+      else resetForm();
+      setRequest({ type: "ok", message: "Saved " + saved.name, rows: [] });
+      if (!keepEditing) selectSection("models");
+      root.AthenaChat?.reloadModels?.();
+      await load().catch((error) => UI().toast("Could not reload settings: " + error.message));
+      return saved.id;
     } catch (error) {
       setRequest({ type: "error", message: "save failed: " + error.message });
-      return false;
+      return "";
     }
   }
 
-  async function testProfile() {
-    if (!state.editing) {
-      const saved = await saveProfile();
-      if (!saved) { setRequest({ type: "error", message: "save the provider first" }); return; }
-    }
+  async function testProfile(profileId) {
     const started = Date.now();
     setRequest({ type: "start", message: "testing... 0s" });
     const ticker = setInterval(() => {
@@ -323,10 +371,13 @@
       UI().text(UI().$("profile-status"), state.request.message);
     }, 1000);
     try {
-      const data = await UI().api("/api/settings/profiles/" + encodeURIComponent(state.editing) + "/test", {
+      const data = await UI().api("/api/settings/profiles/" + encodeURIComponent(profileId) + "/test", {
         method: "POST",
       });
-      setRequest({ type: "ok", message: (data.results || []).length + " path(s) checked", rows: data.results || [] });
+      const rows = data.results || [];
+      const passed = rows.filter((row) => row.ok).length;
+      setRequest({ type: passed === rows.length && passed ? "ok" : "error",
+        message: passed + " of " + rows.length + " paths passed", rows });
     } catch (error) {
       setRequest(error.code === "timeout" ? { type: "timeout" } : { type: "error", message: "test failed: " + error.message });
     } finally {
@@ -356,23 +407,58 @@
       else setRequest({ type: "error", message: "profile was not activated; crew server did not start", rows: [] });
       await load();
       if (UI().refreshHealth) UI().refreshHealth();
+      root.AthenaChat?.reloadModels?.();
     } catch (error) {
       setRequest(error.code === "timeout" ? { type: "timeout" } : { type: "error", message: String(error.message) });
     }
   }
 
-  async function deleteProfile() {
-    if (!state.editing) { setRequest({ type: "error", message: "nothing selected" }); return; }
+  async function deleteProfile(id) {
+    if (!id) { setRequest({ type: "error", message: "nothing selected" }); return; }
     if (!root.confirm("Delete this provider and its stored key?")) return;
     setRequest({ type: "start", message: "deleting..." });
     try {
-      await UI().api("/api/settings/profiles/" + encodeURIComponent(state.editing), { method: "DELETE" });
-      resetForm();
+      await UI().api("/api/settings/profiles/" + encodeURIComponent(id), { method: "DELETE" });
+      if (id === state.editing) resetForm();
       setRequest({ type: "ok", message: "deleted", rows: [] });
       await load();
+      UI().refreshHealth?.();
+      root.AthenaChat?.reloadModels?.();
       selectSection("models");
     } catch (error) {
       setRequest({ type: "error", message: "delete failed: " + error.message });
+    }
+  }
+
+  async function moveModel(profile, offset) {
+    if (L().isBusy(state.request)) return;
+    const ids = state.profiles.map((item) => item.id);
+    const from = ids.indexOf(profile.id);
+    const to = from + offset;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, profile.id);
+    setRequest({ type: "start", message: "saving model order..." });
+    try {
+      const saved = await UI().api("/api/settings/profiles/order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_ids: ids }),
+      });
+      state.profiles = saved.profiles;
+      setRequest({ type: "ok", message: "Model order saved", rows: [] });
+      renderModels();
+      renderDefaults();
+      root.AthenaChat?.reloadModels?.();
+      if (state.open && state.section === "models") {
+        const direction = offset < 0 ? "up" : "down";
+        const moved = UI().$("model-" + direction + "-" + profile.id);
+        if (moved && !moved.disabled) moved.focus();
+        else UI().$("model-" + (offset < 0 ? "down" : "up") + "-" + profile.id)?.focus();
+      }
+    } catch (error) {
+      setRequest({ type: "error", message: "Could not save model order: " + error.message });
+      if (error.status === 409) await load().catch(() => {});
     }
   }
 
@@ -388,14 +474,27 @@
       host.appendChild(el("p", "empty-state", "No models configured yet. Use Add model to connect a provider."));
       return;
     }
-    state.profiles.forEach((profile) => {
+    const busy = L().isBusy(state.request);
+    state.profiles.forEach((profile, index) => {
       const card = el("article", "provider-card");
       const head = el("div", "provider-head");
       head.appendChild(el("strong", "provider-name", profile.name));
       if (profile.id === state.active) head.appendChild(el("span", "pv-status is-ok", "active for research"));
-      const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(profile.api_base || "");
+      const local = L().isLocalApiBase(profile.api_base);
       const keyLabel = profile.has_llm_key ? "key stored" : local ? "local, no key" : "missing key";
       head.appendChild(el("span", "pv-status " + (profile.has_llm_key || local ? "is-ok" : "is-warn"), keyLabel));
+      const order = el("div", "provider-order");
+      for (const [direction, symbol, offset] of [["up", "↑", -1], ["down", "↓", 1]]) {
+        const move = button(symbol, "ghost btn-sm", null, () => moveModel(profile, offset));
+        const atBoundary = index + offset < 0 || index + offset >= state.profiles.length;
+        move.id = "model-" + direction + "-" + profile.id;
+        move.title = "Move " + profile.name + " " + direction;
+        move.setAttribute("aria-label", move.title);
+        move.dataset.orderBoundary = String(atBoundary);
+        move.disabled = busy || atBoundary;
+        order.appendChild(move);
+      }
+      head.appendChild(order);
       card.appendChild(head);
       card.appendChild(el("p", "provider-line", profile.model || "no model set"));
       const hostName = String(profile.api_base || "").replace(/^https?:\/\//, "").split("/")[0];
@@ -407,15 +506,19 @@
       card.appendChild(el("p", "provider-meta", meta));
       const actions = el("div", "provider-actions");
       actions.appendChild(button("Test", "ghost btn-sm", "play", async () => {
-        state.editing = profile.id;
-        await testProfile();
+        editProfile(profile);
+        await testProfile(profile.id);
       }));
       actions.appendChild(button("Edit", "ghost btn-sm", "edit", () => editProfile(profile)));
-      actions.appendChild(button("Activate", "ghost btn-sm", "check", () => activateProfile(profile.id)));
-      actions.appendChild(button("Delete", "danger btn-sm", "delete", async () => {
-        state.editing = profile.id;
-        await deleteProfile();
-      }));
+      const isDefault = profile.id === state.defaults.chat_profile_id;
+      const makeDefault = button(isDefault ? "Chat default" : "Make Chat default", "ghost btn-sm",
+        isDefault ? "check" : null, () => saveDefaults(profile.id));
+      makeDefault.id = "model-default-" + profile.id;
+      makeDefault.setAttribute("aria-pressed", String(isDefault));
+      actions.appendChild(makeDefault);
+      actions.appendChild(button("Activate for Research", "ghost btn-sm", "check", () => activateProfile(profile.id)));
+      actions.appendChild(button("Delete", "danger btn-sm", "delete", () => deleteProfile(profile.id)));
+      if (busy) Array.from(actions.children).forEach((node) => { node.disabled = true; });
       card.appendChild(actions);
       host.appendChild(card);
     });
@@ -441,6 +544,9 @@
   }
 
   async function saveDefaults(value) {
+    if (L().isBusy(state.request) || value === (state.defaults.chat_profile_id || "")) return;
+    const focus = document.activeElement?.id;
+    setRequest({ type: "start", message: "saving Chat default..." });
     try {
       const data = await UI().api("/api/settings/defaults", {
         method: "PUT",
@@ -448,9 +554,18 @@
         body: JSON.stringify({ chat_profile_id: value }),
       });
       state.defaults.chat_profile_id = data.chat_profile_id;
-      UI().text(UI().$("defaults-status"), "saved");
+      const message = "Chat default saved";
+      UI().text(UI().$("defaults-status"), message);
+      setRequest({ type: "ok", message, rows: [] });
+      renderDefaults();
+      renderModels();
+      root.AthenaChat?.reloadModels?.({ resetDraft: true });
+      UI().$(focus)?.focus();
     } catch (error) {
-      UI().text(UI().$("defaults-status"), "failed: " + error.message);
+      renderDefaults();
+      const message = "Could not save Chat default: " + error.message;
+      UI().text(UI().$("defaults-status"), message);
+      setRequest({ type: "error", message });
     }
   }
 
@@ -458,19 +573,19 @@
 
   function renderAppearance() {
     const theme = document.documentElement.dataset.theme || "dark";
-    const size = document.documentElement.dataset.size || "normal";
     const background = root.AthenaBackground ? root.AthenaBackground.isEnabled() : true;
     const choices = [
       ["theme-choice-dark", theme === "dark"],
       ["theme-choice-light", theme === "light"],
-      ["size-choice-normal", size !== "presentation"],
-      ["size-choice-presentation", size === "presentation"],
       ["background-on", background],
       ["background-off", !background],
     ];
     choices.forEach(([id, active]) => {
       const node = UI().$(id);
-      if (node) node.classList.toggle("selected", active);
+      if (node) {
+        node.classList.toggle("selected", active);
+        node.setAttribute("aria-pressed", String(active));
+      }
     });
     const available = Boolean(root.AthenaBackground);
     ["background-on", "background-off"].forEach((id) => {
@@ -683,29 +798,37 @@
     if (find) find.addEventListener("input", filterNav);
 
     const save = UI().$("profile-save");
-    if (save) save.addEventListener("click", saveProfile);
+    if (save) save.addEventListener("click", () => saveProfile());
     const profileForm = UI().$("profile-form");
     if (profileForm) profileForm.addEventListener("submit", (event) => {
       event.preventDefault();
       saveProfile();
     });
     const test = UI().$("profile-test");
-    if (test) test.addEventListener("click", testProfile);
+    if (test) test.addEventListener("click", async () => {
+      const id = await saveProfile(true);
+      if (id) await testProfile(id);
+    });
     const activate = UI().$("profile-activate");
-    if (activate) activate.addEventListener("click", () => activateProfile());
+    if (activate) activate.addEventListener("click", async () => {
+      const id = await saveProfile(true);
+      if (id) await activateProfile(id);
+    });
     const remove = UI().$("profile-delete");
-    if (remove) remove.addEventListener("click", deleteProfile);
+    if (remove) remove.addEventListener("click", () => deleteProfile(state.editing));
     const cancel = UI().$("profile-cancel");
     if (cancel) cancel.addEventListener("click", cancelEdit);
     const discover = UI().$("profile-discover");
     if (discover) discover.addEventListener("click", discoverModels);
     const preset = UI().$("profile-preset");
-    if (preset) preset.addEventListener("change", (event) => applyPreset(event.target.value));
-    const search = UI().$("profile-search");
-    if (search) search.addEventListener("change", () => {
-      const row = UI().$("profile-search-endpoint");
-      if (row) row.disabled = search.value !== "searxng";
+    if (preset) preset.addEventListener("change", () => {
+      applyPreset(preset.value, preset.dataset.previous);
+      preset.dataset.previous = preset.value;
     });
+    UI().$("profile-api-base")?.addEventListener("input", clearDiscovery);
+    const search = UI().$("profile-search");
+    if (search) search.addEventListener("change", updateSearchEndpoint);
+    if (profileForm) resetForm();
 
     const defaults = UI().$("default-chat-profile");
     if (defaults) defaults.addEventListener("change", () => saveDefaults(defaults.value));
@@ -714,10 +837,6 @@
     if (themeDark) themeDark.addEventListener("click", () => { UI().applyTheme("dark"); renderAppearance(); });
     const themeLight = UI().$("theme-choice-light");
     if (themeLight) themeLight.addEventListener("click", () => { UI().applyTheme("light"); renderAppearance(); });
-    const sizeNormal = UI().$("size-choice-normal");
-    if (sizeNormal) sizeNormal.addEventListener("click", () => { UI().applySize(false); renderAppearance(); });
-    const sizePresentation = UI().$("size-choice-presentation");
-    if (sizePresentation) sizePresentation.addEventListener("click", () => { UI().applySize(true); renderAppearance(); });
     const backgroundOn = UI().$("background-on");
     if (backgroundOn) backgroundOn.addEventListener("click", () => {
       root.AthenaBackground?.setEnabled(true);

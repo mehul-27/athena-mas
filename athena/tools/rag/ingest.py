@@ -89,22 +89,23 @@ def ingest_text(index: RagIndex, filename: str, text: str) -> dict:
     }
 
 
-def ingest_pdf(index: RagIndex, path: str | Path) -> dict:
+def ingest_pdf(index: RagIndex, path: str | Path, *, filename: str | None = None) -> dict:
     """Ingest one PDF and report what happened."""
     path = Path(path)
+    filename = filename or path.name
     size = path.stat().st_size
     cap = max_file_bytes()
     if size > cap:
-        return _refused(path.name, f"file is {size} bytes (cap {cap})")
+        return _refused(filename, f"file is {size} bytes (cap {cap})")
     pages = pdf_page_count(path)
     page_cap = max_pages()
     if pages is not None and pages > page_cap:
-        return _refused(path.name, f"document has {pages} pages (cap {page_cap})")
+        return _refused(filename, f"document has {pages} pages (cap {page_cap})")
     document_id = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
     chunks = document_chunks(path)
-    stats = index.add_chunks(document_id, path.name, chunks)
+    stats = index.add_chunks(document_id, filename, chunks)
     return {
-        "document": path.name,
+        "document": filename,
         "document_id": document_id,
         "chunks": len(chunks),
         "added": stats["added"],

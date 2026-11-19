@@ -65,10 +65,12 @@ def models(request: Request) -> dict:
 
 @router.get("/capabilities")
 def capabilities(request: Request, profile_id: str | None = None) -> dict:
+    from athena.tools.settings import search_unavailable_reason
+
     guard(request)
     provider, _endpoint = search_settings(profile_id)
     rag_ok = chunk_count() > 0
-    web_ok = provider in {"duckduckgo", "searxng"}
+    web_reason = search_unavailable_reason(provider)
     return {
         "capabilities": [
             {
@@ -78,20 +80,14 @@ def capabilities(request: Request, profile_id: str | None = None) -> dict:
                 "available": rag_ok,
                 "reason": ""
                 if rag_ok
-                else "No documents are indexed. Rebuild the index in Settings → Library.",
+                else "No documents are indexed. Choose Upload document to add one.",
             },
             {
                 "id": "web_search",
                 "label": "Web search",
                 "description": "Ground the answer in live web results.",
-                "available": web_ok,
-                "reason": ""
-                if web_ok
-                else (
-                    "Web search is disabled."
-                    if provider == "disabled"
-                    else f"Unsupported search provider {provider!r}."
-                ),
+                "available": not web_reason,
+                "reason": web_reason,
             },
         ]
     }
@@ -143,6 +139,8 @@ def rename_conversation(
 @router.delete("/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str, request: Request) -> dict:
     guard(request)
+    if conversation_id in _RUNS:
+        raise HTTPException(status_code=409, detail="Stop the current reply first")
     store = _store()
     _require(store, conversation_id)
     result = store.delete(conversation_id)
@@ -222,6 +220,7 @@ def send_message(payload: ChatMessageIn, request: Request) -> StreamingResponse:
             conversation_id=payload.conversation_id,
             message=payload.message,
             profile_id=(payload.profile_id or "").strip() or None,
+            reasoning_effort=payload.reasoning_effort,
             capabilities=payload.capabilities,
             tool_names=payload.tools,
         )

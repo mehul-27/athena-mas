@@ -251,6 +251,14 @@
 
   /* --------------------------------------------------------------- settings */
 
+  function isLocalApiBase(base) {
+    try {
+      return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(base).hostname);
+    } catch (_) {
+      return false;
+    }
+  }
+
   function validateProfile(form) {
     const errors = {};
     const name = String(form.name || "").trim();
@@ -264,7 +272,7 @@
     }
     if (base) {
       if (!/^https?:\/\//i.test(base)) errors.api_base = "base URL must start with https://";
-      else if (!/^https:/i.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(base)) {
+      else if (!/^https:/i.test(base) && !isLocalApiBase(base)) {
         errors.api_base = "http is only allowed for localhost";
       }
       if (/^https?:\/\/[^/]*@/i.test(base)) errors.api_base = "the URL must not contain credentials";
@@ -292,7 +300,7 @@
                  message: action.message || ((action.rows || []).length + " path(s) checked"),
                  rows: action.rows || [] };
       case "error":
-        return { status: "error", message: action.message || "request failed", rows: [] };
+        return { status: "error", message: action.message || "request failed", rows: action.rows || [] };
       case "timeout":
         return { status: "timeout",
                  message: "taking too long; check the crew server", rows: [] };
@@ -435,6 +443,7 @@
       const question = String(run.question || "").replace(/\s+/g, " ").trim();
       const last = rows[rows.length - 1];
       if (last && last.question === question) {
+        last.previous_run_id ||= run.run_id;
         last.count += 1;
         return;
       }
@@ -1771,7 +1780,7 @@
     frameworkOf, reduceTimeline, a2aBytes, duration, bytes, tokens,
     relativeTime, groupHistory, tabReducer, progressStrip,
     verdictLabel, verdictFromCritique, critiqueDiagnostic, citationRows, statusPill, blackboardCards,
-    validateProfile, presetFill, requestState, isBusy,
+    isLocalApiBase, validateProfile, presetFill, requestState, isBusy,
     PATTERNS, DEFAULT_PATTERN, patternValue, validRunId,
     metricRows, metricValue,
     diagramFor, diagramState, NODES, PATTERN_EDGES,

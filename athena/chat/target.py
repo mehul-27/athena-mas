@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from urllib.parse import urlparse
 
-from athena.chat.models import ChatConfigError, ChatTarget
+from athena.chat.models import ChatConfigError, ChatTarget, reasoning_options
 from athena.config import llm
 from athena.settings import defaults
 from athena.settings import profiles as profile_store
@@ -144,9 +144,10 @@ def models_view(vault: SecretStore | None = None) -> dict:
                 "is_active": profile.id == active,
                 "reason": reason or ("" if profile.id == active else "Not the active research profile."),
                 "search_provider": profile.search_provider,
+                "reasoning_options": reasoning_options(profile.api_base, profile.model),
             }
         )
-    default: dict = {"source": "environment", "profile_id": "", "model": "", "provider": "", "configured": False}
+    default: dict = {"source": "environment", "profile_id": "", "model": "", "provider": "", "configured": False, "reasoning_options": ()}
     try:
         target = resolve_target(vault=store)
         default = {
@@ -155,6 +156,7 @@ def models_view(vault: SecretStore | None = None) -> dict:
             "model": target.model,
             "provider": target.provider,
             "configured": True,
+            "reasoning_options": reasoning_options(target.api_base, target.model),
         }
     except ChatConfigError as exc:
         default["error"] = str(exc)

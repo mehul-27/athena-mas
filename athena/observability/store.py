@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS events (
     UNIQUE (run_id, seq)
 );
 CREATE INDEX IF NOT EXISTS events_run ON events (run_id, seq);
+CREATE TABLE IF NOT EXISTS removed_research_history (run_id TEXT PRIMARY KEY);
 CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
 BEGIN SELECT RAISE(ABORT, 'event log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
@@ -112,27 +113,47 @@ class SQLiteEventStore(EventStore):
             )
         return seq
 
-    def events(self, run_id: str) -> list[Event]:
+    def events(self, run_id: str, *, after_seq: int = 0) -> list[Event]:
         conn = self._connect()
         try:
             rows = conn.execute(
-                "SELECT payload_json FROM events WHERE run_id = ? ORDER BY seq",
-                (run_id,),
+                "SELECT payload_json FROM events WHERE run_id = ? AND seq > ? ORDER BY seq",
+                (run_id, after_seq),
             ).fetchall()
         finally:
             conn.close()
         return [Event.from_json(row["payload_json"]) for row in rows]
 
-    def runs(self) -> list[str]:
+    def latest_summary(self, run_id: str) -> Event | None:
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT payload_json FROM events WHERE run_id = ?"
+                " AND json_extract(payload_json, '$.payload_summary') GLOB 'run_summary*'"
+                " ORDER BY seq DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        return Event.from_json(row["payload_json"]) if row else None
+
+    def runs(self, *, include_removed: bool = True) -> list[str]:
         conn = self._connect()
         try:
             rows = conn.execute(
-                "SELECT run_id, MIN(ts) AS first FROM events GROUP BY run_id"
-                " ORDER BY first"
+                "SELECT run_id, MIN(ts) AS first FROM events"
+                " WHERE ? OR run_id NOT IN (SELECT run_id FROM removed_research_history)"
+                " GROUP BY run_id ORDER BY first",
+                (include_removed,),
             ).fetchall()
         finally:
             conn.close()
         return [row["run_id"] for row in rows]
+
+    def remove_from_research_history(self, run_id: str) -> None:
+        """Hide a run from user history while preserving the append-only trace."""
+        with self._tx() as conn:
+            conn.execute("INSERT OR IGNORE INTO removed_research_history VALUES (?)", (run_id,))
 
     def run_rows(self, run_id: str) -> list[dict[str, Any]]:
         """Raw rows, for the report's event table."""

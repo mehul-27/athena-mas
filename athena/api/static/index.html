@@ -51,7 +51,7 @@
         <ul class="sidebar-list" id="chat-list"><li class="sidebar-empty">no chats yet</li></ul>
       </div>
 
-      <div class="sidebar-groups" id="sidebar-research">
+      <div class="sidebar-groups hidden" id="sidebar-research">
         <div class="sidebar-group">
           <div class="sidebar-label">
             Research history
@@ -77,11 +77,11 @@
       </div>
 
       <nav class="sidebar-group sidebar-nav">
-        <button class="nav-item" data-view="chat" type="button" id="nav-chat">
+        <button class="nav-item active" data-view="chat" type="button" id="nav-chat">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-chat"></use></svg>
           <span>Chat</span>
         </button>
-        <button class="nav-item active" data-view="run" type="button" id="nav-run">
+        <button class="nav-item" data-view="run" type="button" id="nav-run">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-research"></use></svg>
           <span>Research</span>
         </button>
@@ -109,7 +109,7 @@
 
     <div class="stage">
       <main class="main" id="main">
-        <section class="view hidden" id="view-chat">
+        <section class="view" id="view-chat">
           <div class="chat-column" id="chat-column">
             <header class="chat-head">
               <div class="chat-title-wrap">
@@ -159,6 +159,9 @@
                   <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-rag"></use></svg>
                   <span>Documents</span>
                 </button>
+                <button class="chip chat-toggle" id="chat-upload-document" type="button" aria-label="Upload document" title="Upload document">
+                  <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-plus"></use></svg>
+                </button>
                 <button class="chip chat-toggle" id="cap-web" type="button" aria-pressed="false">
                   <svg class="icon sm" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-source-web"></use></svg>
                   <span>Web search</span>
@@ -176,6 +179,16 @@
                     <div id="tools-popover-list"></div>
                   </div>
                 </div>
+                <label class="chip chat-reasoning" for="chat-reasoning">
+                  <span>Reasoning</span>
+                  <select id="chat-reasoning">
+                    <option value="">Model default</option>
+                    <option value="off" disabled>Off</option>
+                    <option value="low" disabled>Low</option>
+                    <option value="medium" disabled>Medium</option>
+                    <option value="high" disabled>High</option>
+                  </select>
+                </label>
                 <span class="chat-toolbar-status" id="chat-toolbar-status"></span>
               </div>
               <div class="chat-composer-row">
@@ -193,7 +206,7 @@
           </div>
         </section>
 
-        <section class="view" id="view-run">
+        <section class="view hidden" id="view-run">
           <div class="conversation" id="conversation">
             <div class="empty-hero" id="empty-state">
               <p class="eyebrow">athena</p>
@@ -487,16 +500,17 @@
           <section class="card">
             <div class="card-head">
               <h2>My documents</h2>
-              <button class="ghost btn-sm" id="documents-refresh" type="button">Refresh</button>
+              <div class="card-head-actions">
+                <button class="ghost btn-sm" id="documents-upload" type="button">Upload document</button>
+                <button class="ghost btn-sm" id="documents-refresh" type="button">Refresh</button>
+              </div>
             </div>
             <p class="hint">These are the documents in the local index. They stay on this computer.
               In Chat, turn on <strong>Documents</strong> to retrieve relevant passages for a message;
               when it is off, no document search runs.</p>
             <div id="documents-content" class="library-content"></div>
-            <p class="hint" id="documents-status"></p>
-            <p class="hint">Upload and personal document management are not implemented in this build.
-              The indexed corpus is the source of truth; add files to <span class="mono">data/corpus</span>
-              and rebuild from Settings → Library.</p>
+            <p class="hint" id="documents-status" role="status"></p>
+            <p class="hint">Uploads support PDFs with selectable text, plain text, and Markdown.</p>
           </section>
         </section>
 
@@ -649,8 +663,8 @@
         <section class="settings-pane" id="view-settings">
           <div class="settings-section" data-pane="add-model">
             <div class="pane-head">
-              <h3>Add model</h3>
-              <p>Connect any OpenAI-compatible endpoint. Pick a preset to pre-fill the fields, or choose Custom and type everything yourself.</p>
+              <h3 id="profile-form-title">Add model</h3>
+              <p id="profile-form-description">Choose a provider preset or enter an OpenAI-compatible endpoint.</p>
             </div>
             <form class="form-grid" id="profile-form" autocomplete="off">
               <label for="profile-name">Name<input id="profile-name" type="text" maxlength="80" placeholder="My provider" /></label>
@@ -663,7 +677,7 @@
                 </span>
                 <datalist id="profile-model-options"></datalist>
               </label>
-              <label for="profile-key" class="wide">API key<input id="profile-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="write-only; never shown again" /></label>
+              <label for="profile-key" class="wide">API key<input id="profile-key" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="profile-key-hint" /><span class="hint" id="profile-key-hint"></span></label>
               <label for="profile-reasoning">Reasoning effort
                 <select id="profile-reasoning">
                   <option value="" selected>Default (don't send)</option>
@@ -676,19 +690,20 @@
                 <select id="profile-search">
                   <option value="duckduckgo" selected>DuckDuckGo (keyless)</option>
                   <option value="searxng">SearXNG (self-hosted)</option>
+                  <option value="firecrawl">Firecrawl (server API key)</option>
                 </select>
               </label>
-              <label for="profile-search-endpoint" class="wide">SearXNG endpoint<input id="profile-search-endpoint" type="text" placeholder="http://localhost:8888" /></label>
+              <label for="profile-search-endpoint" class="wide hidden">SearXNG endpoint<input id="profile-search-endpoint" type="text" placeholder="http://localhost:8888" disabled /></label>
             </form>
             <p class="hint" id="profile-discovery-hint"></p>
             <p class="error-text" id="profile-errors"></p>
             <div class="actions">
               <button class="primary" id="profile-save" type="button">Add model</button>
               <button class="ghost" id="profile-test" type="button">Save &amp; test</button>
-              <button class="ghost hidden" id="profile-activate" type="button">Activate for research</button>
+              <button class="ghost hidden" id="profile-activate" type="button">Save &amp; activate for Research</button>
               <button class="ghost hidden" id="profile-cancel" type="button">Cancel edit</button>
               <button class="danger hidden" id="profile-delete" type="button">Delete</button>
-              <span class="hint" id="profile-status"></span>
+              <span class="hint" id="profile-status" role="status"></span>
             </div>
             <div class="test-result" id="test-result"></div>
           </div>
@@ -696,9 +711,10 @@
           <div class="settings-section hidden" data-pane="models">
             <div class="pane-head">
               <h3>Models</h3>
-              <p>One profile is active for research. Chat uses the profile selected in AI Defaults, or the active profile by default. Activating restarts the CrewAI server; chat does not need that.</p>
+              <p>Use the arrows to set the Chat model menu order. Set the Chat default here, or activate a profile to use it for Research.</p>
             </div>
             <p class="hint" id="settings-state"></p>
+            <p class="hint" id="models-status" role="status"></p>
             <table class="table" id="profiles-table">
               <thead><tr><th>name</th><th>model</th><th>host</th><th>key</th><th>status</th><th></th></tr></thead>
               <tbody id="profiles-body"></tbody>
@@ -734,13 +750,6 @@
               <div class="chips" role="group" aria-label="Theme">
                 <button class="chip" id="theme-choice-dark" type="button">Dark</button>
                 <button class="chip" id="theme-choice-light" type="button">Light</button>
-              </div>
-            </div>
-            <div class="settings-row">
-              <span>Presentation size</span>
-              <div class="chips" role="group" aria-label="Presentation size">
-                <button class="chip" id="size-choice-normal" type="button">Normal</button>
-                <button class="chip" id="size-choice-presentation" type="button">Presentation</button>
               </div>
             </div>
             <div class="settings-row">
@@ -833,6 +842,7 @@
     </section>
   </div>
 
+  <input type="file" id="document-file" accept=".pdf,.txt,.md" hidden>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="/logic.js"></script>

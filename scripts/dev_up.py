@@ -39,6 +39,17 @@ def main() -> int:
         return 0
 
     RUN_DIR.mkdir(exist_ok=True)
+    # Load `.env` BEFORE snapshotting the environment. Without this the summary
+    # below reports "key=missing" while the child genuinely has one: the child
+    # imports athena.config.llm, which calls load_dotenv(), but this process has
+    # already captured os.environ by then. That produced a false alarm on a
+    # correctly configured machine.
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(REPO_ROOT / ".env", override=False)
+    except Exception as exc:  # noqa: BLE001 - .env is optional
+        print(f".env not loaded: {type(exc).__name__}")
     env = dict(os.environ)
     # Keep manual restarts consistent with the UI/demo path: the active profile
     # supplies the model, endpoint, key and search settings for both ADK and

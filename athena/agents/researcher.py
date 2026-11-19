@@ -120,12 +120,13 @@ _MCP_ENV_EXACT = {
 }
 
 
-def mcp_environment() -> dict[str, str]:
+def mcp_environment(*, web: bool = False) -> dict[str, str]:
     """Environment for local MCP tool servers: settings, never model secrets."""
     return {
         key: value
         for key, value in os.environ.items()
         if key in _MCP_ENV_EXACT or key.startswith(_MCP_ENV_PREFIXES)
+        or (web and key == "FIRECRAWL_API_KEY" and os.getenv("SEARCH_PROVIDER", "").lower() == "firecrawl")
     }
 
 
@@ -161,7 +162,7 @@ def build_toolset(
                 command=sys.executable,
                 args=["-m", module],
                 cwd=str(REPO_ROOT),
-                env=mcp_environment(),
+                env=mcp_environment(web=module == SERVERS["web"]),
             ),
             timeout=timeout,
         ),

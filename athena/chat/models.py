@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
+
+
+ReasoningEffort = Literal["", "off", "low", "medium", "high"]
+_THINKING_LEVELS = ("low", "medium", "high")
 
 
 class ChatMessageIn(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=64)
     message: str = Field(min_length=1, max_length=8000)
     profile_id: str | None = Field(default=None, max_length=64)
+    reasoning_effort: ReasoningEffort | None = None
     capabilities: list[str] = Field(default_factory=list, max_length=8)
     tools: list[str] = Field(default_factory=list, max_length=100)
 
@@ -76,6 +82,7 @@ class LLMDelta:
     tool_arguments: str = ""
     usage: dict[str, int] | None = None
     finish_reason: str = ""
+    provider_reasoning: str = field(default="", repr=False)
 
 
 @dataclass
@@ -113,6 +120,29 @@ class Grounded:
 
 
 def _host(url: str) -> str:
-    from urllib.parse import urlparse
-
     return urlparse(url or "").hostname or ""
+
+
+def official_host(url: str) -> str:
+    endpoint = urlparse(url)
+    return (endpoint.hostname or "") if endpoint.scheme == "https" else ""
+
+
+def deepseek_thinking_model(model: str) -> bool:
+    return (model or "").rsplit("/", 1)[-1] in {"deepseek-flash", "deepseek-v4-pro"}
+
+
+def reasoning_options(api_base: str, model: str) -> tuple[str, ...]:
+    """Only advertise Chat controls confirmed for the provider and model."""
+    host = official_host(api_base)
+    name = (model or "").rsplit("/", 1)[-1]
+    if host == "api.deepseek.com" and deepseek_thinking_model(model):
+        return ("off", *_THINKING_LEVELS)
+    if host == "api.groq.com":
+        if name == "qwen3.8-27b":
+            return ("off", *_THINKING_LEVELS)
+        if name in {"gpt-oss-20b", "gpt-oss-120b"}:
+            return _THINKING_LEVELS
+    if host == "api.openai.com" and name in {"gpt-5.1", "gpt-5.2", "gpt-5.4", "gpt-5.5"}:
+        return ("off", *_THINKING_LEVELS)
+    return ()

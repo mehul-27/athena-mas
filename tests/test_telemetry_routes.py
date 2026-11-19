@@ -83,7 +83,8 @@ def world(tmp_path, monkeypatch):
           tokens_in=300, tokens_out=40,
           payload_summary="analyst: 156B out / 80B in",
           extra={"request_bytes": 156, "response_bytes": 80, "handoff": "adk->crewai",
-                 "role": "analyst"})
+                 "role": "analyst", "trace_id": "1" * 32, "span_id": "2" * 16,
+                 "span_kind": "client"})
     _emit(store, run_id, "recovery", "supervisor", 3.0, duration_ms=40.0)
     _emit(store, run_id, "limiter_wait", "planner", 3.2, duration_ms=120.0)
     _emit(store, run_id, "blackboard_write", "web_researcher", 3.4,
@@ -182,6 +183,13 @@ def test_spans_describe_a_waterfall(world) -> None:
     assert stage["start_offset_ms"] == 0.0
     assert stage["end_offset_ms"] == 1600.0
     assert stage["open"] is False
+    assert "trace" not in stage
+
+    a2a_span = next(span for span in spans if span["kind"] == "a2a_call")
+    assert a2a_span["span_id"] == a2a_span["event_id"]
+    assert a2a_span["trace"] == {
+        "trace_id": "1" * 32, "span_id": "2" * 16, "span_kind": "client",
+    }
 
     tool = [span for span in spans if span["kind"] == "tool_call"]
     assert len(tool) == 2

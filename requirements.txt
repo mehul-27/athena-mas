@@ -31,6 +31,8 @@ beautifulsoup4==4.15.0
 
 # Per-agent heatmap (Step 6 monitoring)
 matplotlib==3.11.2
+opentelemetry-api==1.42.1
+opentelemetry-sdk==1.42.1
 
 # Used directly by the calculator/forecast tool
 numpy==2.5.4

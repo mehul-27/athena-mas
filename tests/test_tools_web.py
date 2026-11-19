@@ -45,6 +45,44 @@ class _FakeResponse:
         return None
 
 
+def test_firecrawl_returns_attributed_sources_without_scraping(monkeypatch) -> None:
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "offline-firecrawl-fixture")
+    monkeypatch.setenv("SEARCH_PROVIDER", "firecrawl")
+
+    def post(url, *, json, headers, timeout):
+        assert url == "https://api.firecrawl.dev/v2/search"
+        assert json == {"query": "NASA handbook", "limit": 3}
+        assert headers["Authorization"] == "Bearer offline-firecrawl-fixture"
+        assert timeout > 0
+        return httpx.Response(200, request=httpx.Request("POST", url), json={
+            "success": True,
+            "data": {"web": [
+                {"url": "https://www.nasa.gov/se/", "title": "NASA",
+                 "description": "The handbook"},
+                {"url": "javascript:example", "title": "Invalid URL"},
+            ]},
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+    result = web_search("NASA handbook", max_results=3)
+    assert result.ok and result.provider == "firecrawl"
+    assert [(item.url, item.provider, item.snippet) for item in result.results] == [
+        ("https://www.nasa.gov/se/", "firecrawl", "The handbook"),
+    ]
+
+
+def test_firecrawl_requires_a_key_for_both_surfaces(monkeypatch) -> None:
+    from athena.chat.tools import availability
+    from athena.tools.registry import catalog
+
+    monkeypatch.setenv("SEARCH_PROVIDER", "firecrawl")
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+
+    assert availability("web_search")[0] is False
+    research = next(row for row in catalog() if row["id"] == "web_search")
+    assert not research["available"] and "FIRECRAWL_API_KEY" in research["reason"]
+
+
 def test_web_search_parses_a_canned_response(monkeypatch) -> None:
     monkeypatch.setenv("SEARCH_PROVIDER", "duckduckgo")
     monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: _FakeResponse(DDG_HTML))

@@ -59,6 +59,12 @@ def _cap_blocks(blocks: list[str], limit: int) -> tuple[list[str], int]:
     return kept, len(blocks) - len(kept)
 
 
+async def _timed_search(search, *args, **kwargs):
+    started = time.perf_counter()
+    result = await asyncio.to_thread(search, *args, **kwargs)
+    return result, round((time.perf_counter() - started) * 1000, 1)
+
+
 async def collect(
     query: str,
     capabilities: Iterable[str],
@@ -71,12 +77,22 @@ async def collect(
     events: list[dict] = []
     hits: list = []
 
+    searches = {}
     if "rag" in caps:
         from athena.tools.rag.search import rag_search
 
-        started = time.perf_counter()
-        result = await asyncio.to_thread(rag_search, query, RAG_TOP_K)
-        elapsed = round((time.perf_counter() - started) * 1000, 1)
+        searches["rag"] = _timed_search(rag_search, query, RAG_TOP_K)
+    if "web_search" in caps:
+        from athena.tools.web.search import web_search
+
+        searches["web_search"] = _timed_search(
+            web_search, query, WEB_RESULTS,
+            provider=target.search_provider, endpoint=target.search_endpoint,
+        )
+    result_by_capability = dict(zip(searches, await asyncio.gather(*searches.values())))
+
+    if "rag" in result_by_capability:
+        result, elapsed = result_by_capability["rag"]
         if not result.ok:
             notes.append(f"Document search failed: {result.error or 'unknown error'}")
             events.append(
@@ -127,18 +143,8 @@ async def collect(
                     )
                 )
 
-    if "web_search" in caps:
-        from athena.tools.web.search import web_search
-
-        started = time.perf_counter()
-        result = await asyncio.to_thread(
-            web_search,
-            query,
-            WEB_RESULTS,
-            provider=target.search_provider,
-            endpoint=target.search_endpoint,
-        )
-        elapsed = round((time.perf_counter() - started) * 1000, 1)
+    if "web_search" in result_by_capability:
+        result, elapsed = result_by_capability["web_search"]
         if not result.ok:
             notes.append(f"Web search failed: {result.error or 'unknown error'}")
             events.append(

@@ -10,7 +10,7 @@ echoing it back would burn the provider's input-token budget for text the model
 does not need — the evidence is already on the blackboard.
 
 Rule for failures: a search or calculation that failed records **no** evidence
-and returns the response untouched. A failed page fetch is recorded as
+and returns a bounded acknowledgement. A failed page fetch is recorded as
 provenance (``source_type="other"``) so the attempt is visible, but it is not a
 citable web source. A tool error is not evidence.
 """
@@ -28,6 +28,9 @@ from athena.agents.untrusted import (
     wrap_untrusted,
 )
 from athena.blackboard import Blackboard, BlackboardStore
+from athena.guardrails.secrets import redact_text
+from athena.guardrails.tool_output import validate_tool_output
+from athena.observability.guardrail_events import record_decision
 from athena.tools.adapters import rag_source_ref, screen_items, to_evidence_items
 from athena.tools.schemas import (
     CalcResult,
@@ -37,6 +40,7 @@ from athena.tools.schemas import (
     ToolResult,
     WebResult,
 )
+from athena.tools.web.fetch import MAX_URL_LENGTH, FetchBlocked, normalize_url
 
 AUTHOR = "researcher"
 MAX_FETCH_INSPECT_CHARS = 4000
@@ -79,6 +83,21 @@ def parse_result(tool_name: str, tool_response: Any) -> ToolResult | None:
         return None
 
 
+def _fetch_preview_url(raw: str) -> str:
+    """Keep only bounded HTTP(S) metadata suitable for the researcher."""
+    try:
+        url, _, _ = normalize_url(raw)
+    except FetchBlocked:
+        return ""
+    if not raw.isprintable():
+        return ""
+    ok, _ = validate_tool_output("fetch_page", url, emit=False)
+    if not ok:
+        return ""
+    redacted = redact_text(url) or ""
+    return redacted if len(redacted) <= MAX_URL_LENGTH else ""
+
+
 def compact_result(tool_name: str, result: ToolResult) -> dict[str, Any]:
     """The small summary the model sees instead of the full payload."""
     if isinstance(result, RagResult):
@@ -96,22 +115,23 @@ def compact_result(tool_name: str, result: ToolResult) -> dict[str, Any]:
             "note": "Results are saved to the blackboard.",
         }
     if isinstance(result, FetchResult):
+        preview = "\n".join(
+            part for part in (result.title, result.text, result.error) if part
+        )
         return {
             "untrusted_external_content": True,
             "content_boundary": UNTRUSTED_BEGIN,
             "status": result.status,
-            "requested_url": result.requested_url,
-            "final_url": result.final_url,
-            "canonical_url": result.canonical_url,
-            "title": result.title,
+            "requested_url": _fetch_preview_url(result.requested_url),
+            "final_url": _fetch_preview_url(result.final_url),
+            "canonical_url": _fetch_preview_url(result.canonical_url),
             "truncated": result.truncated,
-            "inspect_truncated": len(result.text) > MAX_FETCH_INSPECT_CHARS,
-            "text": wrap_untrusted(result.text[:MAX_FETCH_INSPECT_CHARS]),
+            "inspect_truncated": len(preview) > MAX_FETCH_INSPECT_CHARS,
+            "text": wrap_untrusted((redact_text(preview) or "")[:MAX_FETCH_INSPECT_CHARS]),
             "note": (
                 f"{UNTRUSTED_DATA_RULE} Full bounded page text is on the "
                 "blackboard; cite this page only when its text supports the claim."
             ),
-            "error": result.error,
         }
     if isinstance(result, CalcResult):
         return {"recorded": 1, "value": result.value, "expression": result.expression}
@@ -178,18 +198,29 @@ def make_evidence_recorder(
         author = getattr(tool_context, "agent_name", "") or AUTHOR
         result = parse_result(tool_name, tool_response)
         if result is None:
-            # Nothing trustworthy arrived: let the model see the original error.
-            return None
+            # None tells ADK to pass the original response straight to the model.
+            record_decision(
+                stage="tool_output", rule="tool_output.invalid_result", action="sanitized",
+                detail="tool returned an invalid result or a transport error",
+                screen="make_evidence_recorder", pipeline_stage="tool_output", agent=author,
+            )
+            return {"recorded": 0, "error": "Tool returned no valid result."}
         dropped: list = []
         written = record_tool_result(
             run_id, tool_name, tool_response, store, sink, author=author,
             dropped=dropped,
         )
         if not result.ok and not isinstance(result, FetchResult):
-            # A failed search/calculation is not a source, but the model gets a
-            # small answer instead of the whole payload it already could not use.
-            return {"recorded": 0, "error": result.error or "tool failed"}
-        payload = compact_result(tool_name, result)
+            error = result.error or "Tool failed."
+            error_ok, _ = validate_tool_output(tool_name, error, agent=author)
+            return {
+                "recorded": 0,
+                "error": (redact_text(error) or "")[:500] if error_ok else "Tool failed.",
+            }
+        if isinstance(result, FetchResult) and dropped:
+            payload = {"error": "Page result was withheld by guardrails."}
+        else:
+            payload = compact_result(tool_name, result)
         if isinstance(result, FetchResult):
             payload["recorded"] = written
         if dropped:

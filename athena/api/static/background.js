@@ -50,6 +50,8 @@ const RESEARCH_TEXT = [
   ".meta-row .pill", ".report-meta", ".composer-pattern label", ".composer-pattern-note",
   ".card-head h2", ".hint",
 ];
+const CHAT_TEXT_SELECTOR = CHAT_TEXT.join(",");
+const RESEARCH_TEXT_SELECTOR = RESEARCH_TEXT.join(",");
 
 /* Rects of the actual text lines, not the whole column. The mask protects
    readability while leaving the veins and the lantern light visible between
@@ -62,13 +64,24 @@ function textRects() {
     clearDirty = false;
     return clearCache;
   }
-  const selectors = view.id === "view-chat" ? CHAT_TEXT : RESEARCH_TEXT;
+  const bounds = hostElement().getBoundingClientRect();
+  const margin = 32;
+  const overlaps = (rect) => rect.bottom > bounds.top - margin && rect.top < bounds.bottom + margin;
+  const chat = view.id === "view-chat";
+  const range = document.createRange();
+  const visibleTurns = new Map();
   const rects = [];
-  view.querySelectorAll(selectors.join(",")).forEach((node) => {
-    const range = document.createRange();
+  view.querySelectorAll(chat ? CHAT_TEXT_SELECTOR : RESEARCH_TEXT_SELECTOR).forEach((node) => {
+    if (chat) {
+      const turn = node.closest(".chat-turn");
+      if (turn) {
+        if (!visibleTurns.has(turn)) visibleTurns.set(turn, overlaps(turn.getBoundingClientRect()));
+        if (!visibleTurns.get(turn)) return;
+      }
+    }
     range.selectNodeContents(node);
     for (const rect of range.getClientRects()) {
-      if (rect.width > 1 && rect.height > 1) {
+      if (rect.width > 1 && rect.height > 1 && overlaps(rect)) {
         rects.push({ left: rect.left, top: rect.top, width: rect.width, height: rect.height });
       }
     }
@@ -175,7 +188,6 @@ function updateClear() {
 }
 
 document.addEventListener("athena:view", updateClear);
-document.addEventListener("athena:size", updateClear);
 window.addEventListener("scroll", () => { clearDirty = true; }, { capture: true, passive: true });
 window.addEventListener("resize", () => { clearDirty = true; });
 window.addEventListener("pagehide", destroy);

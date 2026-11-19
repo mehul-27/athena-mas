@@ -124,10 +124,16 @@ class PeerAuth:
 
     def verify(self, run_id: str, body: Any, signature: str | None) -> bool:
         """Constant-time comparison. An absent or malformed signature is False."""
-        if not signature or not isinstance(signature, str):
+        if not isinstance(signature, str):
             return False
-        expected = self.sign(run_id, body)
-        return hmac.compare_digest(expected, signature.strip().lower())
+        candidate = signature.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", candidate):
+            return False
+        try:
+            expected = self.sign(run_id, body)
+        except UnicodeEncodeError:
+            return False
+        return hmac.compare_digest(expected, candidate)
 
     def sign_message(self, message: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of ``message`` carrying its signature."""
@@ -286,7 +292,7 @@ def validate_message(
         # The caller already verified the HMAC itself (the A2A server does, so
         # it can answer with its own wording) and only wants the shape checks.
         pass
-    elif signature:
+    elif SIG_FIELD in message:
         if not signer.verify(str(run_id or ""), body, signature if isinstance(signature, str) else ""):
             verdict.errors.append("signature mismatch")
             verdict.flags.append(

@@ -57,6 +57,7 @@ def _fake_stream(text: str = "Hello", *, usage: bool = True, seen: dict | None =
         if seen is not None:
             seen["messages"] = messages
             seen["tools"] = tools
+            seen["reasoning_effort"] = target.reasoning_effort
         yield LLMDelta(text=text)
         if usage:
             yield LLMDelta(
@@ -113,6 +114,34 @@ def test_send_streams_and_persists(client: TestClient, profile, monkeypatch) -> 
     reloaded = client.get(f"/api/chat/conversations/{conversation_id}").json()
     assert [message["role"] for message in reloaded["messages"]] == ["user", "assistant"]
     assert reloaded["messages"][1]["content"] == "Hello there"
+
+
+def test_reasoning_effort_override_is_per_turn_and_capability_gated(client, profile, monkeypatch):
+    response = client.post("/api/chat/messages", json={"message": "Hi", "reasoning_effort": "off"})
+    assert response.status_code == 422
+    assert client.get("/api/chat/conversations").json()["conversations"] == []
+
+    deepseek = Profile(
+        name="DeepSeek",
+        model="openai/deepseek-flash",
+        api_base="https://api.deepseek.com",
+        reasoning_effort="low",
+    )
+    profiles_module.upsert(deepseek)
+    default_vault().set(profiles_module.key_name(deepseek.id, "llm"), SENTINEL)
+    profiles_module.set_active(deepseek.id)
+    models = client.get("/api/chat/models").json()
+    assert models["default"]["reasoning_options"] == ["off", "low", "medium", "high"]
+    assert [row["reasoning_options"] for row in models["profiles"]] == [
+        [], ["off", "low", "medium", "high"]
+    ]
+
+    seen = {}
+    monkeypatch.setattr(service, "stream_completion", _fake_stream(seen=seen))
+    done = _done(_events(client, {"message": "Hi", "reasoning_effort": "off"}))
+    assert seen["reasoning_effort"] == "off"
+    _events(client, {"message": "Hello again", "conversation_id": done["conversation"]["id"]})
+    assert seen["reasoning_effort"] == "low"
 
 
 def test_normal_chat_never_grounds_or_calls_tools(client: TestClient, profile, monkeypatch) -> None:

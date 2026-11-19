@@ -17,7 +17,7 @@ import asyncio
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, AsyncIterator, Iterable
 
 from athena.blackboard.schemas import GuardrailFlag
@@ -28,6 +28,8 @@ from athena.chat.models import (
     ChatConfigError,
     ChatTarget,
     Grounded,
+    ReasoningEffort,
+    reasoning_options,
 )
 from athena.chat.store import DEFAULT_TITLE, ChatStore, derive_title
 from athena.guardrails.injection import scan_injection
@@ -101,6 +103,7 @@ def prepare_turn(
     profile_id: str | None,
     capabilities: Iterable[Any] | None,
     tool_names: Iterable[Any] | None,
+    reasoning_effort: ReasoningEffort | None = None,
 ) -> TurnContext:
     """Validate and persist the turn before any SSE headers are sent."""
     from athena.chat.target import resolve_target
@@ -114,18 +117,20 @@ def prepare_turn(
         raise ChatConfigError(guardrail_refusal(verdict), status=422)
     model_text = verdict.model_text or message
 
-    if conversation_id:
-        conversation = store.get(conversation_id)
-        if conversation is None:
-            raise ChatConfigError(f"No conversation {conversation_id!r}.", status=404)
-    else:
-        conversation = store.create()
-
-    history = store.history(conversation["id"], HISTORY_TURNS, HISTORY_CHARS)
-    target = resolve_target(profile_id, conversation.get("profile_id") or "")
+    conversation = store.get(conversation_id) if conversation_id else None
+    if conversation_id and conversation is None:
+        raise ChatConfigError(f"No conversation {conversation_id!r}.", status=404)
+    target = resolve_target(profile_id, (conversation or {}).get("profile_id") or "")
+    if reasoning_effort:
+        if reasoning_effort not in reasoning_options(target.api_base, target.model):
+            raise ChatConfigError("This model does not support the selected reasoning setting.", status=422)
+        target = replace(target, reasoning_effort=reasoning_effort)
     caps = normalize_capabilities(capabilities)
     _check_available(caps, target)
     selection = tools.resolve_selection(tool_names, target)
+    if conversation is None:
+        conversation = store.create()
+    history = store.history(conversation["id"], HISTORY_TURNS, HISTORY_CHARS)
 
     user = store.add_message(
         conversation["id"],
@@ -419,6 +424,7 @@ async def stream_turn(ctx: TurnContext) -> AsyncIterator[tuple[str, dict[str, An
             if ctx.stop_event.is_set():
                 break
             round_text = ""
+            round_reasoning: list[str] = []
             calls: dict[int, dict[str, str]] = {}
             model_event = trace_event(
                 f"model-{round_index}",
@@ -450,6 +456,8 @@ async def stream_turn(ctx: TurnContext) -> AsyncIterator[tuple[str, dict[str, An
                         round_text += delta.text
                         all_text += delta.text
                         yield ("delta", {"text": delta.text})
+                    if delta.provider_reasoning:
+                        round_reasoning.append(delta.provider_reasoning)
                     if delta.tool_index >= 0:
                         call = calls.setdefault(
                             delta.tool_index, {"id": "", "name": "", "arguments": ""}
@@ -537,9 +545,12 @@ async def stream_turn(ctx: TurnContext) -> AsyncIterator[tuple[str, dict[str, An
                         },
                     }
                 )
-            messages.append(
-                {"role": "assistant", "content": round_text or "", "tool_calls": tool_calls}
-            )
+            tool_turn = {"role": "assistant", "content": round_text or "", "tool_calls": tool_calls}
+            if round_reasoning:
+                # DeepSeek requires same-turn reasoning on tool continuation.
+                # This message exists only in the provider's in-memory history.
+                tool_turn["reasoning_content"] = "".join(round_reasoning)
+            messages.append(tool_turn)
 
             for call in tool_calls:
                 if ctx.stop_event.is_set() or calls_used >= MAX_TOOL_CALLS:
@@ -636,6 +647,8 @@ async def stream_turn(ctx: TurnContext) -> AsyncIterator[tuple[str, dict[str, An
             yield ("trace", trace_event(
                 "tool-limit", "limit", tool_note, "error", summary=tool_note,
             ))
+            for message in messages:
+                message.pop("reasoning_content", None)
             model_calls += 1
             async for delta in stream_completion(
                 ctx.target, messages, tools=None, max_tokens=MAX_TOKENS
@@ -720,7 +733,10 @@ async def stream_turn(ctx: TurnContext) -> AsyncIterator[tuple[str, dict[str, An
         )
         raise
     except Exception as exc:  # noqa: BLE001 - after headers this must be an event
-        detail = (redact(f"{type(exc).__name__}: {exc}") or "provider error")[:300]
+        if any("reasoning_content" in message for message in messages):
+            detail = "The model could not continue after a tool call. Try again or choose Off in Reasoning."
+        else:
+            detail = (redact(f"{type(exc).__name__}: {exc}") or "provider error")[:300]
         yield ("trace", trace_event(
             "turn-done", "done", "Failed", "error",
             error=detail,

@@ -1,13 +1,11 @@
-"""Web search over free, keyless endpoints.
+"""Web search using DuckDuckGo, SearXNG, or optional Firecrawl.
 
 Ported from the old Athena `search/web.py`: DuckDuckGo's HTML endpoint, scraped,
 with its ``//duckduckgo.com/l/?uddg=`` redirects unwrapped. SearXNG (a local,
 self-hosted JSON API) is an *optional* fallback: DuckDuckGo stays primary, and
 SearXNG is only consulted when the primary is throttled, unavailable or returns
 nothing. Setting ``ATHENA_SEARXNG_URL`` is the whole opt-in; ``SEARCH_PROVIDER``
-may also select SearXNG directly. The keyed providers (Brave, Tavily, Serper,
-Google PSE) are dropped: Athena's own evaluation never used them, and each one
-adds a credential path to guard.
+may also select SearXNG directly. Firecrawl uses a server-side API key.
 
 Three invariants hold for every result this module returns:
 
@@ -75,7 +73,7 @@ def is_ad_url(url: str) -> bool:
     return any(marker in lowered for marker in _AD_URL_MARKERS)
 
 
-PROVIDERS = ("duckduckgo", "searxng")
+PROVIDERS = settings.SEARCH_PROVIDERS
 
 THROTTLE_STATUS = (202, 403, 429)
 RETRY_DELAYS = (0.5, 1.5)
@@ -378,6 +376,50 @@ def searxng(query: str, count: int, endpoint: str | None = None) -> list[WebHit]
     return _searxng_hits(payload, count)
 
 
+def firecrawl(query: str, count: int) -> list[WebHit]:
+    """Return search citations with the original source URLs."""
+    key = settings.firecrawl_key()
+    if not key:
+        raise ValueError("Firecrawl needs FIRECRAWL_API_KEY on the Athena server.")
+    response = httpx.post(
+        "https://api.firecrawl.dev/v2/search",
+        json={"query": query, "limit": count},
+        headers={"Authorization": f"Bearer {key}"},
+        timeout=settings.search_timeout(),
+    )
+    if response.status_code == 429:
+        raise SearchThrottled("Firecrawl rate limit reached")
+    response.raise_for_status()
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise SearchMalformed("Firecrawl returned malformed JSON") from exc
+    data = payload.get("data") if isinstance(payload, dict) and payload.get("success") is True else None
+    results = data.get("web") if isinstance(data, dict) else None
+    if not isinstance(results, list):
+        raise SearchMalformed("Firecrawl returned no web results list")
+
+    hits = []
+    for row in results[:count]:
+        if not isinstance(row, dict) or not isinstance(row.get("url"), str):
+            continue
+        url = row["url"].strip()
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username is not None:
+                continue
+        except ValueError:
+            continue
+        title, description = row.get("title"), row.get("description")
+        hits.append(WebHit(
+            title=title[:300] if isinstance(title, str) else "",
+            url=url,
+            snippet=description[:1200] if isinstance(description, str) else "",
+            provider="firecrawl",
+        ))
+    return hits
+
+
 def web_search(
     query: str,
     max_results: int = 5,
@@ -418,6 +460,8 @@ def web_search(
             return lambda: duckduckgo(query, limit)  # noqa: E731 - tiny adapter
         if name == "searxng":
             return lambda: searxng(query, limit, endpoint=target_endpoint)  # noqa: E731
+        if name == "firecrawl":
+            return lambda: firecrawl(query, limit)
         return None
 
     primary = caller_for(provider, endpoint)
@@ -425,7 +469,7 @@ def web_search(
         return result(
             ok=False,
             error=f"unsupported SEARCH_PROVIDER {provider!r} "
-            f"(use one of ['duckduckgo', 'searxng'] or disabled)",
+            f"(use one of {list(PROVIDERS)} or disabled)",
         )
 
     fallback = settings.search_fallback_provider()
