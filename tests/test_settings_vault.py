@@ -103,13 +103,21 @@ def test_profile_requires_a_name_and_model() -> None:
         _profile(model="").validate()
 
 
-def test_searxng_needs_an_endpoint() -> None:
+def test_searxng_needs_an_endpoint(monkeypatch) -> None:
+    monkeypatch.delenv("ATHENA_SEARXNG_URL", raising=False)
+    monkeypatch.delenv("SEARXNG_INSTANCE", raising=False)
     with pytest.raises(ProfileError):
         _profile(search_provider="searxng").validate()
     with pytest.raises(ProfileError):
         _profile(search_fallback_provider="searxng").validate()
     with pytest.raises(ProfileError):
         _profile(search_fallback_provider="brave").validate()
+
+
+def test_searxng_profile_can_use_server_endpoint(monkeypatch) -> None:
+    monkeypatch.setenv("ATHENA_SEARXNG_URL", "http://athena-searxng:8080")
+    profile = _profile(search_provider="searxng").validate()
+    assert profile.search_endpoint == ""
 
 
 def test_upsert_find_delete_round_trip(store: Path) -> None:
@@ -188,6 +196,48 @@ def test_env_for_searxng_does_not_export_the_unused_search_key(store: Path) -> N
     # DuckDuckGo and SearXNG are the supported providers; neither consumes a
     # search key, so the old Brave/Tavily secret path must not exist.
     assert "search-secret" not in json.dumps(env)
+
+
+def test_env_for_firecrawl_profile_exports_key_only_for_hosted_service(
+    store: Path, monkeypatch
+) -> None:
+    profile = upsert(_profile(search_provider="firecrawl"), store)
+    from athena.settings.vault import default_vault
+
+    default_vault().set(key_name(profile.id, "search"), "profile-search-secret")
+    monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
+    env = env_for_profile(profile.id, path=store)
+    assert env["FIRECRAWL_API_KEY"] == "profile-search-secret"
+    assert "profile-search-secret" not in json.dumps(profile.public())
+
+    monkeypatch.setenv("FIRECRAWL_API_URL", "http://127.0.0.1:3002")
+    local_env = env_for_profile(profile.id, path=store)
+    assert "FIRECRAWL_API_KEY" not in local_env
+    assert "profile-search-secret" not in json.dumps(local_env)
+
+
+def test_chat_target_loads_search_key_only_for_firecrawl_profile(
+    store: Path, monkeypatch
+) -> None:
+    from athena.chat.target import _profile_target
+    from athena.settings.vault import default_vault
+
+    monkeypatch.setattr(profiles_module, "PROFILES_FILE", store)
+    firecrawl_profile = upsert(_profile(search_provider="firecrawl"), store)
+    searx_profile = upsert(
+        _profile(search_provider="searxng", search_endpoint="http://localhost:8888"),
+        store,
+    )
+    default_vault().set(key_name(firecrawl_profile.id, "llm"), "llm-secret")
+    default_vault().set(key_name(firecrawl_profile.id, "search"), "search-secret")
+    default_vault().set(key_name(searx_profile.id, "llm"), "llm-secret")
+    default_vault().set(key_name(searx_profile.id, "search"), "unused-search-secret")
+
+    firecrawl_target = _profile_target(firecrawl_profile, default_vault())
+    searx_target = _profile_target(searx_profile, default_vault())
+    assert firecrawl_target.search_key == "search-secret"
+    assert searx_target.search_key == ""
+    assert "search-secret" not in repr(firecrawl_target)
 
 
 def test_env_for_unknown_profile_raises(store: Path) -> None:

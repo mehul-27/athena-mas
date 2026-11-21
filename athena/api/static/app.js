@@ -26,7 +26,7 @@ const RESEARCH_TOOL_FALLBACK = [
 
 const state = {
   view: "chat", pattern: L.DEFAULT_PATTERN, runId: null, events: [],
-  source: null, retries: 0, replaying: false, playback: false, bundles: [], presets: [],
+  source: null, retries: 0, replaying: false, replayName: "", playback: false, bundles: [], presets: [],
   profiles: [], active: "", editing: "", rawJson: false, busy: false,
   runs: [], historyLimit: HISTORY_LIMIT, historyRequest: 0, speed: 1,
   researchTools: loadResearchToolSelection(),
@@ -1358,6 +1358,9 @@ function setBusy(busy) {
 
 function resetReport(message) {
   state.hasReport = false;
+  $("research-draft-action")?.classList.add("hidden");
+  const visualReport = $("visual-report");
+  if (visualReport) visualReport.classList.add("hidden");
   fillAnswer($("report-answer"), message || "", 0, () => {});
   $("report-points").replaceChildren();
   $("report-meta").replaceChildren();
@@ -1934,6 +1937,7 @@ async function openReplay(name, options) {
     showView("run");
     setPattern((bundle.summary && bundle.summary.pattern) || state.pattern, false);
     beginRun(bundle.run_id, true);
+    state.replayName = name;
     state.summary = bundle.summary || null;
     state.replayHeatmap = bundle.heatmap_png || null;
     state.snapshot = bundle.blackboard
@@ -2398,6 +2402,14 @@ function renderBlackboard(snapshot) {
 
 function renderReport(report, critique) {
   state.hasReport = true;
+  $("research-draft-action")?.classList.toggle("hidden", isActiveRun());
+  const visualReport = $("visual-report");
+  if (visualReport && state.runId) {
+    const reportPath = state.replaying ? "/api/replay/" + encodeURIComponent(state.replayName)
+      : "/api/runs/" + encodeURIComponent(state.runId);
+    visualReport.href = reportPath + "/report";
+    visualReport.classList.toggle("hidden", isActiveRun());
+  }
   const citations = Array.isArray(report.citations) ? report.citations : [];
   fillAnswer($("report-answer"), report.answer || "(no answer)", citations.length,
     (index, button) => openResearchSource(index, button));
@@ -3526,6 +3538,7 @@ syncResearchTools();
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
     if (window.innerWidth <= 680) setSidebar(true, false);
+    if (!item.dataset.view) return;
     if (item.dataset.view === "settings") {
       window.AthenaSettings?.open();
       return;
@@ -3668,6 +3681,19 @@ $("copy-markdown").addEventListener("click", () => {
   navigator.clipboard.writeText(body)
     .then(() => toast("Markdown copied."), () => toast("Copy failed."));
 });
+$("research-draft-action")?.addEventListener("click", () => {
+  if (!state.hasReport || isActiveRun()) return;
+  const report = state.snapshot?.final_report?.value;
+  const answer = report?.answer || $("report-answer").textContent;
+  const points = report?.key_points || Array.from($("report-points").children, (item) => item.textContent);
+  const citations = (report?.citations || []).map((item) => item.source_ref).filter(Boolean);
+  const content = [answer, points.map((point) => `- ${point}`).join("\n"), citations.join("\n")].filter(Boolean).join("\n\n");
+  window.AthenaFollowups?.draft({
+    title: $("user-question").textContent.trim() || "Research follow-up",
+    content,
+    source: state.runId ? `Research run ${state.runId}` : "Research",
+  });
+});
 $("toggle-raw").addEventListener("click", () => {
   state.rawJson = !state.rawJson;
   document.querySelectorAll(".raw").forEach((node) => node.classList.toggle("hidden", !state.rawJson));
@@ -3716,6 +3742,7 @@ window.AthenaUi = {
   showView,
   applyTheme,
   openRun,
+  openDocPreview,
   activityRow,
   refreshHealth,
   isBusy: () => isLocked() || state.busy || Boolean(state.activeRun),

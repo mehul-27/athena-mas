@@ -73,6 +73,42 @@ def test_firecrawl_returns_attributed_sources_without_scraping(monkeypatch) -> N
     ]
 
 
+def test_firecrawl_accepts_profile_key_and_local_service_keeps_precedence(monkeypatch) -> None:
+    from athena.chat.models import ChatTarget
+    from athena.chat.tools import availability
+
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
+    target = ChatTarget(
+        model="openai/fake", api_key="llm-secret", api_base="", reasoning_effort="",
+        provider="openai", search_provider="firecrawl", search_key="profile-secret",
+    )
+    assert availability("web_search", target) == (True, "")
+    assert "profile-secret" not in repr(target)
+    assert "profile-secret" not in str(target.public())
+
+    def post(url, *, json, headers, timeout, trust_env):
+        assert url == "https://api.firecrawl.dev/v2/search"
+        assert headers["Authorization"] == "Bearer profile-secret"
+        return httpx.Response(200, request=httpx.Request("POST", url), json={
+            "success": True, "data": {"web": [{"url": "https://example.com"}]},
+        })
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert web_search("q", provider="firecrawl", api_key=target.search_key).ok
+
+    monkeypatch.setenv("FIRECRAWL_API_URL", "http://127.0.0.1:3002")
+    def post_local(url, *, json, headers, timeout, trust_env):
+        assert url == "http://127.0.0.1:3002/v2/search"
+        assert headers == {}
+        assert trust_env is False
+        return httpx.Response(200, request=httpx.Request("POST", url), json={
+            "success": True, "data": {"web": [{"url": "https://example.com"}]},
+        })
+    monkeypatch.setattr(httpx, "post", post_local)
+    assert web_search("q", provider="firecrawl", api_key=target.search_key).ok
+
+
 def test_firecrawl_configuration_for_both_surfaces(monkeypatch) -> None:
     from athena.chat.tools import availability
     from athena.tools.registry import catalog

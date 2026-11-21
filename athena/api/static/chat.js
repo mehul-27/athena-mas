@@ -319,6 +319,23 @@
     if (message.status === "stopped") {
       wrap.appendChild(el("p", "chat-note", "Stopped."));
     }
+    if (message.status === "ok" && text) {
+      const draft = el("button", "ghost chat-draft-action", "Draft action");
+      draft.type = "button";
+      draft.addEventListener("click", () => root.AthenaFollowups?.draft({
+        title: UI().$("chat-title")?.textContent || "Chat follow-up",
+        content: text,
+        source: "Chat response",
+      }));
+      const saveWorkflow = el("button", "ghost chat-draft-action", "Save as workflow");
+      saveWorkflow.type = "button";
+      saveWorkflow.addEventListener("click", () => root.AthenaWorkflows?.capture(
+        UI().$("chat-title")?.textContent || "Chat workflow", text,
+      ));
+      const followups = el("div", "followups-row-actions");
+      followups.append(draft, saveWorkflow);
+      wrap.appendChild(followups);
+    }
     const meta = message.meta || {};
     if (meta.tool_note) wrap.appendChild(el("p", "chat-note", meta.tool_note));
     (meta.grounding_notes || []).forEach((note) => wrap.appendChild(el("p", "chat-note", note)));
@@ -628,7 +645,9 @@
   async function refreshList() {
     const request = ++state.listRequest;
     try {
-      const data = await UI().api("/api/chat/conversations?limit=12", { cache: "no-store" });
+      const workspace = root.AthenaWorkspaces?.activeId() || "";
+      const query = workspace ? "&workspace_id=" + encodeURIComponent(workspace) : "";
+      const data = await UI().api("/api/chat/conversations?limit=12" + query, { cache: "no-store" });
       if (request !== state.listRequest) return;
       const host = UI().$("chat-list");
       if (!host) return;
@@ -1100,6 +1119,7 @@
       tools: [...state.tools],
     };
     if (state.conversationId) body.conversation_id = state.conversationId;
+    else if (root.AthenaWorkspaces?.activeId()) body.workspace_id = root.AthenaWorkspaces.activeId();
     if (state.profileId) body.profile_id = state.profileId;
     if (supportedReasoning().includes(state.reasoningEffort)) body.reasoning_effort = state.reasoningEffort;
 
@@ -1405,6 +1425,21 @@
     openConversation,
     refresh: refreshList,
     reloadModels: loadModels,
+    prefill(text) {
+      if (state.streaming || UI().isBusy?.()) { UI().toast("Finish the current run first."); return false; }
+      const input = UI().$("chat-input");
+      if (!input) return false;
+      if (input.value.trim() && input.value !== text) {
+        UI().toast("Finish your current draft before loading a workflow.");
+        return false;
+      }
+      if (text.length > input.maxLength) { UI().toast("This workflow exceeds the chat message limit."); return false; }
+      UI().showView("chat");
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      queueMicrotask(() => input.focus());
+      return true;
+    },
     stop,
     isStreaming: () => state.streaming,
     currentMessageId,

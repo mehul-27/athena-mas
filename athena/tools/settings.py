@@ -91,15 +91,20 @@ def firecrawl_local_url() -> str:
     raise ValueError("FIRECRAWL_API_URL must be a loopback API root, such as http://127.0.0.1:3002.")
 
 
-def search_unavailable_reason(provider: str) -> str:
+def search_unavailable_reason(
+    provider: str, *, search_key: str = "", search_key_available: bool = False
+) -> str:
     if provider == "disabled":
         return "Web search is disabled."
     if provider not in SEARCH_PROVIDERS:
         return f"Unsupported search provider {provider!r}."
     if provider == "firecrawl":
         try:
-            if not (firecrawl_local_url() or firecrawl_key()):
-                return "Firecrawl needs FIRECRAWL_API_KEY or a local FIRECRAWL_API_URL on the Athena server."
+            if not (firecrawl_local_url() or search_key or search_key_available or firecrawl_key()):
+                return (
+                    "Firecrawl needs a key in Settings → Models or FIRECRAWL_API_KEY "
+                    "on the Athena server, or a local FIRECRAWL_API_URL."
+                )
         except ValueError as exc:
             return str(exc)
     return ""

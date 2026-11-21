@@ -15,6 +15,7 @@ _THINKING_LEVELS = ("low", "medium", "high")
 
 class ChatMessageIn(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=64)
+    workspace_id: str | None = Field(default=None, max_length=64)
     message: str = Field(min_length=1, max_length=8000)
     profile_id: str | None = Field(default=None, max_length=64)
     reasoning_effort: ReasoningEffort | None = None
@@ -24,6 +25,7 @@ class ChatMessageIn(BaseModel):
 
 class CreateConversationIn(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+    workspace_id: str | None = Field(default=None, max_length=64)
 
 
 class RenameConversationIn(BaseModel):
@@ -59,6 +61,7 @@ class ChatTarget:
     profile_name: str = ""
     search_provider: str = "duckduckgo"
     search_endpoint: str = ""
+    search_key: str = field(default="", repr=False)
 
     def public(self) -> dict[str, Any]:
         return {

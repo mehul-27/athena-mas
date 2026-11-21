@@ -298,6 +298,9 @@ body.sidebar-collapsed .sidebar {
 .chip.small { padding: 1px 8px; font-size: .78em; }
 
 .sidebar-nav { margin-top: auto; gap: 2px; }
+#sidebar-chats, #sidebar-research { min-height: 0; overflow-y: auto; }
+.sidebar .new-chat { flex-shrink: 0; }
+.sidebar-nav { flex: 0 0 auto; max-height: 60%; overflow-y: auto; }
 .nav-item {
   text-align: left; background: transparent; color: var(--fg-dim); border: none;
   border-radius: 6px; padding: 7px 9px; cursor: pointer; font: inherit;
@@ -530,6 +533,8 @@ button.primary, button.ghost, button.danger {
 button.primary { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 button.ghost { background: var(--panel-2); color: var(--fg-dim); }
 button.ghost:hover { color: var(--fg); }
+a.ghost { display: inline-block; text-decoration: none; background: var(--panel-2); color: var(--fg-dim); border-radius: var(--radius); padding: 7px 16px; }
+a.ghost:hover { color: var(--fg); }
 button.danger { background: transparent; color: var(--red); }
 button.primary[disabled], button.ghost[disabled] { opacity: .55; cursor: progress; }
 .new-chat:disabled, .link-button:disabled { opacity: .5; cursor: not-allowed; }

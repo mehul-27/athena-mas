@@ -72,18 +72,17 @@ def provider_base_env(model: str) -> str:
     return ""
 
 
+def _call_host(model: str, kwargs: dict) -> str:
+    return host_of(kwargs.get("api_base") or kwargs.get("base_url") or provider_base_env(model))
+
+
 def check_call(model: str, kwargs: dict) -> None:
     """Raise when this call would not reach LLM_API_BASE's host."""
     global _LAST_HOST
     if not guard_active():
         return
 
-    base = (
-        kwargs.get("api_base")
-        or kwargs.get("base_url")
-        or provider_base_env(model)
-    )
-    resolved = host_of(base)
+    resolved = _call_host(model, kwargs)
     _LAST_HOST = resolved or "(default)"
     wanted = expected_host()
 
@@ -128,17 +127,25 @@ def install_guard() -> bool:
         except Exception:  # noqa: BLE001 - monitoring must never break a call
             pass
 
-    def _prepare(kwargs: dict) -> None:
-        """Clamp the call to the running role's cap and timeout."""
+    def _prepare(model: str, kwargs: dict) -> None:
+        """Apply provider compatibility and the running role's call limits."""
+        from athena.chat.models import deepseek_thinking_model
         from athena.config.call_limits import clamp
 
+        choice = kwargs.get("tool_choice")
+        forced = choice == "required" or isinstance(choice, dict) and choice.get("type") == "function"
+        research_tools = _SCOPE.get() is None and bool(kwargs.get("tools"))
+        if (forced or research_tools) and deepseek_thinking_model(model) and _call_host(model, kwargs) == "api.deepseek.com":
+            # Research frameworks don't carry DeepSeek's reasoning through tool turns.
+            # Instructor also needs a forced tool call to validate its response model.
+            kwargs["extra_body"] = {**(kwargs.get("extra_body") or {}), "thinking": {"type": "disabled"}}
         clamp(kwargs)
 
     def wrap(function):
         def guarded(*args, **kwargs):
             model = kwargs.get("model") or (args[0] if args else "")
             check_call(str(model), kwargs)
-            _prepare(kwargs)
+            _prepare(str(model), kwargs)
             result = function(*args, **kwargs)
             capture(result)
             return result
@@ -149,7 +156,7 @@ def install_guard() -> bool:
         async def guarded(*args, **kwargs):
             model = kwargs.get("model") or (args[0] if args else "")
             check_call(str(model), kwargs)
-            _prepare(kwargs)
+            _prepare(str(model), kwargs)
             result = await function(*args, **kwargs)
             capture(result)
             return result

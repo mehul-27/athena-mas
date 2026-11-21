@@ -6,11 +6,42 @@ search the web or use your documents. **Research** coordinates Google ADK and
 CrewAI agents to produce a structured report with sources, a critic review,
 and an inspectable run trace.
 
-[Quick start](#quick-start) · [Use your own model](#use-your-own-model) ·
+[Project guide](PROJECT_GUIDE.md) · [Quick start](#quick-start) · [Use your own model](#use-your-own-model) ·
 [Documents and web search](#documents-and-web-search) ·
 [How research works](#how-research-works) · [Troubleshooting](#troubleshooting)
 
 ## Quick start
+
+### Windows desktop app
+
+The Tauri desktop app uses Windows WebView2 to show Athena's existing interface
+in a dedicated window. It starts the local Python API in the background.
+Closing the window keeps Athena in the Windows tray for reminder and watchlist
+notifications. Choose **Quit Athena** from the tray to stop it. It uses the existing checkout's `data/` folder
+and a stable loopback address for desktop preferences. The interactive background
+can be adjusted in **Settings → Appearance**.
+
+Set up the Python environment below. With Rust, the Microsoft C++ Build Tools,
+and WebView2 installed, build and launch from the project root:
+
+```powershell
+cargo build --locked --release --manifest-path desktop/Cargo.toml --target x86_64-pc-windows-msvc
+.\desktop\target\x86_64-pc-windows-msvc\release\Athena.exe
+```
+
+Keep the executable inside the checkout, or set `ATHENA_DESKTOP_ROOT` to the
+checkout path. For Live Research, choose **Activate for Research** on a saved
+model in **Settings → Models**. Chat and recorded research are available without
+starting the Research worker. Startup errors include the location of the
+backend log.
+
+Use **Projects** to group chats and saved items around project notes, and
+**Workflows** to save prompt recipes you can review and reuse in Chat.
+Under **Settings → Personalisation**, edit what Athena knows about you and
+choose whether it learns preferences from Chat. Memory stays on disk; relevant
+context is included in the messages sent to your selected model provider.
+
+### Python environment and browser launch
 
 Use **Python 3.13** to match CI and the pinned dependencies. Git is needed to
 clone the repository. The app serves its own frontend, so only the frontend

@@ -291,11 +291,14 @@ def mcp_status(request: Request) -> dict:
     from types import SimpleNamespace
 
     from athena.chat import tools
-    from athena.chat.target import search_settings
+    from athena.chat.target import search_key_available, search_settings
 
     provider, endpoint = search_settings()
     rows = tools.catalog(
-        SimpleNamespace(search_provider=provider, search_endpoint=endpoint)
+        SimpleNamespace(
+            search_provider=provider, search_endpoint=endpoint,
+            search_key_available=search_key_available(None),
+        )
     )
     servers = {
         "athena-rag": {"id": "athena-rag", "name": "Athena RAG", "module": "athena.tools.rag_server"},

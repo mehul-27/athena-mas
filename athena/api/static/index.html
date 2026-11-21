@@ -6,6 +6,7 @@
   <title>athena - chat and multi-agent research</title>
   <link rel="icon" href="/assets/favicon.svg" />
   <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/followups.css" />
 </head>
 <body>
   <header class="appbar">
@@ -92,6 +93,18 @@
         <button class="nav-item" data-view="documents" type="button" id="nav-documents">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-documents"></use></svg>
           <span>Documents</span>
+        </button>
+        <button class="nav-item" type="button" id="followups-open" aria-haspopup="dialog">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="/assets/circum/icons.svg#i-check"></use></svg>
+          <span>Follow-ups</span><span id="followups-count" class="followups-count hidden"></span>
+        </button>
+        <button class="nav-item" type="button" id="workspaces-open" aria-haspopup="dialog">
+          <svg class="icon" aria-hidden="true"><use href="/assets/circum/icons.svg#i-library"></use></svg>
+          <span id="workspace-current">Projects</span>
+        </button>
+        <button class="nav-item" type="button" id="workflows-open" aria-haspopup="dialog">
+          <svg class="icon" aria-hidden="true"><use href="/assets/circum/icons.svg#i-play"></use></svg>
+          <span>Workflows</span>
         </button>
         <!-- Shown only when evaluation/results holds real runs; see refreshEvalNav(). -->
         <button class="nav-item hidden" data-view="eval" type="button" id="nav-eval">
@@ -258,10 +271,12 @@
                     <div class="card-head-actions">
                       <span class="badge hidden" id="replay-badge">REPLAY</span>
                       <button class="ghost hidden" id="report-details" type="button">Run details</button>
+                      <a class="ghost hidden" id="visual-report" target="_blank" rel="noopener noreferrer">Visual report</a>
                       <button class="ghost context-toggle" id="research-context-toggle" type="button"
                               aria-expanded="false" aria-controls="context-panel"
                               title="Show or hide the response context panel">Context</button>
                       <button class="ghost" id="copy-markdown" type="button">Copy Markdown</button>
+                      <button class="ghost hidden" id="research-draft-action" type="button">Draft action</button>
                     </div>
                   </div>
                   <p class="answer prose" id="report-answer">Ask a question, or replay a recording.</p>
@@ -691,7 +706,8 @@
                   <option value="firecrawl">Firecrawl (hosted or local)</option>
                 </select>
               </label>
-              <label for="profile-search-endpoint" class="wide hidden">SearXNG endpoint<input id="profile-search-endpoint" type="text" placeholder="http://localhost:8888" disabled /></label>
+              <label for="profile-search-endpoint" class="wide hidden">SearXNG endpoint<input id="profile-search-endpoint" type="text" placeholder="Leave blank to use the server’s SearXNG" disabled /></label>
+              <label for="profile-search-key" class="wide hidden">Firecrawl Search API key<input id="profile-search-key" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="profile-search-key-hint" disabled /><span class="hint" id="profile-search-key-hint"></span></label>
             </form>
             <p class="hint" id="profile-discovery-hint"></p>
             <p class="error-text" id="profile-errors"></p>
@@ -791,7 +807,7 @@
           <div class="settings-section hidden" data-pane="personalisation">
             <div class="pane-head">
               <h3>Personalisation</h3>
-              <p>A standing instruction for research prompts and new chat messages (up to 800 characters).</p>
+              <p>Tell athena about yourself and how you want it to respond. This applies to Chat and Research.</p>
             </div>
             <label for="about-me" class="sr-only">About me</label>
             <textarea id="about-me" rows="4" maxlength="800"></textarea>
@@ -799,6 +815,22 @@
               <button class="primary" id="about-save" type="button">Save about me</button>
               <span class="hint" id="about-status"></span>
             </div>
+            <section class="personal-memory" aria-labelledby="personal-memory-title">
+              <h4 id="personal-memory-title">What athena remembers</h4>
+              <label class="memory-toggle"><input type="checkbox" id="memory-learning"> Learn preferences from my chats</label>
+              <form class="followups-form" id="memory-form">
+                <label>Type<select name="category">
+                  <option value="preference">Preference</option>
+                  <option value="about_me">About me</option>
+                  <option value="ongoing_goal">Ongoing goal</option>
+                </select></label>
+                <label class="followups-wide">Memory<textarea name="content" rows="2" maxlength="300" required></textarea></label>
+                <button class="primary" id="memory-save" type="submit">Add memory</button>
+                <button class="ghost hidden" id="memory-cancel" type="button">Cancel edit</button>
+              </form>
+              <p id="memory-status" role="status" class="hint"></p>
+              <ul class="followups-list" id="memory-list" aria-label="Saved memories"></ul>
+            </section>
           </div>
 
           <div class="settings-section hidden" data-pane="about">
@@ -832,6 +864,90 @@
       </div>
     </form>
   </dialog>
+
+  <dialog class="followups" id="followups" aria-labelledby="followups-title">
+    <header class="followups-head">
+      <h2 id="followups-title">Follow-ups</h2>
+      <form method="dialog"><button class="ghost" type="submit">Close</button></form>
+    </header>
+    <nav class="followups-nav" aria-label="Follow-up sections">
+      <button type="button" data-followup-view="reminders" aria-pressed="true" aria-controls="followups-reminders">Reminders</button>
+      <button type="button" data-followup-view="watchlists" aria-pressed="false" aria-controls="followups-watchlists">Watchlists</button>
+      <button type="button" data-followup-view="actions" aria-pressed="false" aria-controls="followups-actions">Review actions</button>
+    </nav>
+    <p class="followups-status" id="followups-status" role="status"></p>
+    <section id="followups-reminders" class="followups-pane" aria-label="Reminders">
+      <form id="followups-reminder-form" class="followups-form">
+        <label>Reminder<input name="title" type="text" maxlength="160" placeholder="Prepare seminar slides" required /></label>
+        <label>Due in your local time<input name="due_at" type="datetime-local" required /></label>
+        <label class="followups-wide">Notes <small>optional</small><textarea name="notes" rows="2" maxlength="1000"></textarea></label>
+        <button class="primary" type="submit">Add reminder</button>
+      </form>
+      <ul id="followups-reminder-list" class="followups-list" aria-label="Saved reminders"></ul>
+    </section>
+    <section id="followups-watchlists" class="followups-pane" aria-label="Watchlists" hidden>
+      <form id="followups-watch-form" class="followups-form">
+        <label class="followups-wide">Search to watch<input name="query" type="text" minlength="2" maxlength="300" placeholder="Official updates on open-weight models" required /></label>
+        <p class="followups-wide hint">Checks run while athena is open.</p>
+        <button class="primary" type="submit">Add watch</button>
+      </form>
+      <ul id="followups-watch-list" class="followups-list" aria-label="Saved watches"></ul>
+    </section>
+    <section id="followups-actions" class="followups-pane" aria-label="Review actions" hidden>
+      <form id="followups-action-form" class="followups-form">
+        <label>Action<select name="kind"><option value="note">Note</option><option value="email_draft">Email draft</option><option value="calendar_event">Calendar event</option></select></label>
+        <label>Title<input name="title" type="text" maxlength="160" required /></label>
+        <div id="followups-calendar-fields" class="followups-calendar followups-wide" hidden>
+          <label>Starts<input name="start_at" type="datetime-local" /></label>
+          <label>Ends<input name="end_at" type="datetime-local" /></label>
+        </div>
+        <label class="followups-wide">Draft<textarea name="content" rows="4" maxlength="12000" required></textarea></label>
+        <p class="followups-wide hint" id="followups-action-source" hidden></p>
+        <button class="primary" type="submit">Queue for review</button>
+      </form>
+      <ul id="followups-action-list" class="followups-list" aria-label="Action drafts"></ul>
+    </section>
+  </dialog>
+
+  <dialog class="followups" id="workspaces" aria-labelledby="workspaces-title">
+    <header class="followups-head">
+      <h2 id="workspaces-title">Projects</h2>
+      <form method="dialog"><button class="ghost" type="submit">Close</button></form>
+    </header>
+    <p class="followups-status" id="workspaces-status" role="status"></p>
+    <section class="followups-pane" aria-label="Manage projects">
+      <div class="project-select">
+        <label for="workspace-picker">Project</label>
+        <select id="workspace-picker"><option value="">All chats</option></select>
+        <button type="button" class="ghost" id="workspace-new">New project</button>
+      </div>
+      <form class="followups-form project-form" id="workspace-form" hidden>
+        <label class="followups-wide">Project name<input name="name" maxlength="100" required></label>
+        <label class="followups-wide">Project notes<textarea name="notes" rows="3" maxlength="2400" placeholder="What should athena know when you work on this project?"></textarea></label>
+        <button class="primary" type="submit">Save project</button>
+        <button class="ghost" type="button" id="workspace-cancel">Cancel</button>
+      </form>
+      <section id="workspace-detail" hidden aria-label="Project contents">
+        <div class="followups-row-actions">
+          <button class="primary" type="button" id="workspace-chat">New project chat</button>
+          <button class="ghost" type="button" id="workspace-edit">Edit notes</button>
+          <button class="ghost" type="button" id="workspace-delete">Delete project</button>
+        </div>
+        <form class="followups-form project-form" id="workspace-link">
+          <label>Item type<select name="kind">
+            <option value="chat">Chat</option><option value="report">Research report</option>
+            <option value="document">Document</option><option value="reminder">Reminder</option>
+            <option value="watchlist">Watchlist</option><option value="action">Reviewable action</option>
+          </select></label>
+          <label>Saved item<select name="ref" required></select></label>
+          <button class="ghost" type="submit">Add to project</button>
+        </form>
+        <ul class="followups-list" id="workspace-items" aria-label="Items in this project"></ul>
+      </section>
+    </section>
+  </dialog>
+
+  <dialog class="followups" id="workflows"></dialog>
 
   <div class="tutorial hidden" id="tutorial" aria-hidden="true">
     <div class="tutorial-spotlight" id="tutorial-spotlight" aria-hidden="true"></div>
@@ -867,6 +983,10 @@
   <script src="/app.js"></script>
   <script src="/chat.js"></script>
   <script src="/settings.js"></script>
+  <script src="/followups.js"></script>
+  <script src="/workspaces.js"></script>
+  <script src="/workflows.js"></script>
+  <script src="/memory.js"></script>
   <script src="/tutorial.js"></script>
   <script type="module" src="/background.js"></script>
 </body>

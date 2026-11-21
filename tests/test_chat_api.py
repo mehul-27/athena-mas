@@ -103,6 +103,21 @@ def _done(events: Iterable[tuple[str, dict]]) -> dict:
     raise AssertionError("no done event")
 
 
+def test_new_session_reuses_personal_and_project_context(client, profile, monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ATHENA_PERSONAL_MEMORY_FILE", str(tmp_path / "memory.json"))
+    seen: dict = {}
+    monkeypatch.setattr(service, "stream_completion", _fake_stream("Sure.", seen=seen))
+    project = client.post("/api/workspaces", json={"name": "School", "notes": "The paper is due on Friday."}).json()["workspace"]
+
+    _events(client, {"message": "My name is Kiran."})
+    _events(TestClient(create_app()), {"message": "Help me outline the paper.", "workspace_id": project["id"]})
+
+    system_context = "\n".join(row["content"] for row in seen["messages"] if row["role"] == "system")
+    assert "My name is Kiran" in system_context
+    assert "The paper is due on Friday." in system_context
+    assert client.get("/api/chat/conversations", params={"workspace_id": project["id"]}).json()["conversations"]
+
+
 def test_send_streams_and_persists(client: TestClient, profile, monkeypatch) -> None:
     monkeypatch.setattr(service, "stream_completion", _fake_stream("Hello there"))
 

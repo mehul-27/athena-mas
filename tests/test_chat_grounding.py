@@ -93,3 +93,19 @@ def test_no_sources_produces_a_refusal(monkeypatch) -> None:
 
     assert result.sources == []
     assert "couldn't find useful web results" in result.refusal
+
+
+def test_grounded_web_search_receives_profile_key(monkeypatch) -> None:
+    target = ChatTarget(
+        model="openai/fake", api_key="llm-key", api_base="", reasoning_effort="",
+        provider="openai", search_provider="firecrawl", search_key="search-key",
+    )
+    captured = {}
+
+    def web(*_args, **kwargs):
+        captured.update(kwargs)
+        return _web()
+
+    monkeypatch.setattr("athena.tools.web.search.web_search", web)
+    asyncio.run(grounding.collect("q", ["web_search"], target))
+    assert captured["api_key"] == "search-key"

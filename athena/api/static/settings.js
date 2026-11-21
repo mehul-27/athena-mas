@@ -125,6 +125,7 @@
     if (state.section === "models") renderModels();
     if (state.section === "defaults") renderDefaults();
     if (state.section === "appearance") renderAppearance();
+    if (state.section === "personalisation") root.AthenaMemory?.load();
   }
 
   function filterNav() {
@@ -219,6 +220,9 @@
     const endpoint = UI().$("profile-search-endpoint");
     endpoint.disabled = UI().$("profile-search").value !== "searxng";
     endpoint.closest("label").classList.toggle("hidden", endpoint.disabled);
+    const key = UI().$("profile-search-key");
+    key.disabled = UI().$("profile-search").value !== "firecrawl";
+    key.closest("label").classList.toggle("hidden", key.disabled);
   }
 
   function formPayload() {
@@ -231,6 +235,7 @@
       reasoning_effort: UI().$("profile-reasoning").value,
       search_provider: UI().$("profile-search").value,
       search_endpoint: searchEndpoint.disabled ? "" : searchEndpoint.value.trim(),
+      search_key: UI().$("profile-search-key").disabled ? "" : UI().$("profile-search-key").value.trim(),
       llm_key: UI().$("profile-key").value.trim(),
     };
   }
@@ -240,7 +245,7 @@
     const title = UI().$("profile-form-title");
     if (title) UI().text(title, "Add model");
     UI().text(UI().$("profile-form-description"), "Choose a provider preset or enter an OpenAI-compatible endpoint.");
-    ["profile-name", "profile-api-base", "profile-model", "profile-key", "profile-search-endpoint"].forEach((id) => {
+    ["profile-name", "profile-api-base", "profile-model", "profile-key", "profile-search-endpoint", "profile-search-key"].forEach((id) => {
       const node = UI().$(id);
       if (node) node.value = "";
     });
@@ -250,6 +255,7 @@
     UI().$("profile-search").value = "duckduckgo";
     updateSearchEndpoint();
     UI().text(UI().$("profile-key-hint"), "Your key is stored securely. Local endpoints can leave this blank.");
+    UI().text(UI().$("profile-search-key-hint"), "");
     UI().text(UI().$("profile-errors"), "");
     UI().text(UI().$("profile-save"), "Add model");
     ["profile-activate", "profile-delete", "profile-cancel"].forEach((id) => UI().$(id).classList.add("hidden"));
@@ -277,6 +283,9 @@
     UI().text(UI().$("profile-key-hint"), profile.has_llm_key
       ? "Key stored. Leave blank to keep it, or enter a new key to replace it."
       : "No API key is stored for this profile.");
+    UI().text(UI().$("profile-search-key-hint"), profile.has_search_key
+      ? "Key stored. Leave blank to keep it, or enter a new key to replace it."
+      : "No Firecrawl key is stored. Add one here or configure it on the server.");
     UI().$("profile-reasoning").value = profile.reasoning_effort || "";
     UI().$("profile-search").value = profile.search_provider || "duckduckgo";
     UI().$("profile-search-endpoint").value = profile.search_endpoint || "";

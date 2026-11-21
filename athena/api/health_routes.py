@@ -292,9 +292,16 @@ def build_lifespan(registry=None):
             str(data_dir()),
             extra={"event": "startup", "ok": state["ok"]},
         )
+        watchlist_stop = asyncio.Event()
+        from athena.api.personal_routes import watchlist_worker
+
+        watchlist_task = asyncio.create_task(watchlist_worker(watchlist_stop))
         try:
             yield
         finally:
+            watchlist_stop.set()
+            watchlist_task.cancel()
+            await asyncio.gather(watchlist_task, return_exceptions=True)
             await _shutdown(registry)
 
     return lifespan

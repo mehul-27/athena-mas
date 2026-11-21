@@ -1,0 +1,64 @@
+.followups {
+  box-sizing: border-box;
+  width: min(680px, calc(100vw - 28px));
+  max-height: min(82dvh, 820px);
+  padding: 0;
+  overflow: auto;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px var(--shadow);
+}
+
+.followups::backdrop { background: rgb(0 0 0 / 65%); }
+.followups [hidden] { display: none; }
+.followups-head, .followups-nav, .followups-pane, .followups-status { padding-inline: 24px; }
+.followups-head { display: flex; align-items: center; justify-content: space-between; padding-block: 18px; }
+.followups-head h2 { margin: 0; font-size: 1.35rem; font-weight: 590; }
+.followups-nav { display: flex; gap: 16px; border-bottom: 1px solid var(--border); }
+.followups-nav button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); padding: 8px 0 10px; }
+.followups-nav button[aria-pressed="true"] { border-bottom-color: var(--fg); color: var(--fg); }
+.followups-status { color: var(--muted); margin: 14px 0 0; font-size: .86em; }
+.followups-status:empty { display: none; }
+.followups-status.is-error { color: var(--red); }
+.followups-pane { padding-block: 18px 24px; }
+.followups-form, .followups-calendar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.followups-wide { grid-column: 1 / -1; }
+.followups-form label { display: grid; gap: 4px; font-size: .85em; min-width: 0; }
+.followups-form small, .followups-form .hint { color: var(--muted); }
+.followups-form .hint { margin: 0; }
+.followups-form input, .followups-form textarea, .followups-form select { box-sizing: border-box; width: 100%; min-height: 38px; margin: 0; }
+.followups-form button { justify-self: start; }
+.followups-list { display: grid; gap: 0; margin: 20px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+.followups-row { display: grid; gap: 5px; padding: 14px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.followups-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.followups-row strong { font-weight: 600; }
+.followups-row p { margin: 0; white-space: pre-wrap; }
+.followups-meta { color: var(--muted); font-size: .82em; }
+.followups-meta.is-due { color: var(--warn); }
+.followups-row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; }
+.followups-row-actions a { display: inline-flex; align-items: center; text-decoration: none; }
+.followups-row details { color: var(--fg-dim); }
+.followups-row summary { cursor: pointer; }
+.followups-draft { max-height: 14rem; overflow: auto; padding: 10px 12px; margin: 6px 0 0; background: var(--inset); border-radius: var(--radius); white-space: pre-wrap; }
+.followups-changes { margin: 8px 0 0; padding-inline-start: 20px; }
+.followups-changes li + li { margin-top: 7px; }
+.followups-count { margin-inline-start: auto; border: 1px solid var(--border-strong); padding: 0 6px; border-radius: 999px; font-size: .74em; color: var(--warn); }
+.chat-draft-action { align-self: start; margin-top: 4px; font-size: .82em; }
+
+.project-select { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.project-select select { flex: 1; min-width: 10rem; }
+.project-form { margin: 18px 0; padding: 14px; background: var(--inset); border: 1px solid var(--border); border-radius: var(--radius); }
+#workspace-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.personal-memory { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); }
+.personal-memory h4 { margin: 0 0 12px; }
+.memory-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.memory-toggle input[type=checkbox] { width: auto; margin: 0; }
+
+@media (max-width: 480px) {
+  .followups { max-height: 90dvh; }
+  .followups-head, .followups-nav, .followups-pane, .followups-status { padding-inline: 15px; }
+  .followups-form, .followups-calendar { grid-template-columns: minmax(0, 1fr); }
+  .followups-nav { gap: 12px; }
+}

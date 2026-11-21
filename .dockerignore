@@ -53,7 +53,15 @@ untitled-project/
 .vscode/
 .idea/
 docs/
-evaluation/
+evaluation/*
+!evaluation/__init__.py
+!evaluation/analyze.py
+!evaluation/dataset.json
+!evaluation/outcomes.py
+!evaluation/quarantine.py
+!evaluation/report.py
+!evaluation/schema.py
+!evaluation/scoring.py
 spike/
 tests/
 Dockerfile

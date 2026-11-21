@@ -54,14 +54,15 @@ def main() -> int:
     # Keep manual restarts consistent with the UI/demo path: the active profile
     # supplies the model, endpoint, key and search settings for both ADK and
     # CrewAI. Never print these values here.
-    try:
-        from athena.api.activation import active_env
+    if "--explicit-profile" not in sys.argv[1:]:
+        try:
+            from athena.api.activation import active_env
 
-        active = active_env()
-        env.update(active)
-        print(f"active profile env: {'loaded' if active else 'none'}")
-    except Exception as exc:  # noqa: BLE001 - settings are optional in a bare checkout
-        print(f"active profile env unavailable: {type(exc).__name__}")
+            active = active_env()
+            env.update(active)
+            print(f"active profile env: {'loaded' if active else 'none'}")
+        except Exception as exc:  # noqa: BLE001 - settings are optional in a bare checkout
+            print(f"active profile env unavailable: {type(exc).__name__}")
     # Keep temp and caches inside the repo: this machine's system temp is not
     # reliably writable, and Chroma needs a usable temp directory.
     env.setdefault("TEMP", str(REPO_ROOT / ".tmp"))
@@ -96,10 +97,12 @@ def main() -> int:
     process = subprocess.Popen(
         [sys.executable, "-m", "athena.agents.crew_server"],
         cwd=str(REPO_ROOT),
+        stdin=subprocess.DEVNULL,
         stdout=log,
         stderr=log,
         env=env,
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     PID_FILE.write_text(str(process.pid), encoding="utf-8")
 

@@ -43,6 +43,8 @@ def _profile_target(profile: profile_store.Profile, vault: SecretStore) -> ChatT
         profile_name=profile.name,
         search_provider=(profile.search_provider or "duckduckgo").lower(),
         search_endpoint=(profile.search_endpoint or "").strip(),
+        search_key=(vault.get(profile_store.key_name(profile.id, "search")) or "")
+        if profile.search_provider == "firecrawl" else "",
     )
 
 
@@ -120,6 +122,27 @@ def search_settings(
                 (profile.search_endpoint or "").strip(),
             )
     return tool_settings.search_provider(), tool_settings.searxng_instance()
+
+
+def search_key_available(profile_id: str | None = None) -> bool:
+    """Whether the resolved profile has a stored Firecrawl key; never returns it."""
+    chosen = (profile_id or "").strip() or defaults.chat_profile_id()
+    if chosen == defaults.ENV_PROFILE:
+        return False
+    if chosen:
+        profile = profile_store.find(chosen)
+        if profile is not None:
+            return profile.search_provider == "firecrawl" and default_vault().has(
+                profile_store.key_name(profile.id, "search")
+            )
+    active = profile_store.active_id()
+    if active:
+        profile = profile_store.find(active)
+        if profile is not None:
+            return profile.search_provider == "firecrawl" and default_vault().has(
+                profile_store.key_name(profile.id, "search")
+            )
+    return False
 
 
 def models_view(vault: SecretStore | None = None) -> dict:

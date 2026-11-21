@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Athena",
+  "version": "0.1.0",
+  "identifier": "app.athena.desktop",
+  "build": {
+    "frontendDist": "startup"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'none'; style-src 'self'; img-src 'self'",
+      "capabilities": []
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.ico"]
+  }
+}

@@ -376,12 +376,14 @@ def searxng(query: str, count: int, endpoint: str | None = None) -> list[WebHit]
     return _searxng_hits(payload, count)
 
 
-def firecrawl(query: str, count: int, *, timeout: float | None = None) -> list[WebHit]:
+def firecrawl(
+    query: str, count: int, *, timeout: float | None = None, api_key: str | None = None
+) -> list[WebHit]:
     """Return search citations with the original source URLs."""
     local_url = settings.firecrawl_local_url()
-    key = "" if local_url else settings.firecrawl_key()
+    key = "" if local_url else (api_key or settings.firecrawl_key())
     if not (local_url or key):
-        raise ValueError(settings.search_unavailable_reason("firecrawl"))
+        raise ValueError(settings.search_unavailable_reason("firecrawl", search_key=api_key or ""))
     response = httpx.post(
         f"{local_url or 'https://api.firecrawl.dev'}/v2/search",
         json={"query": query, "limit": count},
@@ -428,6 +430,7 @@ def web_search(
     *,
     provider: str | None = None,
     endpoint: str | None = None,
+    api_key: str | None = None,
 ) -> WebResult:
     """Search the web. Never raises: failures come back as ``ok=False``.
 
@@ -463,7 +466,7 @@ def web_search(
         if name == "searxng":
             return lambda: searxng(query, limit, endpoint=target_endpoint)  # noqa: E731
         if name == "firecrawl":
-            return lambda: firecrawl(query, limit)
+            return lambda: firecrawl(query, limit, api_key=api_key)
         return None
 
     primary = caller_for(provider, endpoint)

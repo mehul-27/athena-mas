@@ -96,6 +96,18 @@ def test_activation_refuses_when_the_old_server_survives(monkeypatch, client) ->
     assert store.active_id() == "", "must not claim activation"
 
 
+def test_activation_starts_without_stopping_an_offline_worker(monkeypatch, client) -> None:
+    profile = _profile()
+    monkeypatch.setattr(activation, "server_up", lambda **kwargs: False)
+    monkeypatch.setattr(activation, "stop_server", lambda: pytest.fail("no worker to stop"))
+    monkeypatch.setattr(activation, "start_server", lambda env: True)
+
+    response = client.post("/api/settings/activate", json={"profile_id": profile["id"]})
+
+    assert response.status_code == 200
+    assert response.json()["crew_server"] == "up"
+
+
 def test_activation_without_a_key_is_409_and_starts_nothing(monkeypatch, client) -> None:
     profile = _profile(with_key=False)
     started: list = []

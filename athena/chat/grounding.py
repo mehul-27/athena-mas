@@ -88,6 +88,7 @@ async def collect(
         searches["web_search"] = _timed_search(
             web_search, query, WEB_RESULTS,
             provider=target.search_provider, endpoint=target.search_endpoint,
+            api_key=target.search_key,
         )
     result_by_capability = dict(zip(searches, await asyncio.gather(*searches.values())))
 

@@ -44,19 +44,28 @@ def server_up(timeout: float = 2.0) -> bool:
 
 
 def stop_server() -> None:
-    subprocess.run([sys.executable, "scripts/dev_down.py"], cwd=str(REPO),
-                   capture_output=True, text=True, timeout=60, check=False)
+    try:
+        subprocess.run(
+            [sys.executable, "scripts/dev_down.py"], cwd=str(REPO),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=10, check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ActivationError("The existing Research worker did not stop within 10 seconds.") from exc
 
 
 def start_server(env_extra: dict[str, str], wait_s: float = CARD_TIMEOUT_S) -> bool:
     child_env = dict(os.environ)
     child_env.update(env_extra)
-    subprocess.Popen(
-        [sys.executable, "scripts/dev_up.py"], cwd=str(REPO), env=child_env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    launcher = subprocess.Popen(
+        [sys.executable, "scripts/dev_up.py", "--explicit-profile"], cwd=str(REPO), env=child_env,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     deadline = time.time() + wait_s
     while time.time() < deadline:
+        if launcher.poll() not in (None, 0):
+            return False
         if server_up(timeout=1.5):
             return True
         time.sleep(0.5)
@@ -73,17 +82,17 @@ def activate(profile_id: str) -> dict:
     if not env.get("LLM_API_KEY"):
         raise ActivationError("no API key stored for this profile")
 
-    was_up = server_up()
-    stop_server()
-    # A card that still answers after the stop means the old server survived.
-    # Starting over it would report success without applying this profile.
-    if was_up and server_up():
-        raise ActivationError(
-            "the existing CrewAI server did not stop; profile was not activated"
-        )
+    if server_up():
+        stop_server()
+        # A card that still answers means the old profile is still serving.
+        if server_up():
+            raise ActivationError(
+                "the existing CrewAI server did not stop; profile was not activated"
+            )
 
     up = start_server(env)
-    store.set_active(profile_id if up else "")
+    if up:
+        store.set_active(profile_id)
     return {"ok": up, "crew_server": "up" if up else "down",
             "profile": profile.public()}
 

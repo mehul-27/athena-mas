@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from athena.settings.vault import SecretStore, default_vault
-from athena.tools.settings import SEARCH_PROVIDERS
+from athena.tools.settings import SEARCH_PROVIDERS, searxng_url
 
 PROFILES_FILE = Path("data/settings/profiles.json")
 PRESETS_FILE = Path("data/presets.json")
@@ -31,6 +31,7 @@ ENV_KEYS = (
     "LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL", "LLM_REASONING_EFFORT",
     "SEARCH_PROVIDER", "SEARXNG_INSTANCE", "SEARCH_FALLBACK_PROVIDER",
     "SEARCH_FALLBACK_ENDPOINT",
+    "FIRECRAWL_API_KEY",
 )
 
 # Built-in presets for installations that don't ship data/presets.json.
@@ -116,7 +117,7 @@ class Profile:
         self.api_base = validate_api_base(self.api_base)
         if self.search_provider not in SEARCH_PROVIDERS:
             raise ProfileError(f"unknown search provider {self.search_provider!r}")
-        if self.search_provider == "searxng" and not self.search_endpoint:
+        if self.search_provider == "searxng" and not (self.search_endpoint or searxng_url()):
             raise ProfileError("searxng needs a search endpoint")
         if self.search_endpoint:
             self.search_endpoint = validate_api_base(self.search_endpoint)
@@ -255,4 +256,8 @@ def env_for_profile(profile_id: str, vault: SecretStore | None = None,
         env["SEARCH_FALLBACK_PROVIDER"] = profile.search_fallback_provider
     if profile.search_fallback_endpoint:
         env["SEARCH_FALLBACK_ENDPOINT"] = profile.search_fallback_endpoint
+    if profile.search_provider == "firecrawl" and not (os.getenv("FIRECRAWL_API_URL") or "").strip():
+        search_key = store.get(key_name(profile.id, "search"))
+        if search_key:
+            env["FIRECRAWL_API_KEY"] = search_key
     return env

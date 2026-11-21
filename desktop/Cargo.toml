@@ -1,0 +1,26 @@
+[package]
+name = "athena-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "Athena"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+open = "5"
+serde_json = "1"
+tauri = { version = "2", default-features = false, features = ["wry", "compression", "common-controls-v6", "custom-protocol"] }
+tray-icon = { version = "0.25", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+strip = true

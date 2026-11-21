@@ -25,12 +25,19 @@ def main() -> int:
         return 1
 
     if sys.platform == "win32":
-        result = subprocess.run(
-            ["taskkill", "/PID", pid, "/T", "/F"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["taskkill", "/PID", pid, "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"timed out stopping pid {pid}")
+            return 1
         stopped = result.returncode == 0
         detail = (result.stdout or result.stderr).strip().splitlines()
     else:  # pragma: no cover - this project targets Windows

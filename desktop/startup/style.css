@@ -1,0 +1,27 @@
+:root {
+  color-scheme: dark;
+  background: #111;
+  color: #efefec;
+  font: 15px/1.6 system-ui, sans-serif;
+}
+
+body {
+  display: grid;
+  min-height: 100vh;
+  margin: 0;
+  place-items: center;
+}
+
+main {
+  width: min(30rem, calc(100vw - 3rem));
+}
+
+h1 {
+  margin: .75rem 0 .25rem;
+  font: 500 2.2rem/1.1 Georgia, serif;
+}
+
+p {
+  margin: 0;
+  color: #adada8;
+}

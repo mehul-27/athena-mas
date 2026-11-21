@@ -218,7 +218,7 @@ def tool_ids_from_event_summary(summary: str | None) -> str | None:
     return name if name in TOOL_BY_ID else None
 
 
-def catalog(search_provider: str | None = None) -> list[dict]:
+def catalog(search_provider: str | None = None, *, search_key_available: bool = False) -> list[dict]:
     """What the selector shows: registry metadata and current availability."""
     from athena.tools.rag.status import chunk_count
 
@@ -232,7 +232,7 @@ def catalog(search_provider: str | None = None) -> list[dict]:
             if not available:
                 reason = "No documents are indexed. Rebuild the index in Settings → Library."
         elif tool.id == "web_search":
-            reason = settings.search_unavailable_reason(provider)
+            reason = settings.search_unavailable_reason(provider, search_key_available=search_key_available)
             available = not reason
         rows.append(
             {

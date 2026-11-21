@@ -22,7 +22,7 @@ from athena.chat.models import (
     SetModelIn,
 )
 from athena.chat.store import ChatStore
-from athena.chat.target import models_view, search_settings
+from athena.chat.target import models_view, search_key_available, search_settings
 from athena.observability.redact import redact
 from athena.settings import profiles as profile_store
 from athena.tools.rag.status import chunk_count
@@ -54,7 +54,10 @@ def _summary(store: ChatStore, conversation_id: str) -> dict:
 
 def _search_target(profile_id: str | None):
     provider, endpoint = search_settings(profile_id)
-    return SimpleNamespace(search_provider=provider, search_endpoint=endpoint)
+    return SimpleNamespace(
+        search_provider=provider, search_endpoint=endpoint,
+        search_key_available=search_key_available(profile_id),
+    )
 
 
 @router.get("/models")
@@ -70,7 +73,9 @@ def capabilities(request: Request, profile_id: str | None = None) -> dict:
     guard(request)
     provider, _endpoint = search_settings(profile_id)
     rag_ok = chunk_count() > 0
-    web_reason = search_unavailable_reason(provider)
+    web_reason = search_unavailable_reason(
+        provider, search_key_available=search_key_available(profile_id)
+    )
     return {
         "capabilities": [
             {
@@ -100,16 +105,19 @@ def tool_catalog(request: Request, profile_id: str | None = None) -> dict:
 
 
 @router.get("/conversations")
-def list_conversations(request: Request, limit: int = 50) -> dict:
+def list_conversations(request: Request, limit: int = 50, workspace_id: str | None = None) -> dict:
     guard(request)
-    return {"conversations": _store().list(limit)}
+    return {"conversations": _store().list(limit, workspace_id=workspace_id)}
 
 
 @router.post("/conversations")
 def create_conversation(payload: CreateConversationIn, request: Request) -> dict:
     guard(request)
     store = _store()
-    conversation = store.create(payload.title or "New chat")
+    try:
+        conversation = store.create(payload.title or "New chat", workspace_id=payload.workspace_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
     return {"conversation": store.summary(conversation)}
 
 
@@ -218,6 +226,7 @@ def send_message(payload: ChatMessageIn, request: Request) -> StreamingResponse:
         ctx = service.prepare_turn(
             store,
             conversation_id=payload.conversation_id,
+            workspace_id=payload.workspace_id,
             message=payload.message,
             profile_id=(payload.profile_id or "").strip() or None,
             reasoning_effort=payload.reasoning_effort,

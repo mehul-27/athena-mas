@@ -30,8 +30,8 @@ WORKDIR /app
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-# Only what the API needs at runtime. Tests, docs, evaluation, spike and the
-# local data directory stay out of the image (.dockerignore).
+# Only what the API needs at runtime. Tests, docs, evaluation output, spike
+# and local state stay out of the image (.dockerignore).
 COPY athena ./athena
 COPY scripts ./scripts
 COPY data/demo ./data/demo
@@ -71,7 +71,11 @@ RUN groupadd --gid 10001 athena \
             --shell /usr/sbin/nologin athena \
  && mkdir -p /app/data/tmp /app/.run/mpl /app/.run/runs /app/.run/api \
  && chown -R athena:athena /app \
+ && sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
  && chmod +x /usr/local/bin/entrypoint.sh
+
+# The Evaluation API imports these files. The build context excludes results.
+COPY --chown=10001:10001 evaluation/ ./evaluation/
 
 USER athena
 

@@ -139,7 +139,11 @@ def availability(name: str, target=None) -> tuple[bool, str]:
         from athena.tools import settings as tool_settings
 
         provider = (getattr(target, "search_provider", "") or tool_settings.search_provider()).lower()
-        reason = tool_settings.search_unavailable_reason(provider)
+        reason = tool_settings.search_unavailable_reason(
+            provider,
+            search_key=getattr(target, "search_key", ""),
+            search_key_available=getattr(target, "search_key_available", False),
+        )
         return not reason, reason
     return True, ""
 
@@ -240,6 +244,7 @@ def _web(args: dict[str, Any], target) -> tuple[str, str, bool, str]:
         _integer(args, "max_results", 5, 1, 20),
         provider=getattr(target, "search_provider", None),
         endpoint=getattr(target, "search_endpoint", None),
+        api_key=getattr(target, "search_key", None),
     )
     if not result.ok:
         return "", "Web search failed", False, result.error or "search failed"

@@ -6,6 +6,7 @@ about the kwargs that *would* have been sent.
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -121,6 +122,70 @@ def test_guard_allows_the_configured_host(monkeypatch) -> None:
     endpoint_guard.install_guard()
 
     assert litellm.completion(model="openai/x", api_base=GATEWAY, messages=[]) == "ok"
+
+
+@pytest.mark.parametrize("base,choice,disabled", [
+    ("https://api.deepseek.com", "required", True),
+    ("https://api.deepseek.com", {"type": "function", "function": {"name": "Probe"}}, True),
+    ("https://api.deepseek.com", "auto", False),
+    (GATEWAY, "required", False),
+])
+def test_deepseek_forced_tools_use_non_thinking_mode(monkeypatch, base, choice, disabled) -> None:
+    import litellm
+
+    monkeypatch.setenv("LLM_API_BASE", base)
+    llm.export_endpoint_env()
+    monkeypatch.setattr(litellm, "completion", lambda **kw: kw)
+    endpoint_guard.install_guard()
+
+    body = {"other": "preserve", "thinking": {"type": "enabled"}}
+    sent = litellm.completion(model="openai/deepseek-flash", tool_choice=choice, extra_body=body)
+
+    assert sent["tool_choice"] == choice
+    assert sent["extra_body"]["other"] == "preserve"
+    assert sent["extra_body"]["thinking"]["type"] == ("disabled" if disabled else "enabled")
+    assert body["thinking"]["type"] == "enabled"
+
+
+def test_deepseek_research_tool_turns_disable_thinking_from_the_start(monkeypatch) -> None:
+    import litellm
+
+    endpoint = "https://api.deepseek.com"
+    monkeypatch.setenv("LLM_API_BASE", endpoint)
+
+    async def capture(**kwargs):
+        return kwargs
+
+    monkeypatch.setattr(litellm, "acompletion", capture)
+    endpoint_guard.install_guard()
+
+    options = {
+        "model": "openai/deepseek-flash",
+        "api_base": endpoint,
+        "tools": [{"type": "function", "function": {"name": "lookup"}}],
+        "tool_choice": "auto",
+    }
+    messages = [{"role": "user", "content": "Look up the title."}]
+    tool_history = [
+        *messages,
+        {"role": "assistant", "tool_calls": [{
+            "id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": "{}"},
+        }]},
+        {"role": "tool", "tool_call_id": "call_1", "content": "Title"},
+    ]
+
+    async def check_requests():
+        for history in (messages, tool_history):
+            request = await litellm.acompletion(messages=history, **options)
+            assert request["extra_body"] == {"thinking": {"type": "disabled"}}
+            assert request["tool_choice"] == "auto"
+        with endpoint_guard.expected_host_scope(endpoint):
+            chat = await litellm.acompletion(messages=messages, **options)
+        assert "extra_body" not in chat
+        no_tools = await litellm.acompletion(model=options["model"], api_base=endpoint, messages=messages)
+        assert "extra_body" not in no_tools
+
+    asyncio.run(check_requests())
 
 
 def test_guard_can_be_disabled(monkeypatch) -> None:

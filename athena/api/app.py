@@ -437,9 +437,11 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
         """The canonical research selector catalogue."""
         from athena.api.activation import active_env
 
-        provider = active_env().get("SEARCH_PROVIDER") or None
+        env = active_env()
         return {
-            "tools": tool_registry.catalog(provider),
+            "tools": tool_registry.catalog(
+                env.get("SEARCH_PROVIDER"), search_key_available=bool(env.get("FIRECRAWL_API_KEY"))
+            ),
             "all_tools": list(tool_registry.ALL_TOOL_IDS),
         }
 
@@ -465,12 +467,18 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
         detail = redact(f"{type(exc).__name__}: {exc}") or "internal error"
         return JSONResponse(status_code=500, content={"detail": detail[:300]})
 
+    from athena.api.action_routes import router as action_router
     from athena.api.chat_routes import router as chat_router
     from athena.api.eval_routes import router as eval_router
     from athena.api.library_routes import documents_router as documents_router
     from athena.api.library_routes import router as library_router
+    from athena.api.personal_routes import router as personal_router
     from athena.api.settings_routes import router as settings_router
     from athena.api.telemetry_routes import router as telemetry_router
+    from athena.api.visual_report import router as visual_report_router
+    from athena.api.workspace_routes import router as workspace_router
+    from athena.api.workflow_routes import router as workflow_router
+    from athena.api.memory_routes import router as memory_router
 
     # Probe/login routes first: /healthz and /readyz must answer before the
     # static mount and outside the optional token gate.
@@ -478,10 +486,16 @@ def create_app(registry: RunRegistry | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(settings_router)
     app.include_router(chat_router)
+    app.include_router(personal_router)
+    app.include_router(action_router)
     app.include_router(library_router)
     app.include_router(documents_router)
     app.include_router(telemetry_router)
     app.include_router(eval_router)
+    app.include_router(visual_report_router)
+    app.include_router(workspace_router)
+    app.include_router(workflow_router)
+    app.include_router(memory_router)
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
 
     # No-op unless ATHENA_ACCESS_TOKEN is set; exempt paths and static assets
